@@ -1,0 +1,69 @@
+"""krabka-protocol — Bazel module (bzlmod).
+
+Bazel is the build and test path; Cargo stays the dependency source of truth.
+`crate.from_cargo` reads the same `Cargo.toml` / `Cargo.lock` that Cargo does,
+so there is no second dependency set to keep in sync.
+"""
+
+module(
+    name = "krabka_protocol",
+    version = "0.4.0",
+)
+
+bazel_dep(name = "rules_rs", version = "0.0.106")
+bazel_dep(name = "rules_rs_mutants", version = "0.0.1")
+
+# rules_rs_mutants is not published to the Bazel Central Registry, so the
+# `bazel_dep` above has nothing to resolve against without this override.
+git_override(
+    module_name = "rules_rs_mutants",
+    remote = "https://github.com/robot-head/rules_rs_mutants",
+    # v0.0.1, resolved to a commit so the checkout is reproducible.
+    commit = "fbc5c265b268cd050f2b392fbbf7ea4fb5b1a656",
+)
+
+# ---------------------------------------------------------------------------
+# Rust toolchain — pinned to the same channel as rust-toolchain.toml.
+# ---------------------------------------------------------------------------
+toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
+toolchains.toolchain(
+    edition = "2024",
+    version = "1.97.0",
+)
+use_repo(toolchains, "default_rust_toolchains")
+
+register_toolchains("@default_rust_toolchains//...")
+
+# ---------------------------------------------------------------------------
+# Third-party crates, resolved from the Cargo workspace.
+# ---------------------------------------------------------------------------
+PLATFORM_TRIPLES = [
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+]
+
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lock = "//:Cargo.lock",
+    cargo_toml = "//:Cargo.toml",
+    platform_triples = PLATFORM_TRIPLES,
+)
+
+# rules_rs_mutants deliberately ships no cargo-mutants binary: every consumer
+# builds one from its own lockfile so the sweep and the build agree on a
+# version. `//tools/mutants` is that lockfile.
+crate.from_cargo(
+    name = "mutants",
+    cargo_lock = "//tools/mutants:Cargo.lock",
+    cargo_toml = "//tools/mutants:Cargo.toml",
+    platform_triples = PLATFORM_TRIPLES,
+)
+crate.annotation(
+    crate = "cargo-mutants",
+    gen_binaries = ["cargo-mutants"],
+    repositories = ["mutants"],
+)
+use_repo(crate, "crates", "mutants")

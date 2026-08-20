@@ -257,14 +257,13 @@ mod tests {
         std::process::id().to_string()
     }
 
-    fn pg_scram_golden_password() -> String {
-        std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/pg_scram_password.txt"
-        ))
-        .expect("PostgreSQL SCRAM password fixture")
-        .trim_end()
-        .to_owned()
+    /// The password `PostgreSQL` 18 hashed to produce the golden verifier below.
+    ///
+    /// Embedded rather than read at run time: it is a constant, and a test
+    /// binary that resolves `CARGO_MANIFEST_DIR` at run time only works when it
+    /// is launched from the same absolute path it was compiled in.
+    fn pg_scram_golden_password() -> &'static str {
+        include_str!("../../tests/fixtures/pg_scram_password.txt").trim_end()
     }
 
     #[test]
@@ -283,7 +282,7 @@ mod tests {
     #[test]
     fn deterministic_generation_with_fixed_salt_matches_known_sha256_material() {
         let verifier = PgScramVerifier::generate_with_salt(
-            &pg_scram_golden_password(),
+            pg_scram_golden_password(),
             4096,
             (0_u8..16).collect::<Vec<_>>(),
         )

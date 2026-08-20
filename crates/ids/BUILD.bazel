@@ -5,6 +5,6 @@ package(default_visibility = ["//visibility:public"])
 # Consumed by `crate.from_cargo` (see //MODULE.bazel).
 exports_files(["Cargo.toml"])
 
-crate_library(name = "voters")
+crate_library(name = "ids")
 
-crate_tests(lib = "voters")
+crate_tests(lib = "ids")

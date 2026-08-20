@@ -1,0 +1,53 @@
+"""Root package: the public krabka-protocol surface.
+
+These aliases are the stable names other repositories and embedders depend on,
+e.g. `@krabka_protocol//:protocol`.
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+# Consumed by `crate.from_cargo` (see //MODULE.bazel).
+exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+])
+
+alias(
+    name = "protocol",
+    actual = "//crates/protocol",
+)
+
+alias(
+    name = "compression",
+    actual = "//crates/compression",
+)
+
+alias(
+    name = "security",
+    actual = "//crates/security",
+)
+
+alias(
+    name = "metadata",
+    actual = "//crates/metadata",
+)
+
+alias(
+    name = "ids",
+    actual = "//crates/ids",
+)
+
+alias(
+    name = "units",
+    actual = "//crates/units",
+)
+
+alias(
+    name = "voters",
+    actual = "//crates/voters",
+)
+
+alias(
+    name = "trace_context",
+    actual = "//crates/trace-context",
+)

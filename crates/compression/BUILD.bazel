@@ -1,23 +1,17 @@
-load("@crates//:defs.bzl", "aliases", "all_crate_deps")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//bazel:defs.bzl", "crate_library", "crate_tests")
 
-# Manifest is consumed by crate_universe (see //MODULE.bazel).
+package(default_visibility = ["//visibility:public"])
+
+# Consumed by `crate.from_cargo` (see //MODULE.bazel).
 exports_files(["Cargo.toml"])
 
-rust_library(
-    name = "compression",
-    srcs = glob(["src/**/*.rs"]),
-    aliases = aliases(),
-    crate_name = "crabka_compression",
-    # All codecs on by default (matches the crate's Cargo `default` feature).
-    crate_features = [
-        "gzip",
-        "snappy",
-        "lz4",
-        "zstd",
-    ],
-    edition = "2024",
-    proc_macro_deps = all_crate_deps(proc_macro = True),
-    visibility = ["//visibility:public"],
-    deps = all_crate_deps(normal = True),
+crate_library(name = "compression")
+
+crate_tests(
+    lib = "compression",
+    # `differential` drives the JVM oracle under `tools/oracle`, which stayed in
+    # the monorepo. It also holds `env!("CARGO_MANIFEST_DIR")` past compile time
+    # to find that install, which rules_rust rejects as non-hermetic. Runs under
+    # Cargo, not here.
+    manual = ["differential"],
 )
