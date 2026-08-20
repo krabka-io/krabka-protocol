@@ -8,7 +8,7 @@ away from the manifests Cargo still resolves.
 """
 
 load("@crates//:data.bzl", "DEP_DATA")
-load("@crates//:defs.bzl", "aliases", "all_crate_deps", "crate_name", "edition")
+load("@crates//:defs.bzl", "all_crate_deps", "crate_name", "edition")
 load("@rules_rs//rs:rust_binary.bzl", "rust_binary")
 load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
@@ -24,6 +24,32 @@ WORKSPACE_RUSTC_FLAGS = ["-Funsafe_code"]
 def _features():
     return DEP_DATA[native.package_name()]["crate_features"]
 
+def _aliases(kinds):
+    """The renamed-dependency map, narrowed to one set of dependency kinds.
+
+    `@crates//:defs.bzl`'s `aliases()` returns one map covering normal *and*
+    dev dependencies. rules_rust treats every key of `aliases` as a dependency,
+    so handing the whole map to a `rust_library` links that crate's dev
+    dependencies into the library. Where two crates dev-depend on each other --
+    `crabka-client-consumer` and `crabka-client-producer` do -- that is a
+    dependency cycle Bazel refuses to build, and everywhere else it is dead
+    weight. Cargo has no such problem: a lib and its test binaries are separate
+    compilations.
+    """
+    data = DEP_DATA[native.package_name()]
+    labels = {}
+    for kind in kinds:
+        for dep in data.get(kind, []):
+            labels[dep] = True
+        for platform_deps in data.get(kind + "_by_platform", {}).values():
+            for dep in platform_deps:
+                labels[dep] = True
+    return {
+        label: name
+        for label, name in data["aliases"].items()
+        if label in labels
+    }
+
 def crate_library(name, srcs = None, **kwargs):
     """`rust_library` for a workspace member, configured from Cargo metadata."""
     rust_library(
@@ -32,7 +58,7 @@ def crate_library(name, srcs = None, **kwargs):
             ["src/**/*.rs"],
             exclude = ["src/bin/**"],
         ),
-        aliases = aliases(),
+        aliases = _aliases(["deps"]),
         crate_features = _features(),
         crate_name = crate_name(),
         edition = edition(),
@@ -47,7 +73,7 @@ def crate_binary(name, crate_root, lib, **kwargs):
     rust_binary(
         name = name,
         srcs = [crate_root],
-        aliases = aliases(),
+        aliases = _aliases(["deps"]),
         crate_features = _features(),
         crate_root = crate_root,
         edition = edition(),
@@ -88,7 +114,7 @@ def crate_tests(
     unit = lib + "_test"
     rust_test(
         name = unit,
-        aliases = aliases(),
+        aliases = _aliases(["deps", "dev_deps"]),
         crate = ":" + lib,
         compile_data = compile_data or [],
         crate_features = _features(),
@@ -128,7 +154,7 @@ def crate_tests(
             name = stem + "_test",
             srcs = [src] + helpers,
             crate_root = src,
-            aliases = aliases(),
+            aliases = _aliases(["deps", "dev_deps"]),
             compile_data = compile_data or [],
             crate_features = _features(),
             data = data or [],
