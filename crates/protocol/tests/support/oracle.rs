@@ -15,12 +15,22 @@ pub struct Oracle {
 
 impl Oracle {
     pub fn spawn() -> Self {
-        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("tools/oracle/build/install/crabka-oracle");
+        // Read from the environment rather than expanded with `env!`, which
+        // bakes an absolute build path into the binary: rules_rust rejects such
+        // a binary outright, and under Cargo it only works when the test is
+        // launched from the directory it was compiled in.
+        //
+        // `tools/oracle` is the Gradle JVM oracle, which stayed in
+        // robot-head/crabka. Every test that reaches this is `#[ignore]`d; the
+        // assertion below is what reports its absence.
+        let base = PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
+        )
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tools/oracle/build/install/crabka-oracle");
         // Gradle's `installDist` produces BOTH wrappers on every platform
         // (the POSIX shell script and the .bat). Pick by host OS, not by
         // existence — picking by existence on Linux selects the .bat and

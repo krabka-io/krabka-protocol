@@ -79,6 +79,15 @@ crate.from_cargo(
     cargo_toml = "//tools/mutants:Cargo.toml",
     platform_triples = PLATFORM_TRIPLES,
 )
+# datatest-stable drops every fixture Bazel stages, because its walk keeps only
+# entries whose `file_type().is_file()` and runfiles are symlinks. See the patch
+# header. Cargo keeps using the released crate as published.
+crate.annotation(
+    crate = "datatest-stable",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:datatest-stable-follow-links.patch"],
+)
+
 crate.annotation(
     crate = "cargo-mutants",
     gen_binaries = ["cargo-mutants"],

@@ -34,26 +34,16 @@ crate_tests(
         "tests/corpus/**",
         "tests/fixtures/**",
     ]),
+    # The datatest-stable suites resolve their fixture roots against the working
+    # directory. Bazel runs a test from an execution root rather than the crate
+    # directory, so hand them the package path inside the runfiles tree.
+    env = {"FIXTURE_ROOT": "crates/protocol"},
     # The differential suites and `oracle_smoke` drive the JVM oracle under
     # `tools/oracle`, which stayed in the monorepo; `capture_corpus` records new
-    # fixtures through it. `corpus_coverage` holds `CARGO_MANIFEST_DIR` past
-    # compile time to walk `tests/corpus`, which rules_rust rejects as
-    # non-hermetic. All of them still run under Cargo.
-    manual = [
-        "capture_corpus",
-        "corpus_coverage",
-        "corpus_replay",
-        "differential_all",
-        "differential_api_versions",
-        "differential_describe_groups",
-        "differential_metadata",
-        "differential_offset_commit",
-        "differential_produce",
-        "differential_records",
-        "kraft_metadata_roundtrip",
-        "kraft_rpc_roundtrip",
-        "oracle_smoke",
-    ],
+    # fixtures through it. All of them still run under Cargo.
+    # `capture_corpus` records new fixtures through the JVM oracle rather than
+    # reading them, so it is a recording tool rather than a test.
+    manual = ["capture_corpus"],
     no_harness = [
         "corpus_replay",
         "kraft_metadata_roundtrip",

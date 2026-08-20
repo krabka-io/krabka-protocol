@@ -1,0 +1,25 @@
+Make the fixture walk follow symlinks.
+
+`iter_directory` keeps only entries whose `file_type().is_file()`. `walkdir`
+does not follow symlinks by default, so for a symlink that predicate is false
+and the entry is dropped. Every file Bazel stages in a runfiles tree is a
+symlink to the source, so under Bazel the walk finds nothing and the harness
+reports an empty run rather than a failure -- 620 fixtures silently not tested.
+
+`follow_links(true)` makes `file_type()` report the target's type. Under Cargo,
+where the fixtures are real files, it changes nothing.
+
+Applied through `crate.annotation` in //MODULE.bazel rather than vendored, so
+Cargo keeps using the released crate unmodified. Upstream would take this as a
+one-line change; until then it lives here.
+
+--- a/src/data_source.rs
++++ b/src/data_source.rs
+@@ -75,6 +75,7 @@
+ 
+ fn iter_directory(root: &Utf8Path) -> impl Iterator<Item = std::io::Result<TestEntry>> + '_ {
+     walkdir::WalkDir::new(root)
++        .follow_links(true)
+         .into_iter()
+         .filter(|res| {
+             // Continue to bubble up all errors to the parent.

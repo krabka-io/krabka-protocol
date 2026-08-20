@@ -67,6 +67,24 @@ fn corpus_entry_round_trips(path: &Path) -> datatest_stable::Result<()> {
     Ok(())
 }
 
+/// Resolve a crate-relative fixture directory.
+///
+/// Cargo runs an integration test with the crate directory as the working
+/// directory, so a bare `tests/...` resolves as written. Bazel runs it from an
+/// execution root instead and stages the same files under
+/// `$TEST_SRCDIR/$TEST_WORKSPACE`, with `FIXTURE_ROOT` naming the package inside
+/// that tree. Absent those variables this is the Cargo path unchanged.
+fn fixture_root(relative: &str) -> String {
+    let (Ok(srcdir), Ok(workspace), Ok(package)) = (
+        std::env::var("TEST_SRCDIR"),
+        std::env::var("TEST_WORKSPACE"),
+        std::env::var("FIXTURE_ROOT"),
+    ) else {
+        return relative.to_owned();
+    };
+    format!("{srcdir}/{workspace}/{package}/{relative}")
+}
+
 datatest_stable::harness! {
-    { test = corpus_entry_round_trips, root = "tests/corpus", pattern = r".*\.hex$" },
+    { test = corpus_entry_round_trips, root = fixture_root("tests/corpus"), pattern = r".*\.hex$" },
 }

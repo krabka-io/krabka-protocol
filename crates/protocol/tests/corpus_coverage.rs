@@ -24,8 +24,33 @@ struct Meta {
     description: String,
 }
 
+/// The corpus directory, resolved against the working directory.
+///
+/// Cargo runs an integration test with the crate directory as the working
+/// directory, so `tests/corpus` resolves as written. Bazel runs it from an
+/// execution root instead and stages the corpus under
+/// `$TEST_SRCDIR/$TEST_WORKSPACE`, with `FIXTURE_ROOT` naming the package inside
+/// that tree.
+///
+/// It is read from the environment rather than expanded with `env!`, which bakes
+/// an absolute build path into the binary: `rules_rust` rejects such a binary
+/// outright, and it only works under Cargo when launched from the directory it
+/// was compiled in.
 fn corpus_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
+    let (Ok(srcdir), Ok(workspace), Ok(package)) = (
+        std::env::var("TEST_SRCDIR"),
+        std::env::var("TEST_WORKSPACE"),
+        std::env::var("FIXTURE_ROOT"),
+    ) else {
+        return PathBuf::from(
+            std::env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
+        )
+        .join("tests/corpus");
+    };
+    PathBuf::from(srcdir)
+        .join(workspace)
+        .join(package)
+        .join("tests/corpus")
 }
 
 fn load_meta(stem: &Path) -> Meta {

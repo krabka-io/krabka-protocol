@@ -61,25 +61,34 @@ the full sweep. Two things to know about the results:
 
 ## What does not run under Bazel
 
-`bazel test //...` runs 1597 tests plus 11 rustdoc examples. `cargo test
---workspace` runs 2220 plus the same 11. The whole difference is six suites
-tagged `manual`, 623 tests, listed below; nothing else is skipped.
+Nothing, apart from one recording tool. `bazel test //...` and
+`cargo test --workspace` run the same 2220 tests and the same 11 rustdoc
+examples.
 
-Each tagged suite carries a comment at its `crate_tests` call saying why:
+`capture_corpus` is tagged `manual`: it records new fixtures through the JVM
+oracle rather than reading them, so it is a tool rather than a test.
 
-* **JVM differential suites** (`differential_*`, `oracle_smoke`,
-  `capture_corpus`) drive the Gradle oracle in `tools/oracle`, which stayed in
-  the monorepo.
-* **`corpus_replay` (606), `kraft_rpc_roundtrip` (10),
-  `kraft_metadata_roundtrip` (4)** use `datatest-stable`, whose harness walks a
-  fixture directory and keeps only entries whose `file_type().is_file()`. Every
-  file Bazel stages in a runfiles tree is a symlink, so that filter discards all
-  of them and the harness reports an empty run rather than a failure. This is
-  the bulk of the gap, and closing it needs a change in `datatest-stable`.
-* **`corpus_coverage`** resolves `CARGO_MANIFEST_DIR` at run time, which
-  `rules_rust` rejects because it embeds an absolute build path in the binary.
-* **`gssapi_provider`** needs the KDC that `crates/security/tests/fixtures/kdc`
-  brings up under Docker. It is `#[ignore]`d under Cargo for the same reason.
+Suites needing Docker, the JVM oracle or an MIT KDC are `#[ignore]`d
+individually, so they build and skip under both build systems, the same way.
+
+Getting there took two things worth knowing about:
+
+* **`datatest-stable` is patched under Bazel.** Its fixture walk keeps only
+  entries whose `file_type().is_file()`, and `walkdir` does not follow symlinks
+  by default — so for the symlinks Bazel stages in a runfiles tree the predicate
+  is false, the walk finds nothing, and the harness reports an *empty run rather
+  than a failure*. That silently skipped 620 fixtures.
+  `bazel/patches/datatest-stable-follow-links.patch` adds `follow_links(true)`,
+  applied through `crate.annotation`; Cargo keeps using the released crate.
+* **Fixture paths resolve against the working directory.** Cargo runs an
+  integration test from the crate directory; Bazel runs it from an execution
+  root and stages data under `$TEST_SRCDIR/$TEST_WORKSPACE`. The suites that read
+  fixtures take a `FIXTURE_ROOT` prefix, set in their `crate_tests` call, and
+  fall back to the bare relative path when it is unset.
+
+Neither of these is Bazel-specific pedantry: a test that resolves
+`CARGO_MANIFEST_DIR` at run time, or reads a path relative to the working
+directory, only works when it is launched the way Cargo happens to launch it.
 
 ## Publishing
 

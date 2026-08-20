@@ -7,11 +7,4 @@ exports_files(["Cargo.toml"])
 
 crate_library(name = "compression")
 
-crate_tests(
-    lib = "compression",
-    # `differential` drives the JVM oracle under `tools/oracle`, which stayed in
-    # the monorepo. It also holds `env!("CARGO_MANIFEST_DIR")` past compile time
-    # to find that install, which rules_rust rejects as non-hermetic. Runs under
-    # Cargo, not here.
-    manual = ["differential"],
-)
+crate_tests(lib = "compression")

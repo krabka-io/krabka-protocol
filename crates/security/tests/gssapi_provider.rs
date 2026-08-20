@@ -35,9 +35,26 @@ const TARGET_SPN: &str = "kafka/localhost";
 const CLIENT_PRINCIPAL: &str = "alice@CRABKA.TEST";
 const CLIENT_KEYTAB_PATH: &str = "tests/fixtures/kdc/alice.keytab";
 
+/// Resolve a crate-relative fixture against the working directory.
+///
+/// Cargo runs an integration test with the crate directory as the working
+/// directory, so these paths resolve as written. Bazel runs it from an execution
+/// root instead and stages the same files under `$TEST_SRCDIR/$TEST_WORKSPACE`,
+/// with `FIXTURE_ROOT` naming the package inside that tree.
+fn fixture(relative: &str) -> String {
+    let (Ok(srcdir), Ok(workspace), Ok(package)) = (
+        std::env::var("TEST_SRCDIR"),
+        std::env::var("TEST_WORKSPACE"),
+        std::env::var("FIXTURE_ROOT"),
+    ) else {
+        return relative.to_owned();
+    };
+    format!("{srcdir}/{workspace}/{package}/{relative}")
+}
+
 #[test]
 fn acceptor_builds_with_explicit_clock_skew() {
-    SspiAcceptor::new(KEYTAB_PATH, SERVICE_NAME, secs(7)).expect("build acceptor");
+    SspiAcceptor::new(&fixture(KEYTAB_PATH), SERVICE_NAME, secs(7)).expect("build acceptor");
     assert_eq!(DEFAULT_GSSAPI_MAX_TIME_SKEW, secs(300));
 }
 
@@ -56,11 +73,19 @@ fn full_gssapi_handshake_and_wrap_roundtrip() {
         return;
     };
 
-    let mut acceptor = SspiAcceptor::new(KEYTAB_PATH, SERVICE_NAME, DEFAULT_GSSAPI_MAX_TIME_SKEW)
-        .expect("build acceptor");
-    let mut initiator =
-        SspiInitiator::new(CLIENT_KEYTAB_PATH, CLIENT_PRINCIPAL, TARGET_SPN, &kdc_url)
-            .expect("build initiator");
+    let mut acceptor = SspiAcceptor::new(
+        &fixture(KEYTAB_PATH),
+        SERVICE_NAME,
+        DEFAULT_GSSAPI_MAX_TIME_SKEW,
+    )
+    .expect("build acceptor");
+    let mut initiator = SspiInitiator::new(
+        &fixture(CLIENT_KEYTAB_PATH),
+        CLIENT_PRINCIPAL,
+        TARGET_SPN,
+        &kdc_url,
+    )
+    .expect("build initiator");
 
     // Drive the context-establishment loop: initiator produces a token, acceptor
     // consumes it, alternating until both sides report established.
