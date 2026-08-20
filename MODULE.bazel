@@ -22,6 +22,11 @@ git_override(
     commit = "fbc5c265b268cd050f2b392fbbf7ea4fb5b1a656",
 )
 
+# rules_rs vends its own patched @rules_rust. `rust_doc_test` has no rules_rs
+# wrapper, so it is loaded from there directly rather than from a second copy.
+rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+use_repo(rules_rust, "rules_rust")
+
 # ---------------------------------------------------------------------------
 # Rust toolchain — pinned to the same channel as rust-toolchain.toml.
 # ---------------------------------------------------------------------------

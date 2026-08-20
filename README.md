@@ -61,17 +61,21 @@ the full sweep. Two things to know about the results:
 
 ## What does not run under Bazel
 
-Some suites are tagged `manual` and run only under Cargo. Each carries a comment
-at its `crate_tests` call saying why; the reasons are:
+`bazel test //...` runs 1597 tests plus 11 rustdoc examples. `cargo test
+--workspace` runs 2220 plus the same 11. The whole difference is six suites
+tagged `manual`, 623 tests, listed below; nothing else is skipped.
+
+Each tagged suite carries a comment at its `crate_tests` call saying why:
 
 * **JVM differential suites** (`differential_*`, `oracle_smoke`,
   `capture_corpus`) drive the Gradle oracle in `tools/oracle`, which stayed in
   the monorepo.
-* **`corpus_replay`, `kraft_rpc_roundtrip`, `kraft_metadata_roundtrip`** use
-  `datatest-stable`, whose harness walks a fixture directory and keeps only
-  entries whose `file_type().is_file()`. Every file Bazel stages in a runfiles
-  tree is a symlink, so that filter discards all of them and the harness reports
-  an empty run. Fixing it needs a change in `datatest-stable`.
+* **`corpus_replay` (606), `kraft_rpc_roundtrip` (10),
+  `kraft_metadata_roundtrip` (4)** use `datatest-stable`, whose harness walks a
+  fixture directory and keeps only entries whose `file_type().is_file()`. Every
+  file Bazel stages in a runfiles tree is a symlink, so that filter discards all
+  of them and the harness reports an empty run rather than a failure. This is
+  the bulk of the gap, and closing it needs a change in `datatest-stable`.
 * **`corpus_coverage`** resolves `CARGO_MANIFEST_DIR` at run time, which
   `rules_rust` rejects because it embeds an absolute build path in the binary.
 * **`gssapi_provider`** needs the KDC that `crates/security/tests/fixtures/kdc`

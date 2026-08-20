@@ -12,6 +12,7 @@ load("@crates//:defs.bzl", "all_crate_deps", "crate_name", "edition")
 load("@rules_rs//rs:rust_binary.bzl", "rust_binary")
 load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_doc_test")
 load("@rules_rs_mutants//mutants:cargo_mutants_test.bzl", "cargo_mutants_test")
 
 # `[workspace.lints.rust] unsafe_code = "forbid"`. rules_rs 0.0.106 does not
@@ -91,6 +92,7 @@ def crate_tests(
         rustc_env = {},
         manual = [],
         no_harness = [],
+        doc_tests = True,
         mutants = True,
         mutants_jobs = 4,
         mutants_shards = 8,
@@ -106,6 +108,8 @@ def crate_tests(
       manual: test stems to tag `manual` — Docker-driven or otherwise
         non-hermetic suites, the Bazel equivalent of their `#[ignore]`.
       no_harness: test stems declared `harness = false` in Cargo.toml.
+      doc_tests: whether to emit a `rust_doc_test`. `cargo test` runs rustdoc
+        examples; without this they are simply not run.
       mutants: whether to emit a `cargo_mutants_test` over the unit tests.
       mutants_jobs: mutants built and tested concurrently within one shard.
       mutants_shards: Bazel shards the sweep is split across.
@@ -126,6 +130,13 @@ def crate_tests(
         tags = unit_tags,
         deps = all_crate_deps(normal_dev = True),
     )
+
+    if doc_tests:
+        rust_doc_test(
+            name = lib + "_doc_test",
+            crate = ":" + lib,
+            deps = all_crate_deps(normal_dev = True),
+        )
 
     if mutants:
         # `manual`: a full sweep rebuilds the crate once per mutant, so it runs
