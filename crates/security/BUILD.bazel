@@ -8,7 +8,6 @@ exports_files(["Cargo.toml"])
 crate_library(name = "security")
 
 crate_tests(
-    lib = "security",
     # The `#[cfg(test)]` TLS suites `include_str!` these at compile time; the
     # Kerberos suites read the keytabs at run time. Both lists are needed.
     compile_data = glob(["tests/fixtures/**"]),
@@ -17,4 +16,5 @@ crate_tests(
     # a test from an execution root rather than the crate directory, so hand them
     # the package path inside the runfiles tree.
     env = {"FIXTURE_ROOT": "crates/security"},
+    lib = "security",
 )

@@ -29,7 +29,7 @@ crate_library(
 )
 
 crate_tests(
-    lib = "protocol",
+    compile_data = GENERATED_SOURCES,
     data = glob([
         "tests/corpus/**",
         "tests/fixtures/**",
@@ -38,6 +38,7 @@ crate_tests(
     # directory. Bazel runs a test from an execution root rather than the crate
     # directory, so hand them the package path inside the runfiles tree.
     env = {"FIXTURE_ROOT": "crates/protocol"},
+    lib = "protocol",
     # The differential suites and `oracle_smoke` drive the JVM oracle under
     # `tools/oracle`, which stayed in the monorepo; `capture_corpus` records new
     # fixtures through it. All of them still run under Cargo.
@@ -49,6 +50,5 @@ crate_tests(
         "kraft_metadata_roundtrip",
         "kraft_rpc_roundtrip",
     ],
-    compile_data = GENERATED_SOURCES,
     rustc_env = MANIFEST_DIR,
 )

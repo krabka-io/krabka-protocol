@@ -39,6 +39,38 @@ bazel test //...
 cargo nextest run --workspace
 ```
 
+### Everything CI does, locally
+
+The [Aspect CLI](https://github.com/aspect-build/aspect-cli) narrows each task to
+what a change actually touched. Every one has a plain-Bazel equivalent, so the
+CLI is a convenience rather than a requirement:
+
+| | Aspect CLI | Plain Bazel |
+| --- | --- | --- |
+| Build | `aspect build //...` | `bazel build //...` |
+| Test | `aspect test //...` | `bazel test //...` |
+| Lint | `aspect lint` | `bazel build --config=lint //...` |
+| Format | `aspect format` | `bazel run //tools/format` |
+| Coverage | `aspect test --coverage` | `bazel coverage //crates/...` |
+| Docs | — | `bazel build //crates/protocol:protocol_doc` |
+
+Formatting and linting are Bazel targets rather than a separate `cargo fmt` /
+`cargo clippy` pass, so they see exactly the files and crates the build sees. A
+file in no target cannot drift unnoticed, and clippy resolves the same features
+the build resolves.
+
+Two details worth knowing:
+
+* **rustfmt runs on a pinned nightly.** `rustfmt.toml` uses
+  `format_code_in_doc_comments`, `group_imports` and `imports_granularity`, all
+  still nightly-gated; stable rustfmt warns and silently skips them. The nightly
+  is pinned in `MODULE.bazel`, so formatting is reproducible rather than a
+  function of whichever nightly is installed.
+* **`rustfmt.toml` states its edition.** `cargo fmt` passes `--edition` from
+  `Cargo.toml`; rustfmt invoked directly defaults to 2015 and sorts `use` lists
+  differently. Stating it makes formatting a property of the repository rather
+  than of how rustfmt was launched.
+
 ## Mutation testing
 
 Mutation sweeps run through
