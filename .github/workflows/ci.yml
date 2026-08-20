@@ -34,9 +34,16 @@ jobs:
   # A mutation sweep rebuilds and re-runs a crate's unit tests once per mutant,
   # so it is far too slow to gate a pull request. The targets carry `manual`
   # tags to stay out of `//...`; this job names them explicitly.
+  #
+  # `continue-on-error`: a surviving mutant fails the test target, and survivors
+  # are expected here rather than exceptional -- `cargo_mutants_test` runs only
+  # `#[cfg(test)]` unit tests, so every mutant that the `tests/*.rs` suites would
+  # have killed is reported as a survivor. The job exists to produce that list to
+  # read, not to gate. Make it blocking once the score is one worth defending.
   mutants:
     name: mutation sweep
     if: github.event_name == 'schedule'
+    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
