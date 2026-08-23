@@ -91,6 +91,31 @@ mod tests {
         );
     }
 
+    /// `read_correlation_id` needs exactly four bytes, and its guard is the one
+    /// place that decides. A body of exactly four is the shortest legal one and
+    /// must parse; three must be refused rather than indexed into. Together
+    /// those separate `<` from `<=` and from `==`.
+    #[test]
+    fn correlation_id_needs_exactly_four_bytes() {
+        assert2::check!(read_correlation_id(&7_i32.to_be_bytes()) == Some(7));
+        assert2::check!(read_correlation_id(&[0, 0, 0]) == None);
+        assert2::check!(read_correlation_id(&[]) == None);
+        // A longer body is a real response: the id is its first four bytes and
+        // the rest is payload.
+        assert2::check!(read_correlation_id(&[0, 0, 0, 9, 0xaa, 0xbb]) == Some(9));
+    }
+
+    /// The length guard is a strict `<`, and four bytes is exactly enough. Read
+    /// as `<=` that body is refused; read as `==` it is refused while a
+    /// three-byte body falls through to index past its end.
+    #[test]
+    fn correlation_id_needs_four_bytes_and_four_is_enough() {
+        assert2::check!(read_correlation_id(&7i32.to_be_bytes()) == Some(7));
+        assert2::check!(read_correlation_id(&[0, 0, 0, 1, 0xff]) == Some(1));
+        assert2::check!(read_correlation_id(&[0, 0, 0]) == None);
+        assert2::check!(read_correlation_id(&[]) == None);
+    }
+
     #[test]
     fn correlates_response_by_id() {
         let mut pending = Pending::default();

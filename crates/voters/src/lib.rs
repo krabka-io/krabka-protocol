@@ -156,7 +156,11 @@ mod tests {
                 set.get(NodeId(1)),
                 set.get(NodeId(99)),
                 set.iter().count(),
-            ) == (2, false, Some(&sample(NodeId(1))), None, 2)
+                // Both a present and an absent id: a `contains` stuck at either
+                // answer is still right about half the membership questions.
+                set.contains(NodeId(1)),
+                set.contains(NodeId(99)),
+            ) == (2, false, Some(&sample(NodeId(1))), None, 2, true, false)
         );
 
         let empty = VoterSet::default();

@@ -384,6 +384,28 @@ impl_primitive_cmp!(ApiVersion, i16);
 mod tests {
     use super::{ApiKey, ApiVersion, LeaderEpoch, NodeId, Offset, PartitionIndex, ProducerId};
 
+    /// `Offset` carries the three arithmetic impls the log uses to walk a
+    /// partition, and none of them had a test. The operands below are chosen so
+    /// that every replacement lands somewhere else: with 10 and 3, `+` gives 13
+    /// where `*` gives 30, `-` gives 7 and a defaulted return gives 0, and the
+    /// same three values separate `-` from `+` and `/`. `add_assign` is checked
+    /// against the value it started from, which is what a body replaced by `()`
+    /// would leave behind.
+    #[test]
+    fn offset_arithmetic_moves_by_the_operand() {
+        assert2::check!(Offset(10) + 3 == Offset(13));
+        assert2::check!(Offset(10) - 3 == Offset(7));
+
+        let mut offset = Offset(10);
+        offset += 3;
+        assert2::check!(offset == Offset(13));
+
+        // Walking backwards past a positive value, and across zero, is what the
+        // log start does after a retention delete.
+        assert2::check!(Offset(2) - 5 == Offset(-3));
+        assert2::check!(Offset::ZERO + 1 == Offset(1));
+    }
+
     #[test]
     fn accessors_and_advance_return_the_inner_value() {
         assert2::assert!(Offset(9).get() == 9);
