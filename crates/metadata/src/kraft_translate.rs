@@ -1998,6 +1998,96 @@ mod tests {
         round_trip(&rec, &img());
     }
 
+    /// KIP-966 eligible-leader-replica state is refused, and either field
+    /// alone is enough to refuse it. Read as `&&`, a change carrying only one
+    /// of the two is accepted and its ELR state silently dropped -- the exact
+    /// data the guard exists to refuse to model.
+    #[test]
+    fn either_elr_field_alone_is_refused() {
+        // The guard sits behind a topic lookup, a partition lookup and the
+        // recovery-state check, so the change has to be otherwise valid for the
+        // ELR refusal to be the one that fires.
+        let topic_id = uuid::Uuid::from_u128(1);
+        let mut image = img();
+        image.apply(&MetadataRecord::V1Topic(TopicRecord {
+            name: "orders".into(),
+            topic_id,
+            partitions: 1,
+            replication_factor: 1,
+        }));
+        image.apply(&MetadataRecord::V1Partition(PartitionRecord {
+            topic: "orders".into(),
+            partition: 0,
+            leader: NodeId(1),
+            replicas: vec![NodeId(1)],
+            isr: vec![NodeId(1)],
+            leader_epoch: LeaderEpoch(1),
+            adding_replicas: vec![],
+            removing_replicas: vec![],
+            directories: vec![],
+            partition_epoch: 1,
+        }));
+
+        let change = |elr: Option<Vec<i32>>, last_known: Option<Vec<i32>>| {
+            KraftMetadataRecord::PartitionChange(KPartitionChangeRecord {
+                topic_id: to_kuuid(topic_id),
+                partition_id: 0,
+                leader_recovery_state: -1,
+                eligible_leader_replicas: elr,
+                last_known_elr: last_known,
+                ..Default::default()
+            })
+        };
+
+        // Without either field the same change is accepted, so the refusals
+        // below are the guard firing and not the setup failing.
+        check!(from_kraft(&change(None, None), &image).is_ok());
+
+        // Assert the *specific* refusal, not merely that something failed: a
+        // change against an empty image fails for other reasons too, which is
+        // what an `is_err()` on its own would have accepted.
+        let refused_for_elr = |elr, last_known| {
+            matches!(
+                from_kraft(&change(elr, last_known), &image),
+                Err(TranslateError::Invalid { field, .. })
+                    if field == "partition change eligible leader replicas"
+            )
+        };
+
+        check!(refused_for_elr(Some(vec![1]), None));
+        check!(refused_for_elr(None, Some(vec![1])));
+        check!(refused_for_elr(Some(vec![1]), Some(vec![2])));
+    }
+
+    /// The ACL id is a content hash: it is what a later RemoveAccessControlEntry
+    /// matches against to find the entry it deletes. Dropped, every entry
+    /// translates with the same defaulted id, so distinct ACLs become
+    /// indistinguishable -- which the round-trip above does not notice, because
+    /// it reconstructs the entry from the other fields.
+    #[test]
+    fn distinct_acls_translate_to_distinct_ids() {
+        let entry = |operation, resource_name: &str| crate::AclEntry {
+            resource_type: ResourceType::Topic,
+            resource_name: resource_name.into(),
+            pattern_type: PatternType::Literal,
+            principal: "User:alice".into(),
+            host: "*".into(),
+            operation,
+            permission_type: PermissionType::Allow,
+        };
+        let id_of = |e: &crate::AclEntry| {
+            let KraftMetadataRecord::AccessControlEntry(r) = acl_to_kraft(e) else {
+                panic!("expected an access control entry");
+            };
+            r.id
+        };
+
+        let read_foo = id_of(&entry(AclOperation::Read, "foo"));
+        check!(read_foo == id_of(&entry(AclOperation::Read, "foo")));
+        check!(read_foo != id_of(&entry(AclOperation::Write, "foo")));
+        check!(read_foo != id_of(&entry(AclOperation::Read, "bar")));
+    }
+
     #[test]
     fn access_control_entry_round_trips() {
         let rec = MetadataRecord::V1AccessControlEntry(AclEntry {
@@ -2737,6 +2827,10 @@ mod tests {
                     RemoveAccessControlEntryRecord::default(),
                 ),
                 "RemoveAccessControlEntry",
+            ),
+            (
+                KraftMetadataRecord::PartitionChange(KPartitionChangeRecord::default()),
+                "PartitionChange",
             ),
             (
                 KraftMetadataRecord::Unknown {

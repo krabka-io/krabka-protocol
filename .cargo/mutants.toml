@@ -80,4 +80,12 @@ exclude_re = [
     # "replace < with <= in Type::method" -- which is a third shape again,
     # different from both the whole-function and the match-guard forms above.
     "image\\.rs:821:45: replace < with <= in MetadataImage::apply$",
+
+    # `version < 4` guards clearing `cordoned_log_dirs` before encoding a
+    # downgraded RegisterBroker. The field appears nowhere else in this crate:
+    # Crabka never populates it, so it is already `None` and the assignment is a
+    # no-op whichever way the comparison reads. The guard is defensive against a
+    # future encoder that does carry it, and until something sets the field no
+    # test can tell these apart.
+    "kraft_translate\\.rs:471:28: replace < with (==|>|<=) in to_kraft_values$",
 ]
