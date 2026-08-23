@@ -418,6 +418,10 @@ mod tests {
             ("transaction.version", (0, 3), 2, 0),
             ("share.version", (0, 1), 0, 0),
             ("streams.version", (0, 1), 0, 0),
+            // Registered like the rest, though it is finalized by a KRaft
+            // control record rather than by UpdateFeatures. Leaving it out of
+            // this table left its name, range and default entirely unasserted.
+            ("kraft.version", (0, 1), 0, 0),
         ];
 
         for (name, range, default_at_25, floor) in expected {
