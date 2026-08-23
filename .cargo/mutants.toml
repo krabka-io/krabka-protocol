@@ -88,4 +88,30 @@ exclude_re = [
     # future encoder that does carry it, and until something sets the field no
     # test can tell these apart.
     "kraft_translate\\.rs:471:28: replace < with (==|>|<=) in to_kraft_values$",
+
+    # `at_end` guards `while !reader.at_end()` in the keytab parser, but the
+    # loop body already breaks when the size read comes back `Truncated`. Forced
+    # false, the loop runs one extra iteration at end of file, that read fails,
+    # and it breaks with the same entries. Forced *true* is a real mutant --
+    # nothing would parse -- and stays in scope.
+    "keytab\\.rs:89:9: replace Reader<'a>::at_end -> bool with false$",
+
+    # The SSPI wrap/unwrap/handshake path in gssapi/provider.rs. Every one of
+    # these takes a live `Kerberos` context, which cannot be built without a
+    # KDC, so no `#[cfg(test)]` unit test can reach them.
+    #
+    # They are not untested: crates/security/tests/gssapi_provider.rs drives
+    # accept, step, wrap, unwrap and src_principal against a real KDC. That
+    # suite is `#[ignore]`d behind a container fixture, and `cargo_mutants_test`
+    # runs only unit tests -- so the coverage exists and this harness cannot see
+    # it. Excluded so a red sweep here means "a unit-testable survivor", which
+    # is a signal worth having.
+    #
+    # Matched without a leading `replace`, because these appear under several
+    # name shapes -- whole-function replacements, and `delete ! in <fn>` for the
+    # negations inside the handshake loops.
+    #
+    # `kdc_url_from_env` and `is_established` in the same file are pure and stay
+    # in scope.
+    "provider\\.rs.*(gss_(un)?wrap|<impl Gss(Acceptor for SspiAcceptor|Initiator for SspiInitiator)>::(accept|step|wrap|unwrap|src_principal))",
 ]

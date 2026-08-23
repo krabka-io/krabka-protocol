@@ -341,3 +341,44 @@ impl GssInitiator for SspiInitiator {
         gss_unwrap(&mut client, token)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::check;
+
+    use super::*;
+
+    /// The KDC URL is read from the environment with a default, and this file
+    /// had no tests at all: a function answering a constant string points every
+    /// acceptor at the wrong KDC while still looking configured.
+    ///
+    /// Only the default branch is asserted. Setting the variable would need
+    /// `unsafe` under the 2024 edition, which this workspace forbids, and the
+    /// process environment is shared with every other test in the binary
+    /// anyway.
+    #[test]
+    fn kdc_url_falls_back_to_the_default() {
+        if std::env::var("SSPI_KDC_URL").is_ok() {
+            return;
+        }
+        check!(kdc_url_from_env() == DEFAULT_KDC_URL);
+    }
+
+    /// `is_established` decides whether the handshake is finished or owes
+    /// another round trip. Stuck at either answer it either hangs a completed
+    /// handshake or accepts an unfinished one as authenticated.
+    #[test]
+    fn only_completing_statuses_count_as_established() {
+        for status in [
+            SecurityStatus::Ok,
+            SecurityStatus::CompleteNeeded,
+            SecurityStatus::CompleteAndContinue,
+        ] {
+            check!(is_established(status), "{status:?} completes the handshake");
+        }
+        check!(
+            !is_established(SecurityStatus::ContinueNeeded),
+            "ContinueNeeded owes another round trip"
+        );
+    }
+}

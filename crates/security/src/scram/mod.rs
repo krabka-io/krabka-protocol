@@ -241,6 +241,37 @@ mod tests {
     use super::*;
 
     /// SHA-512 PBKDF2 vector + verify `stored_key = H(client_key)`.
+    /// `ScramIterations` is a validated newtype whose whole job is to carry a
+    /// number the broker will accept, and nothing read one back out: an
+    /// `into_value` answering a constant, a `Display` writing nothing, and a
+    /// `from_str` returning the default all describe an iteration count that
+    /// was never the one asked for.
+    #[test]
+    fn scram_iterations_round_trip_through_value_text_and_parse() {
+        let iterations = ScramIterations::new(MIN_SCRAM_ITERATIONS + 1).expect("in range");
+        check!(iterations.into_value() == MIN_SCRAM_ITERATIONS + 1);
+        check!(iterations.to_string() == (MIN_SCRAM_ITERATIONS + 1).to_string());
+        check!(
+            (MIN_SCRAM_ITERATIONS + 1)
+                .to_string()
+                .parse::<ScramIterations>()
+                == Ok(iterations)
+        );
+
+        check!(ScramIterations::default().into_value() == DEFAULT_SCRAM_ITERATIONS);
+        check!(
+            ScramIterations::new(MAX_SCRAM_ITERATIONS)
+                .expect("the maximum is in range")
+                .into_value()
+                == MAX_SCRAM_ITERATIONS
+        );
+
+        // Outside the broker's range, and not a number at all.
+        check!(ScramIterations::new(MIN_SCRAM_ITERATIONS - 1).is_err());
+        check!(ScramIterations::new(MAX_SCRAM_ITERATIONS + 1).is_err());
+        check!("not-a-number".parse::<ScramIterations>().is_err());
+    }
+
     #[test]
     fn hash_scram_password_produces_expected_keys() {
         let password = b"pencil";
