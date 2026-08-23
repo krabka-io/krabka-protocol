@@ -1170,6 +1170,165 @@ mod tests {
     /// `record_variant` maps each enum variant to its exact discriminant
     /// name. Assertions on concrete mappings kill whole-fn replacements, for
     /// example a return of `""` or of a constant.
+    /// Three readers on the image had no caller in any test: a
+    /// `group_configs` or `controllers` replaced by an empty iterator, and a
+    /// `controller` replaced by `None`, all describe a cluster with nothing
+    /// registered -- which is what an image looks like before any record is
+    /// applied, so nothing else notices.
+    #[test]
+    fn group_config_and_controller_readers_report_applied_records() {
+        let mut image = MetadataImage::new(Uuid::nil());
+        image.apply(&MetadataRecord::V1GroupConfig(
+            crate::records::GroupConfigRecord {
+                group_id: "streams-app".into(),
+                configs: BTreeMap::from([("streams.num.standby.replicas".into(), "1".into())]),
+            },
+        ));
+        image.apply(&MetadataRecord::V1ControllerRegistration(
+            crate::records::ControllerRegistrationRecord {
+                node_id: NodeId(3),
+                incarnation_id: Uuid::from_u128(7),
+                zk_migration_ready: false,
+                endpoints: Vec::new(),
+                features: BTreeMap::new(),
+            },
+        ));
+
+        let groups: Vec<_> = image
+            .group_configs()
+            .map(|(id, cfg)| (id.clone(), cfg.clone()))
+            .collect();
+        check!(
+            groups
+                == vec![(
+                    "streams-app".to_string(),
+                    BTreeMap::from([("streams.num.standby.replicas".to_string(), "1".to_string())])
+                )]
+        );
+
+        let ids: Vec<_> = image.controllers().map(|c| c.node_id).collect();
+        check!(ids == vec![NodeId(3)]);
+
+        // Present and absent, so a reader stuck on `None` is not merely right
+        // about the node that is missing.
+        check!(image.controller(NodeId(3)).map(|c| c.incarnation_id) == Some(Uuid::from_u128(7)));
+        check!(image.controller(NodeId(99)).is_none());
+    }
+
+    /// Deleting a topic drops that topic's offset sequencer state and leaves
+    /// every other topic's alone. The retain predicate is what decides which is
+    /// which: inverted, deleting one topic keeps only that topic's offsets and
+    /// discards the rest of the cluster's.
+    #[test]
+    fn deleting_a_topic_drops_only_its_own_partition_offsets() {
+        let mut image = MetadataImage::new(Uuid::nil());
+        for topic in ["orders", "payments"] {
+            image.apply(&MetadataRecord::V1PartitionOffsetAdvance(
+                crate::records::PartitionOffsetAdvanceRecord {
+                    topic: topic.into(),
+                    partition: 0,
+                    count: 5,
+                },
+            ));
+        }
+        check!(
+            (
+                image.partition_next_offset("orders", 0),
+                image.partition_next_offset("payments", 0),
+            ) == (Some(5), Some(5))
+        );
+
+        image.apply(&MetadataRecord::V1DeleteTopic(
+            crate::records::DeleteTopicRecord {
+                name: "orders".into(),
+            },
+        ));
+        check!(
+            (
+                image.partition_next_offset("orders", 0),
+                image.partition_next_offset("payments", 0),
+            ) == (None, Some(5))
+        );
+    }
+
+    fn broker_at(node_id: NodeId, epoch: i64) -> MetadataRecord {
+        MetadataRecord::V1BrokerRegistration(crate::records::BrokerRegistrationRecord {
+            node_id,
+            broker_epoch: epoch,
+            incarnation_id: Uuid::nil(),
+            host: "h".into(),
+            port: 9092,
+            rack: None,
+            log_dirs: vec![],
+            endpoints: vec![],
+            features: BTreeMap::new(),
+        })
+    }
+
+    /// `validate` gates producer-ID allocation on two conditions, and both
+    /// boundaries were unasserted: the id must strictly advance, and the
+    /// record's broker epoch must be the epoch the image holds. Inverted, the
+    /// first accepts exactly the replays it exists to reject, and the second
+    /// accepts only the stale epochs.
+    #[test]
+    fn producer_id_allocation_must_advance_and_carry_the_live_epoch() {
+        let mut image = MetadataImage::new(Uuid::nil());
+        image.apply(&broker_at(NodeId(1), 11));
+        image.apply(&MetadataRecord::V1ProducerIds(
+            crate::records::ProducerIdsRecord {
+                broker_id: NodeId(1),
+                broker_epoch: 11,
+                next_producer_id: 1000,
+            },
+        ));
+
+        let allocation = |next: i64, epoch: i64| {
+            MetadataRecord::V1ProducerIds(crate::records::ProducerIdsRecord {
+                broker_id: NodeId(1),
+                broker_epoch: epoch,
+                next_producer_id: next,
+            })
+        };
+
+        check!(image.validate(&allocation(2000, 11)).is_ok());
+        // Equal is not an advance, and neither is going backwards.
+        check!(image.validate(&allocation(1000, 11)).is_err());
+        check!(image.validate(&allocation(999, 11)).is_err());
+        // A stale epoch is refused even when the id does advance.
+        check!(image.validate(&allocation(2000, 10)).is_err());
+    }
+
+    /// `apply` keeps the higher allocation and drops the rest. At equality it
+    /// keeps what it has, so a record carrying the same id from another broker
+    /// must not displace the one already recorded -- which only the snapshot
+    /// shows, since the id itself is unchanged either way.
+    #[test]
+    fn an_equal_producer_id_allocation_does_not_replace_the_recorded_one() {
+        let mut image = MetadataImage::new(Uuid::nil());
+        image.apply(&broker_at(NodeId(1), 11));
+        image.apply(&broker_at(NodeId(2), 22));
+        let original = crate::records::ProducerIdsRecord {
+            broker_id: NodeId(1),
+            broker_epoch: 11,
+            next_producer_id: 1000,
+        };
+        image.apply(&MetadataRecord::V1ProducerIds(original));
+        image.apply(&MetadataRecord::V1ProducerIds(
+            crate::records::ProducerIdsRecord {
+                broker_id: NodeId(2),
+                broker_epoch: 22,
+                next_producer_id: 1000,
+            },
+        ));
+
+        let recorded: Vec<_> = image
+            .to_records()
+            .into_iter()
+            .filter(|r| matches!(r, MetadataRecord::V1ProducerIds(_)))
+            .collect();
+        check!(recorded == vec![MetadataRecord::V1ProducerIds(original)]);
+    }
+
     #[test]
     fn record_variant_returns_exact_discriminant_names() {
         let topic = MetadataRecord::V1Topic(TopicRecord {
@@ -2979,6 +3138,25 @@ mod tests {
             max_timestamp_ms: 10,
             renewers: vec![],
         }));
+
+        // At the level that introduced each feature the state is still
+        // supported, so nothing is cleaned up. Read as `target <= MIN_LEVEL`,
+        // a downgrade *to* the introducing level deletes the very credentials
+        // and tokens that level exists to support.
+        assert2::assert!(
+            image
+                .metadata_version_downgrade_records(SCRAM_MIN_LEVEL)
+                .iter()
+                .all(|r| !matches!(r, MetadataRecord::V1DeleteScramCredential(_)))
+        );
+        assert2::assert!(
+            image
+                .metadata_version_downgrade_records(
+                    crate::metadata_version::DELEGATION_TOKEN_MIN_LEVEL
+                )
+                .iter()
+                .all(|r| !matches!(r, MetadataRecord::V1DeleteDelegationToken(_)))
+        );
 
         let cleanup = image.metadata_version_downgrade_records(SCRAM_MIN_LEVEL - 1);
         assert2::assert!(

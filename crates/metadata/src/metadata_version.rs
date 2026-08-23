@@ -272,6 +272,18 @@ mod tests {
         }
     }
 
+    /// The table is compared as whole structs elsewhere, which checks the
+    /// fields but never calls the accessors that read them back. `short()`
+    /// answering a constant is what the release-version parsing keys off.
+    #[test]
+    fn accessors_return_the_table_entry() {
+        let v = from_feature_level(25).expect("level 25 is in the table");
+        assert2::check!((v.feature_level(), v.ivn(), v.short()) == (25, "4.0-IV3", "4.0"));
+
+        let earliest = from_feature_level(7).expect("level 7 is in the table");
+        assert2::check!((earliest.ivn(), earliest.short()) == ("3.3-IV3", "3.3"));
+    }
+
     #[test]
     fn from_version_string_exact_ivn() {
         for (_case, s, want) in [

@@ -32,4 +32,52 @@ exclude_re = [
     # live in src/gzip.rs and friends as plain `compress`/`decompress`, so they
     # stay in scope.
     "src/lib\\.rs.*replace (gzip|snappy|lz4|zstd)_(de)?compress",
+
+    # ------------------------------------------------------------------
+    # Equivalent mutants in metadata/src/feature.rs: each replacement below
+    # produces the value the function already returns, so nothing can observe
+    # the difference and no test can kill them.
+    #
+    # NOTE ON WRITING THESE: the name a pattern is matched against carries the
+    # return type between the function and `with` --
+    #
+    #   replace Feature::dependencies -> &'static[(&'static str, i16)] with ...
+    #
+    # while the failure output prints a shortened form without it. A pattern
+    # copied from that output never matches. `cargo-mutants --list` prints the
+    # real names; the `.*` below bridges the return type.
+    # ------------------------------------------------------------------
+
+    # GROUP_VERSION, SHARE_VERSION and STREAMS_VERSION are all MIN = 0, MAX = 1,
+    # so a range rewritten to the literal `(0, 1)` is the same range, and a
+    # default rewritten to `0` is the same level.
+    "replace <impl Feature for (Group|Share|Streams)VersionFeature>::supported_range .* with \\(0, 1\\)$",
+    "replace <impl Feature for (Share|Streams)VersionFeature>::default_level .* with 0$",
+
+    # The default `min_required_floor` returns `supported_range().0`. Every
+    # feature inheriting it has a supported min of 0; metadata.version, the one
+    # with a floor of 7, overrides the method.
+    "replace Feature::min_required_floor .* with 0$",
+
+    # The default `dependencies` returns `&[]`, and `Vec::leak(Vec::new())` is
+    # also an empty slice. Only the empty replacement is equivalent -- the
+    # `vec![("xyzzy", 1)]` variants beside it are real mutants.
+    "replace Feature::dependencies .* with Vec::leak\\(Vec::new\\(\\)\\)$",
+
+    # TV1_METADATA_LEVEL and TV2_METADATA_LEVEL are both 24, so the `>= TV2` arm
+    # above already matches everything this guard could. Forced false, control
+    # falls to the same `_ => 0`. Forced *true* is a real mutant and stays in
+    # scope: below level 24 it would return 1 where the feature returns 0.
+    "replace match guard level >= TV1_METADATA_LEVEL with false in <impl Feature for TransactionVersionFeature>::default_level$",
+
+    # `pr.directories.len() < pr.replicas.len()` guards a `resize` that grows
+    # the directory vector to match the replica list. Read as `<=`, the extra
+    # case is the one where the lengths are already equal, and resizing to the
+    # length it already has does nothing. `>` and `==` beside it are real
+    # mutants and stay in scope, so this is pinned to the operator and the site.
+    #
+    # A binary-operator mutant names its function *after* the replacement --
+    # "replace < with <= in Type::method" -- which is a third shape again,
+    # different from both the whole-function and the match-guard forms above.
+    "image\\.rs:821:45: replace < with <= in MetadataImage::apply$",
 ]
