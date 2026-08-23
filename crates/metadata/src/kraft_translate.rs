@@ -1776,6 +1776,97 @@ mod tests {
         round_trip(&rec, &image);
     }
 
+    /// Partition records frame at v2 once ELR is available, v1 once directory
+    /// assignment is, and v0 below that. Nothing pinned that ladder: with the
+    /// first guard forced true every image emits v2, and with the second forced
+    /// either way the middle rung merges into one of its neighbours -- each of
+    /// which writes a partition record a Kafka at the target version is
+    /// required not to understand.
+    #[test]
+    fn partition_records_frame_at_the_version_the_image_allows() {
+        use crate::metadata_version::{DIRECTORY_ASSIGNMENT_MIN_LEVEL, ELR_MIN_LEVEL};
+
+        let rec = MetadataRecord::V1Partition(PartitionRecord {
+            topic: "orders".into(),
+            partition: 0,
+            leader: NodeId(1),
+            replicas: vec![NodeId(1)],
+            isr: vec![NodeId(1)],
+            leader_epoch: LeaderEpoch(7),
+            adding_replicas: vec![],
+            removing_replicas: vec![],
+            directories: vec![],
+            partition_epoch: 42,
+        });
+
+        for (level, want) in [
+            (ELR_MIN_LEVEL, 2_i16),
+            (ELR_MIN_LEVEL - 1, 1),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL, 1),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1, 0),
+        ] {
+            let mut image = img();
+            image.apply(&MetadataRecord::V1Topic(TopicRecord {
+                name: "orders".into(),
+                topic_id: uuid::Uuid::from_u128(1),
+                partitions: 1,
+                replication_factor: 1,
+            }));
+            image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
+                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                level,
+            }));
+
+            let value = to_kraft_values(&rec, &image).unwrap().remove(0);
+            let (_, version) = KraftMetadataRecord::decode_value(&value).unwrap();
+            check!(version == want, "metadata.version {level}");
+        }
+    }
+
+    /// Broker and controller registrations carry a supported-version map and,
+    /// for controllers, endpoints and the ZK-migration flag. Every round trip
+    /// so far left those empty or defaulted, so dropping a feature's name or
+    /// either version bound, an endpoint's security protocol, or the migration
+    /// flag changed nothing any test looked at -- and each is what a JVM
+    /// controller reads to decide what the peer can speak.
+    #[test]
+    fn registration_features_and_endpoints_survive_translation() {
+        let image = img();
+
+        let broker = MetadataRecord::V1BrokerRegistration(BrokerRegistrationRecord {
+            node_id: NodeId(1),
+            broker_epoch: 5,
+            incarnation_id: uuid::Uuid::from_u128(3),
+            host: "127.0.0.1".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![],
+            features: std::collections::BTreeMap::from([
+                ("metadata.version".to_string(), (7_i16, 25_i16)),
+                ("kraft.version".to_string(), (0, 1)),
+            ]),
+        });
+        round_trip(&broker, &image);
+
+        let controller = MetadataRecord::V1ControllerRegistration(ControllerRegistrationRecord {
+            node_id: NodeId(3),
+            incarnation_id: uuid::Uuid::from_u128(9),
+            zk_migration_ready: true,
+            endpoints: vec![crate::records::BrokerEndpoint {
+                name: "CONTROLLER".into(),
+                host: "controller-3".into(),
+                port: 9093,
+                protocol: crabka_security::ListenerProtocol::SaslSsl,
+            }],
+            features: std::collections::BTreeMap::from([(
+                "kraft.version".to_string(),
+                (0_i16, 1_i16),
+            )]),
+        });
+        round_trip(&controller, &image);
+    }
+
     #[test]
     fn unregister_broker_round_trips() {
         let rec = MetadataRecord::V1UnregisterBroker(UnregisterBrokerRecord {
