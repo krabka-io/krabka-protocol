@@ -296,6 +296,27 @@ mod tests {
         assert2::check!(policy.output_limit(mebibytes(11)) == gibibytes(1));
     }
 
+    /// Every existing test reaches the policy through `default()` or
+    /// `output_limit()`, so nothing asserted that `new()` accepts a valid
+    /// policy, and nothing read the three accessors back.
+    ///
+    /// Both halves matter. `validated_whole_bytes` rejects fractional byte
+    /// counts through `raw.fract() != 0.0`; read as `== 0.0`, or with the
+    /// `!is_finite()` guard beside it inverted, it rejects the whole numbers
+    /// instead -- which only a successful construction notices, because the
+    /// existing test asserts that bad input is refused, not that good input is
+    /// taken. Reading the accessors back is what distinguishes them from
+    /// `Default::default()`, which for these types is a plausible-looking zero.
+    #[test]
+    fn record_policy_accepts_whole_byte_bounds_and_reports_them_back() {
+        let policy = RecordDecompressionPolicy::new(fraction(50.0), mebibytes(8), gibibytes(1))
+            .expect("a finite in-range ratio with whole-byte bounds is a valid policy");
+
+        assert2::check!(policy.max_ratio() == fraction(50.0));
+        assert2::check!(policy.output_floor() == mebibytes(8));
+        assert2::check!(policy.output_ceiling() == gibibytes(1));
+    }
+
     #[test]
     fn record_policy_rejects_invalid_or_weakened_security_bounds() {
         for result in [

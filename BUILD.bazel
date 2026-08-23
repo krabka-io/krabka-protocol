@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 
 # Consumed by `crate.from_cargo` (see //MODULE.bazel).
 exports_files([
+    ".cargo/mutants.toml",
     "Cargo.lock",
     "Cargo.toml",
     "clippy.toml",

@@ -19,3 +19,17 @@ exclude_globs = [
     # to mutate, and ~200k lines of it.
     "crates/protocol/generated/**",
 ]
+
+exclude_re = [
+    # The `#[cfg(not(feature = "..."))]` codec stubs in compression/src/lib.rs,
+    # each of which just returns `FeatureDisabled`. All four codecs are default
+    # features and `bazel cquery` confirms flate2, snap, lz4_flex and zstd are
+    # in the build, so this text is not compiled -- mutating it cannot change
+    # behaviour, and cargo-mutants reports the no-op as a survivor rather than
+    # as unviable. No test can kill a mutant in code that is not built.
+    #
+    # Anchored on lib.rs and on the prefixed names: the real implementations
+    # live in src/gzip.rs and friends as plain `compress`/`decompress`, so they
+    # stay in scope.
+    "src/lib\\.rs.*replace (gzip|snappy|lz4|zstd)_(de)?compress",
+]
