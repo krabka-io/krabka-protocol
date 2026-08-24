@@ -17,6 +17,12 @@
 //! Both implement [`Encode`]. The owned flavor implements [`Decode`] and the
 //! borrowed flavor implements [`DecodeBorrow`].
 //!
+//! ## Krabka-private messages
+//!
+//! [`krabka`] holds the hand-written messages that Apache Kafka does not define.
+//! Their api keys sit at 1000 and above, so a later Kafka assignment cannot
+//! collide with them.
+//!
 //! ## Versioning
 //!
 //! `crabka-protocol` is pre-1.0. Breaking API changes are allowed per minor
@@ -45,6 +51,7 @@ mod codec;
 pub mod codegen_helpers;
 mod error;
 pub mod kafka_3_6_2;
+pub mod krabka;
 pub mod legacy_compat;
 pub mod owned;
 pub mod primitives;
