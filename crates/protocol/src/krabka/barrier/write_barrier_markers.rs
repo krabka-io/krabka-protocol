@@ -13,9 +13,8 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::barrier::common::{
-        I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array, decode_i32_array,
-        encode_array, encode_i32_array, i32_array_len, read_unknown_tagged_fields,
-        unknown_tagged_fields_len, write_unknown_tagged_fields,
+        I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array, encode_array,
+        read_unknown_tagged_fields, unknown_tagged_fields_len, write_unknown_tagged_fields,
     },
     primitives::{
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
@@ -42,37 +41,85 @@ pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
 
-/// The partitions of one topic for the target broker to mark.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct WritableBarrierTopic {
-    /// Topic name.
-    pub topic: String,
-    /// Partition indexes that the target broker leads.
-    pub partitions: Vec<i32>,
+/// One partition for the target broker to mark, and its expected leader epoch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WritableBarrierPartition {
+    /// Partition index within the topic.
+    pub partition: i32,
+    /// Leader epoch that the coordinator read for this partition when it froze
+    /// the target set. The target broker compares this epoch against its own
+    /// leader epoch, and it rejects a mismatch with `FENCED_LEADER_EPOCH`. `-1`
+    /// means the coordinator had no epoch for this partition, and the target
+    /// broker does not fence on it.
+    pub expected_leader_epoch: i32,
     /// Tagged fields that this build does not know.
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 
-impl Encode for WritableBarrierTopic {
+impl Default for WritableBarrierPartition {
+    fn default() -> Self {
+        Self {
+            partition: 0,
+            expected_leader_epoch: -1,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
+}
+
+impl Encode for WritableBarrierPartition {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.topic);
-        encode_i32_array(buf, &self.partitions);
+        put_i32(buf, self.partition);
+        put_i32(buf, self.expected_leader_epoch);
         write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
         Ok(())
     }
 
     fn encoded_len(&self, _version: i16) -> usize {
+        I32_LEN + I32_LEN + unknown_tagged_fields_len(&self.unknown_tagged_fields)
+    }
+}
+
+impl Decode<'_> for WritableBarrierPartition {
+    fn decode<B: Buf>(buf: &mut B, _version: i16) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            partition: get_i32(buf)?,
+            expected_leader_epoch: get_i32(buf)?,
+            unknown_tagged_fields: read_unknown_tagged_fields(buf)?,
+        })
+    }
+}
+
+/// The partitions of one topic for the target broker to mark.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WritableBarrierTopic {
+    /// Topic name.
+    pub topic: String,
+    /// One entry for each partition that the target broker leads.
+    pub partitions: Vec<WritableBarrierPartition>,
+    /// Tagged fields that this build does not know.
+    pub unknown_tagged_fields: UnknownTaggedFields,
+}
+
+impl Encode for WritableBarrierTopic {
+    fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
+        put_compact_string(buf, &self.topic);
+        encode_array(buf, &self.partitions, version)?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        Ok(())
+    }
+
+    fn encoded_len(&self, version: i16) -> usize {
         compact_string_len(&self.topic)
-            + i32_array_len(&self.partitions)
+            + array_len(&self.partitions, version)
             + unknown_tagged_fields_len(&self.unknown_tagged_fields)
     }
 }
 
 impl Decode<'_> for WritableBarrierTopic {
-    fn decode<B: Buf>(buf: &mut B, _version: i16) -> Result<Self, ProtocolError> {
+    fn decode<B: Buf>(buf: &mut B, version: i16) -> Result<Self, ProtocolError> {
         Ok(Self {
             topic: get_compact_string_owned(buf)?,
-            partitions: decode_i32_array(buf)?,
+            partitions: decode_array(buf, version)?,
             unknown_tagged_fields: read_unknown_tagged_fields(buf)?,
         })
     }
@@ -258,7 +305,23 @@ impl WriteBarrierMarkersRequest {
             topics: vec![
                 WritableBarrierTopic {
                     topic: "orders".to_string(),
-                    partitions: vec![0, 3, 7],
+                    partitions: vec![
+                        WritableBarrierPartition {
+                            partition: 0,
+                            expected_leader_epoch: 4,
+                            unknown_tagged_fields: UnknownTaggedFields::default(),
+                        },
+                        WritableBarrierPartition {
+                            partition: 3,
+                            expected_leader_epoch: -1,
+                            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                        },
+                        WritableBarrierPartition {
+                            partition: 7,
+                            expected_leader_epoch: 17,
+                            unknown_tagged_fields: UnknownTaggedFields::default(),
+                        },
+                    ],
                     unknown_tagged_fields: super::test_support::sample_tagged_fields(),
                 },
                 WritableBarrierTopic {
@@ -321,6 +384,18 @@ mod tests {
             roundtrip(&WriteBarrierMarkersRequest::populated(), version);
             roundtrip(&WriteBarrierMarkersResponse::populated(), version);
         }
+    }
+
+    #[test]
+    fn no_expected_leader_epoch_is_the_partition_default() {
+        assert!(
+            WritableBarrierPartition::default()
+                == WritableBarrierPartition {
+                    partition: 0,
+                    expected_leader_epoch: -1,
+                    unknown_tagged_fields: UnknownTaggedFields::default(),
+                }
+        );
     }
 
     #[test]

@@ -43,17 +43,29 @@ pub fn is_flexible(version: i16) -> bool {
 }
 
 /// Reads the published cuts of one barrier group.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListBarrierCutsRequest {
     /// Name of the barrier group to read.
     pub group: String,
     /// Lowest epoch to return. The coordinator returns cuts in epoch order from
     /// this epoch upward, and it includes this epoch.
     pub from_epoch: i64,
-    /// Largest number of cuts to return.
+    /// Largest number of cuts to return. `-1` asks for every retained cut, and
+    /// `0` asks for none.
     pub max_results: i32,
     /// Tagged fields that this build does not know.
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+
+impl Default for ListBarrierCutsRequest {
+    fn default() -> Self {
+        Self {
+            group: String::new(),
+            from_epoch: 0,
+            max_results: -1,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 
 impl Encode for ListBarrierCutsRequest {
@@ -273,6 +285,11 @@ mod tests {
             roundtrip(&ListBarrierCutsRequest::populated(), version);
             roundtrip(&ListBarrierCutsResponse::populated(), version);
         }
+    }
+
+    #[test]
+    fn unlimited_is_the_max_results_default() {
+        assert!(ListBarrierCutsRequest::default().max_results == -1);
     }
 
     #[test]

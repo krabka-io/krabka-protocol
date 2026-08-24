@@ -12,9 +12,9 @@ use crabka_protocol::{
         AlterableBarrierGroup, BarrierCut, BarrierCutPartition, BarrierCutTopic,
         BarrierMissingPartition, DescribeBarrierGroupsRequest, DescribeBarrierGroupsResponse,
         DescribedBarrierGroup, ListBarrierCutsRequest, ListBarrierCutsResponse,
-        TriggerBarrierRequest, TriggerBarrierResponse, WritableBarrierTopic,
-        WriteBarrierMarkersRequest, WriteBarrierMarkersResponse, WrittenBarrierPartition,
-        WrittenBarrierTopic,
+        TriggerBarrierRequest, TriggerBarrierResponse, WritableBarrierPartition,
+        WritableBarrierTopic, WriteBarrierMarkersRequest, WriteBarrierMarkersResponse,
+        WrittenBarrierPartition, WrittenBarrierTopic,
     },
 };
 use proptest::{prelude::*, test_runner::TestCaseError};
@@ -322,10 +322,20 @@ fn arb_list_response() -> impl Strategy<Value = ListBarrierCutsResponse> {
         )
 }
 
+fn arb_writable_partition() -> impl Strategy<Value = WritableBarrierPartition> {
+    (any::<i32>(), any::<i32>(), arb_tagged_fields()).prop_map(
+        |(partition, expected_leader_epoch, unknown_tagged_fields)| WritableBarrierPartition {
+            partition,
+            expected_leader_epoch,
+            unknown_tagged_fields,
+        },
+    )
+}
+
 fn arb_write_request() -> impl Strategy<Value = WriteBarrierMarkersRequest> {
     let topic = (
         arb_name(),
-        prop::collection::vec(any::<i32>(), 0..4),
+        prop::collection::vec(arb_writable_partition(), 0..4),
         arb_tagged_fields(),
     )
         .prop_map(
@@ -428,6 +438,11 @@ proptest! {
 
     #[test]
     fn list_barrier_cuts_response_roundtrip(v in arb_list_response()) {
+        check_roundtrip(&v)?;
+    }
+
+    #[test]
+    fn writable_barrier_partition_roundtrip(v in arb_writable_partition()) {
         check_roundtrip(&v)?;
     }
 

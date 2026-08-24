@@ -54,6 +54,6 @@ pub use describe_barrier_groups::{
 pub use list_barrier_cuts::{BarrierCut, ListBarrierCutsRequest, ListBarrierCutsResponse};
 pub use trigger_barrier::{TriggerBarrierRequest, TriggerBarrierResponse};
 pub use write_barrier_markers::{
-    WritableBarrierTopic, WriteBarrierMarkersRequest, WriteBarrierMarkersResponse,
-    WrittenBarrierPartition, WrittenBarrierTopic,
+    WritableBarrierPartition, WritableBarrierTopic, WriteBarrierMarkersRequest,
+    WriteBarrierMarkersResponse, WrittenBarrierPartition, WrittenBarrierTopic,
 };

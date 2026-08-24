@@ -115,29 +115,6 @@ pub(crate) fn string_array_len(items: &[String]) -> usize {
     array_len_prefix_len(items.len(), FLEXIBLE) + body
 }
 
-/// Writes a compact array of `i32` values.
-pub(crate) fn encode_i32_array<B: BufMut>(buf: &mut B, items: &[i32]) {
-    put_array_len(buf, items.len(), FLEXIBLE);
-    for item in items {
-        put_i32(buf, *item);
-    }
-}
-
-/// Reads a compact array of `i32` values.
-pub(crate) fn decode_i32_array<B: Buf>(buf: &mut B) -> Result<Vec<i32>, ProtocolError> {
-    let count = get_array_len(buf, FLEXIBLE)?;
-    let mut items = Vec::with_capacity(count);
-    for _ in 0..count {
-        items.push(get_i32(buf)?);
-    }
-    Ok(items)
-}
-
-/// Byte count that [`encode_i32_array`] writes.
-pub(crate) fn i32_array_len(items: &[i32]) -> usize {
-    array_len_prefix_len(items.len(), FLEXIBLE) + items.len() * I32_LEN
-}
-
 /// Writes the tagged-fields trailer. A barrier message declares no known tag,
 /// so the trailer holds only the tags that this build did not recognize.
 pub(crate) fn write_unknown_tagged_fields<B: BufMut>(buf: &mut B, unknown: &UnknownTaggedFields) {
