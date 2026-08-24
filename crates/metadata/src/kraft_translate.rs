@@ -2059,7 +2059,7 @@ mod tests {
         check!(refused_for_elr(Some(vec![1]), Some(vec![2])));
     }
 
-    /// The ACL id is a content hash: it is what a later RemoveAccessControlEntry
+    /// The ACL id is a content hash: it is what a later `RemoveAccessControlEntry`
     /// matches against to find the entry it deletes. Dropped, every entry
     /// translates with the same defaulted id, so distinct ACLs become
     /// indistinguishable -- which the round-trip above does not notice, because
