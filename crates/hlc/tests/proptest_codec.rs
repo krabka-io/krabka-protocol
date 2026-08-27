@@ -9,14 +9,14 @@ use crabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
 use crabka_ids::NodeId;
 use proptest::prelude::*;
 
-/// A stamp over the whole range each field can hold on the wire.
+// A stamp over the whole range each field can hold on the wire.
 fn arb_stamp() -> impl Strategy<Value = Hlc> {
     (any::<i64>(), any::<u32>(), any::<u32>()).prop_map(|(wall, counter, node)| {
         Hlc::new(WallMicros(wall), counter, NodeId(u64::from(node)))
     })
 }
 
-/// A byte string of any length the wire can carry except the one valid length.
+// A byte string of any length the wire can carry except the one valid length.
 fn arb_wrong_length() -> impl Strategy<Value = Vec<u8>> {
     prop::collection::vec(any::<u8>(), 0..64usize)
         .prop_filter("a valid length is not a wrong length", |bytes| {

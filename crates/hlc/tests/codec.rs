@@ -4,8 +4,8 @@ use assert2::check;
 use crabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
 use crabka_ids::NodeId;
 
-/// A stamp whose three fields hold distinct ascending bytes, so a field that
-/// moves, or a field written in the wrong byte order, changes the output.
+// A stamp whose three fields hold distinct ascending bytes, so a field that
+// moves, or a field written in the wrong byte order, changes the output.
 fn distinct_stamp() -> Hlc {
     Hlc::new(
         WallMicros(0x0102_0304_0506_0708),

@@ -4,7 +4,7 @@ use assert2::check;
 use crabka_hlc::{HLC_HEADER, Hlc, WallMicros, extract_from_headers};
 use crabka_ids::NodeId;
 
-/// A named case plus the record headers it feeds to `extract_from_headers`.
+// A named case plus the record headers it feeds to `extract_from_headers`.
 type HeaderCase<'a> = (&'a str, Vec<(&'a str, Vec<u8>)>);
 
 fn stamp() -> Hlc {

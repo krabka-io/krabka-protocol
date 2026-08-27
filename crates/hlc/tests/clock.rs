@@ -11,16 +11,16 @@ use crabka_units::{Time, convert::TimeExt as _, micros, millis};
 
 const LOCAL: NodeId = NodeId(1);
 const PEER: NodeId = NodeId(9);
-/// A wall time far from zero, so a field that defaults to zero is visible.
+// A wall time far from zero, so a field that defaults to zero is visible.
 const BASE: i64 = 1_700_000_000_000_000;
 
 type TestClock = HlcClock<Arc<ManualClock>>;
 
-/// A clock whose logical time is `(wall, counter)` and whose physical clock
-/// reads `physical`.
-///
-/// The counter is built by repeated local events at a stalled physical clock,
-/// which is the only way the state machine reaches a counter above zero.
+// A clock whose logical time is `(wall, counter)` and whose physical clock
+// reads `physical`.
+//
+// The counter is built by repeated local events at a stalled physical clock,
+// which is the only way the state machine reaches a counter above zero.
 fn clock_at(wall: i64, counter: u32, physical: i64) -> (TestClock, Arc<ManualClock>) {
     let manual = Arc::new(ManualClock::new(WallMicros(wall)));
     let clock = HlcClock::with_clock(LOCAL, Arc::clone(&manual));
