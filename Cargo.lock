@@ -661,6 +661,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabka-hlc"
+version = "0.4.0"
+dependencies = [
+ "assert2",
+ "crabka-ids",
+ "crabka-units",
+ "derive_more",
+ "proptest",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "crabka-ids"
 version = "0.4.0"
 dependencies = [
