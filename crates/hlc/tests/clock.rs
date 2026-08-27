@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use assert2::check;
 use crabka_hlc::{
-    DEFAULT_MAX_OFFSET, Hlc, HlcClock, HlcError, ManualClock, PhysicalClock as _, WallMicros,
+    ClockObservation, DEFAULT_MAX_OFFSET, Hlc, HlcClock, HlcError, ManualClock, PhysicalClock as _,
+    WallMicros,
 };
 use crabka_ids::NodeId;
 use crabka_units::{Time, convert::TimeExt as _, micros, millis};
@@ -247,32 +248,44 @@ fn the_observation_reports_drift_advances_and_refusals() {
     let clock = HlcClock::with_clock(LOCAL, Arc::clone(&manual));
     clock.now().unwrap();
 
-    let fresh = clock.observation();
-    check!(fresh.drift.micros_i64() == 0);
-    check!(fresh.peer_advances == 0);
-    check!(fresh.refusals == 0);
-    check!(fresh.max_peer_ahead.micros_i64() == 0);
+    check!(
+        clock.observation()
+            == ClockObservation {
+                drift: Time::ZERO,
+                peer_advances: 0,
+                refusals: 0,
+                max_peer_ahead: Time::ZERO,
+            }
+    );
 
     // A record from a node 40 milliseconds ahead pulls this clock forward, and
     // the pull is the measurement: 40 milliseconds of skew on the data path.
     clock
         .observe(Hlc::new(WallMicros(BASE + 40_000), 0, PEER))
         .unwrap();
-    let pulled = clock.observation();
-    check!(pulled.drift == millis(40));
-    check!(pulled.peer_advances == 1);
-    check!(pulled.refusals == 0);
-    check!(pulled.max_peer_ahead == millis(40));
+    check!(
+        clock.observation()
+            == ClockObservation {
+                drift: millis(40),
+                peer_advances: 1,
+                refusals: 0,
+                max_peer_ahead: millis(40),
+            }
+    );
 
     // A record from a node with a broken clock is refused, and it is counted.
     clock
         .observe(Hlc::new(WallMicros(BASE + 600_000), 0, PEER))
         .unwrap_err();
-    let fenced = clock.observation();
-    check!(fenced.drift == millis(40));
-    check!(fenced.peer_advances == 1);
-    check!(fenced.refusals == 1);
-    check!(fenced.max_peer_ahead == micros(600_000));
+    check!(
+        clock.observation()
+            == ClockObservation {
+                drift: millis(40),
+                peer_advances: 1,
+                refusals: 1,
+                max_peer_ahead: micros(600_000),
+            }
+    );
 
     // The physical clock catches up, so the drift closes.
     manual.advance(millis(40));
@@ -286,11 +299,16 @@ fn a_peer_behind_the_physical_clock_does_not_count_as_an_advance() {
         .observe(Hlc::new(WallMicros(BASE + 500), 0, PEER))
         .unwrap();
 
-    let observation = clock.observation();
-    check!(observation.peer_advances == 0);
-    check!(observation.refusals == 0);
-    // The delta is still recorded, because the peer is ahead of nothing.
-    check!(observation.max_peer_ahead.micros_i64() == 0);
+    // `max_peer_ahead` stays at zero, because the peer is ahead of nothing.
+    check!(
+        clock.observation()
+            == ClockObservation {
+                drift: Time::ZERO,
+                peer_advances: 0,
+                refusals: 0,
+                max_peer_ahead: Time::ZERO,
+            }
+    );
 }
 
 #[test]
