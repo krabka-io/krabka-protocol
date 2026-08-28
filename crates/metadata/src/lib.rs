@@ -45,6 +45,7 @@
 #![doc(html_root_url = "https://docs.rs/krabka-metadata/0.4.0")]
 
 pub mod acl;
+pub mod break_glass;
 mod error;
 mod feature;
 pub mod group_version;
@@ -54,8 +55,10 @@ pub mod kraft_translate;
 pub mod metadata_version;
 mod records;
 pub mod transaction_version;
+pub mod write_freeze;
 
 pub use acl::{AclEntry, AclEntryFilter, AclOperation, PatternType, PermissionType, ResourceType};
+pub use break_glass::{BreakGlassAction, BreakGlassApproval, BreakGlassProposalRecord};
 pub use error::MetadataError;
 pub use feature::{
     Feature, bootstrap_feature_records, bootstrap_feature_records_with_overrides, feature,
@@ -81,3 +84,4 @@ pub use records::{
     ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord, VotersRecord,
 };
 pub use voters::{KRaftVersionRange, Voter, VoterEndpoint, VoterSet};
+pub use write_freeze::TopicFreezeRecord;

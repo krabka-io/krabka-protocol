@@ -2,7 +2,10 @@
 //! [`MetadataImage::apply`] mutates it, and the Raft state machine calls that
 //! method. Everywhere else reads it through shared references and `Arc` clones.
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Bound,
+};
 
 use krabka_security::{KafkaPrincipal, SaslMechanism, ScramCredential};
 use krabka_units::{ByteRate, convert::ByteRateExt};
@@ -10,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     acl::{AclEntry, PatternType, ResourceType},
+    break_glass::{BreakGlassApproval, BreakGlassProposalRecord},
     error::MetadataError,
     records::{
         BrokerConfigRecord, BrokerRegistrationRecord, ClientMetricsConfigRecord, ClientQuotaRecord,
@@ -18,6 +22,7 @@ use crate::{
         MetadataRecord, NodeId, PartitionOffsetAdvanceRecord, PartitionRecord, ProducerIdsRecord,
         QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, VotersRecord,
     },
+    write_freeze::TopicFreezeRecord,
 };
 
 pub type EntityKey = Vec<(String, Option<String>)>;
@@ -86,6 +91,9 @@ fn record_variant(rec: &MetadataRecord) -> &'static str {
         MetadataRecord::V1PartitionOffsetAdvance(_) => "V1PartitionOffsetAdvance",
         MetadataRecord::V1GroupConfig(_) => "V1GroupConfig",
         MetadataRecord::V1ControllerRegistration(_) => "V1ControllerRegistration",
+        MetadataRecord::V1TopicFreeze(_) => "V1TopicFreeze",
+        MetadataRecord::V1BreakGlassProposal(_) => "V1BreakGlassProposal",
+        MetadataRecord::V1DeleteBreakGlassProposal(_) => "V1DeleteBreakGlassProposal",
     }
 }
 
@@ -115,6 +123,14 @@ pub struct MetadataImage {
     scram_credentials: HashMap<(String, SaslMechanism), ScramCredential>,
     acls_literal: HashMap<(ResourceType, String), Vec<AclEntry>>,
     acls_prefixed: HashMap<ResourceType, Vec<AclEntry>>,
+    /// KFC-9 write-freeze registry, split by pattern type. The prefixed side
+    /// is a `BTreeMap` and not the `Vec` that `acls_prefixed` uses, because
+    /// the resolve runs one hop from the produce path and needs the ordered
+    /// reverse walk that finds the longest matching prefix.
+    freezes_literal: HashMap<String, TopicFreezeRecord>,
+    freezes_prefixed: BTreeMap<String, TopicFreezeRecord>,
+    /// KFC-9 break-glass proposals, keyed by proposal id.
+    break_glass: HashMap<Uuid, BreakGlassProposalRecord>,
     client_quotas: HashMap<EntityKey, BTreeMap<String, f64>>,
     producer_ids: Option<ProducerIdsRecord>,
     delegation_tokens: HashMap<String, DelegationToken>,
@@ -126,6 +142,15 @@ pub struct MetadataImage {
     /// once per applied record. It is deterministic across replicas, because
     /// records apply in committed-log order on every node.
     features_epoch: i64,
+}
+
+/// True when `candidate` is `stored` plus zero or more appended entries.
+///
+/// This is the concurrent-approval rule of KFC-9 in one predicate: an
+/// approver may add its own entry to the list it read, and may do nothing
+/// else to that list.
+fn extends(stored: &[BreakGlassApproval], candidate: &[BreakGlassApproval]) -> bool {
+    candidate.len() >= stored.len() && candidate[..stored.len()] == *stored
 }
 
 /// Selects which broker byte-rate config key to read.
@@ -154,6 +179,9 @@ impl MetadataImage {
             scram_credentials: HashMap::new(),
             acls_literal: HashMap::new(),
             acls_prefixed: HashMap::new(),
+            freezes_literal: HashMap::new(),
+            freezes_prefixed: BTreeMap::new(),
+            break_glass: HashMap::new(),
             client_quotas: HashMap::new(),
             producer_ids: None,
             delegation_tokens: HashMap::new(),
@@ -438,6 +466,61 @@ impl MetadataImage {
             .values()
             .flatten()
             .chain(self.acls_prefixed.values().flatten())
+    }
+
+    /// The write-freeze entry that covers `topic`, or `None` when the topic
+    /// accepts writes (KFC-9).
+    ///
+    /// A cluster with no freeze costs two `is_empty` tests, because the
+    /// produce path calls this once per topic per request. A literal entry
+    /// beats every prefix entry, and the longest matching prefix wins among
+    /// the prefix entries.
+    ///
+    /// An internal topic is never frozen. The `__` name convention is the
+    /// test, so a prefix scope of `""` or `"_"` cannot take
+    /// `__consumer_offsets` down with the rest of the cluster.
+    #[must_use]
+    pub fn topic_freeze(&self, topic: &str) -> Option<&TopicFreezeRecord> {
+        if self.freezes_literal.is_empty() && self.freezes_prefixed.is_empty() {
+            return None;
+        }
+        if topic.starts_with("__") {
+            return None;
+        }
+        if let Some(freeze) = self.freezes_literal.get(topic) {
+            return Some(freeze);
+        }
+        // Keys that sort at or below `topic`, walked downwards. Among the
+        // prefixes of `topic`, the longest one sorts highest, so the first
+        // match is the winner. The bound pair is what keeps the lookup key a
+        // borrowed `str`: `RangeBounds<str>` has no impl for `..=&str`.
+        self.freezes_prefixed
+            .range::<str, _>((Bound::Unbounded, Bound::Included(topic)))
+            .rev()
+            .find(|(scope, _)| topic.starts_with(scope.as_str()))
+            .map(|(_, freeze)| freeze)
+    }
+
+    /// Every live write-freeze entry, literal and prefixed (KFC-9). A thawed
+    /// entry is removed on apply, so every entry here has `frozen: true`.
+    /// Order is unspecified.
+    pub fn topic_freezes(&self) -> impl Iterator<Item = &TopicFreezeRecord> {
+        self.freezes_literal
+            .values()
+            .chain(self.freezes_prefixed.values())
+    }
+
+    /// Look up a break-glass proposal by its id (KFC-9).
+    #[must_use]
+    pub fn break_glass_proposal(&self, id: Uuid) -> Option<&BreakGlassProposalRecord> {
+        self.break_glass.get(&id)
+    }
+
+    /// Every break-glass proposal still in the image (KFC-9), including the
+    /// consumed and withdrawn ones that the expiry sweep has not yet removed.
+    /// Order is unspecified.
+    pub fn break_glass_proposals(&self) -> impl Iterator<Item = &BreakGlassProposalRecord> {
+        self.break_glass.values()
     }
 
     /// Look up a delegation token by its `token_id` (KIP-48).
@@ -831,6 +914,40 @@ impl MetadataImage {
                     .entry((r.topic.clone(), r.partition))
                     .or_insert(0) += r.count;
             }
+            // KFC-9 write-freeze registry.
+            MetadataRecord::V1TopicFreeze(r) => self.apply_topic_freeze(r),
+            // KFC-9 break-glass proposal. Replacement semantics on the id:
+            // an approval and a consumption each write the whole record back.
+            // `validate` is what stops a replacement from losing an approval.
+            MetadataRecord::V1BreakGlassProposal(r) => {
+                self.break_glass.insert(r.proposal_id, r.clone());
+            }
+            MetadataRecord::V1DeleteBreakGlassProposal(id) => {
+                self.break_glass.remove(id);
+            }
+        }
+    }
+
+    /// Upsert or remove one write-freeze registry entry (KFC-9).
+    ///
+    /// `frozen` is the sentinel: a `true` record upserts the entry into the
+    /// registry that its pattern type selects, and a `false` record removes
+    /// it. That keeps the thaw attributed in the raft log and needs no second
+    /// record type.
+    fn apply_topic_freeze(&mut self, rec: &TopicFreezeRecord) {
+        match (rec.pattern_type, rec.frozen) {
+            (PatternType::Literal, true) => {
+                self.freezes_literal.insert(rec.scope.clone(), rec.clone());
+            }
+            (PatternType::Literal, false) => {
+                self.freezes_literal.remove(&rec.scope);
+            }
+            (PatternType::Prefixed, true) => {
+                self.freezes_prefixed.insert(rec.scope.clone(), rec.clone());
+            }
+            (PatternType::Prefixed, false) => {
+                self.freezes_prefixed.remove(&rec.scope);
+            }
         }
     }
 
@@ -966,6 +1083,18 @@ impl MetadataImage {
                 group_id: group_id.clone(),
                 configs: configs.clone(),
             }));
+        }
+
+        // KFC-9 write-freeze registry and break-glass proposals. Both are
+        // independent of every other record, and both are lost without this:
+        // a snapshot install would thaw the cluster and drop every pending
+        // approval. Every stored freeze has `frozen: true`, so re-applying it
+        // routes it back to the same registry.
+        for freeze in self.topic_freezes() {
+            out.push(MetadataRecord::V1TopicFreeze(freeze.clone()));
+        }
+        for proposal in self.break_glass.values() {
+            out.push(MetadataRecord::V1BreakGlassProposal(proposal.clone()));
         }
 
         // KIP-584 finalized features: one record per live feature, in the
@@ -1143,7 +1272,49 @@ impl MetadataImage {
             | MetadataRecord::V1PartitionDirAssignment(_)
             // Diskless offset-sequencer delta. The handler supplies a positive
             // count; image-level apply is an unconditional increment.
-            | MetadataRecord::V1PartitionOffsetAdvance(_) => Ok(()),
+            | MetadataRecord::V1PartitionOffsetAdvance(_)
+            // KFC-9: the expiry sweep removes a proposal by id, and apply is
+            // idempotent against an id that is already gone.
+            | MetadataRecord::V1DeleteBreakGlassProposal(_) => Ok(()),
+            // KFC-9: a freeze scope must not be empty, and that is the only
+            // check. The scope deliberately does NOT have to name an existing
+            // topic: a prefix scope names none, and a freeze put on a
+            // namespace BEFORE a restore writes into it is the
+            // disaster-recovery case the feature exists for.
+            MetadataRecord::V1TopicFreeze(freeze) => {
+                if freeze.scope.is_empty() {
+                    return Err(MetadataError::EmptyFreezeScope);
+                }
+                Ok(())
+            }
+            // KFC-9: the concurrent-approval rule. Two approvers read the
+            // same image and each submits the approval list it read plus its
+            // own entry. Without this check the second write overwrites the
+            // first, and the proposal never reaches two principals. So an
+            // incoming list must be the stored list plus zero or more
+            // appended entries, and a settled proposal takes no change at
+            // all.
+            MetadataRecord::V1BreakGlassProposal(proposal) => {
+                let Some(stored) = self.break_glass.get(&proposal.proposal_id) else {
+                    return Ok(());
+                };
+                if stored.consumed_at_ms != 0 {
+                    return Err(MetadataError::BreakGlassProposalConsumed(
+                        proposal.proposal_id,
+                    ));
+                }
+                if stored.withdrawn {
+                    return Err(MetadataError::BreakGlassProposalWithdrawn(
+                        proposal.proposal_id,
+                    ));
+                }
+                if !extends(&stored.approvals, &proposal.approvals) {
+                    return Err(MetadataError::BreakGlassApprovalsNotAnExtension(
+                        proposal.proposal_id,
+                    ));
+                }
+                Ok(())
+            }
             MetadataRecord::V1ProducerIds(record) => {
                 if record.next_producer_id <= self.next_producer_id() {
                     return Err(MetadataError::InvalidRecord(
@@ -3412,5 +3583,396 @@ mod tests {
 
         let pr = image.partition("t", 0).expect("partition present");
         assert2::assert!(pr.directories == vec![old, dir]);
+    }
+    // ---------- KFC-9 write-freeze registry ----------
+
+    fn freeze(scope: &str, pattern_type: PatternType) -> TopicFreezeRecord {
+        TopicFreezeRecord {
+            scope: scope.into(),
+            pattern_type,
+            frozen: true,
+            reason: "DR cutover".into(),
+            set_by: "User:alice".into(),
+            set_at_ms: 1_700_000_000_000,
+            proposal_id: Uuid::nil(),
+            key_id: "alice-yubi".into(),
+            signature: vec![0xAB; 64],
+        }
+    }
+
+    #[test]
+    fn an_unfrozen_cluster_resolves_no_freeze() {
+        check!(img().topic_freeze("orders").is_none());
+        check!(img().topic_freezes().count() == 0);
+    }
+
+    #[test]
+    fn a_literal_freeze_beats_a_prefix_and_the_longest_prefix_wins() {
+        let mut image = img();
+        for (scope, pattern_type) in [
+            ("tenant-a.", PatternType::Prefixed),
+            ("tenant-a.orders.", PatternType::Prefixed),
+            ("tenant-a.orders.eu", PatternType::Literal),
+        ] {
+            image.apply(&MetadataRecord::V1TopicFreeze(freeze(scope, pattern_type)));
+        }
+
+        for (label, topic, want) in [
+            (
+                "a literal entry beats every prefix entry",
+                "tenant-a.orders.eu",
+                Some("tenant-a.orders.eu"),
+            ),
+            (
+                "the longest matching prefix wins",
+                "tenant-a.orders.us",
+                Some("tenant-a.orders."),
+            ),
+            (
+                "a shorter prefix still matches",
+                "tenant-a.billing",
+                Some("tenant-a."),
+            ),
+            ("no scope covers the topic", "tenant-b.orders", None),
+            ("a topic that sorts below every scope", "aaa", None),
+        ] {
+            check!(
+                image.topic_freeze(topic).map(|f| f.scope.as_str()) == want,
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_internal_topic_is_never_frozen() {
+        for (label, scope, pattern_type, covered) in [
+            (
+                "an empty prefix scope",
+                "",
+                PatternType::Prefixed,
+                Some("orders"),
+            ),
+            (
+                "a single-underscore prefix scope",
+                "_",
+                PatternType::Prefixed,
+                Some("_metrics"),
+            ),
+            (
+                "a literal internal name",
+                "__consumer_offsets",
+                PatternType::Literal,
+                None,
+            ),
+        ] {
+            let mut image = img();
+            image.apply(&MetadataRecord::V1TopicFreeze(freeze(scope, pattern_type)));
+
+            check!(
+                image.topic_freeze("__consumer_offsets").is_none(),
+                "{label}"
+            );
+            if let Some(topic) = covered {
+                // The registry is live, so the exemption comes from the name
+                // and not from an empty registry.
+                check!(image.topic_freeze(topic).is_some(), "{label}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_thaw_removes_the_registry_entry() {
+        for (label, pattern_type, topic) in [
+            ("a literal scope", PatternType::Literal, "orders"),
+            ("a prefixed scope", PatternType::Prefixed, "orders-eu"),
+        ] {
+            let mut image = img();
+            let frozen = freeze("orders", pattern_type);
+            image.apply(&MetadataRecord::V1TopicFreeze(frozen.clone()));
+            check!(image.topic_freeze(topic).is_some(), "{label}");
+
+            image.apply(&MetadataRecord::V1TopicFreeze(TopicFreezeRecord {
+                frozen: false,
+                proposal_id: Uuid::from_u128(0xB1),
+                ..frozen
+            }));
+            check!(image.topic_freeze(topic).is_none(), "{label}");
+            check!(image.topic_freezes().count() == 0, "{label}");
+        }
+    }
+
+    #[test]
+    fn a_later_freeze_replaces_the_entry_at_the_same_scope() {
+        let mut image = img();
+        image.apply(&MetadataRecord::V1TopicFreeze(freeze(
+            "orders",
+            PatternType::Literal,
+        )));
+        let replacement = TopicFreezeRecord {
+            reason: "tenant offboarding".into(),
+            set_by: "User:bob".into(),
+            set_at_ms: 1_700_000_060_000,
+            ..freeze("orders", PatternType::Literal)
+        };
+        image.apply(&MetadataRecord::V1TopicFreeze(replacement.clone()));
+
+        check!(image.topic_freeze("orders") == Some(&replacement));
+        check!(image.topic_freezes().count() == 1);
+    }
+
+    // ---------- KFC-9 break-glass proposals ----------
+
+    fn approval(principal: &str) -> BreakGlassApproval {
+        BreakGlassApproval {
+            principal: principal.into(),
+            approved_at_ms: 1_700_000_060_000,
+            key_id: format!("{principal}-yubi"),
+            signature: vec![0xCD; 64],
+        }
+    }
+
+    fn proposal(id: Uuid) -> BreakGlassProposalRecord {
+        BreakGlassProposalRecord {
+            proposal_id: id,
+            action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
+            target: "literal:orders".into(),
+            proposer: "User:alice".into(),
+            reason: "incident 4711 closed".into(),
+            created_at_ms: 1_700_000_000_000,
+            expires_at_ms: 1_700_000_600_000,
+            approvals: Vec::new(),
+            consumed_at_ms: 0,
+            withdrawn: false,
+        }
+    }
+
+    #[test]
+    fn a_break_glass_proposal_upserts_and_deletes() {
+        let id = Uuid::from_u128(0xB1);
+        let mut image = img();
+        let record = proposal(id);
+        image.apply(&MetadataRecord::V1BreakGlassProposal(record.clone()));
+        check!(image.break_glass_proposal(id) == Some(&record));
+        check!(image.break_glass_proposals().count() == 1);
+
+        let approved = BreakGlassProposalRecord {
+            approvals: vec![approval("User:bob")],
+            ..record
+        };
+        image.apply(&MetadataRecord::V1BreakGlassProposal(approved.clone()));
+        check!(image.break_glass_proposal(id) == Some(&approved));
+
+        image.apply(&MetadataRecord::V1DeleteBreakGlassProposal(id));
+        check!(image.break_glass_proposal(id).is_none());
+        check!(image.break_glass_proposals().count() == 0);
+    }
+
+    #[test]
+    fn to_records_preserves_both_freeze_registries_and_the_proposals() {
+        let cid = Uuid::new_v4();
+        let mut image = MetadataImage::new(cid);
+        let literal = freeze("orders", PatternType::Literal);
+        let prefixed = freeze("tenant-a.", PatternType::Prefixed);
+        let pending = BreakGlassProposalRecord {
+            approvals: vec![approval("User:bob")],
+            ..proposal(Uuid::from_u128(0xB1))
+        };
+        image.apply(&MetadataRecord::V1TopicFreeze(literal.clone()));
+        image.apply(&MetadataRecord::V1TopicFreeze(prefixed.clone()));
+        image.apply(&MetadataRecord::V1BreakGlassProposal(pending.clone()));
+
+        let rebuilt = MetadataImage::from_records(cid, &image.to_records());
+
+        check!(rebuilt == image);
+        check!(rebuilt.topic_freeze("orders") == Some(&literal));
+        check!(rebuilt.topic_freeze("tenant-a.billing") == Some(&prefixed));
+        check!(rebuilt.break_glass_proposal(pending.proposal_id) == Some(&pending));
+    }
+
+    // ---------- KFC-9 validate ----------
+
+    #[test]
+    fn validate_rejects_only_an_empty_freeze_scope() {
+        let image = img();
+        for (label, scope, pattern_type, want) in [
+            (
+                "a literal scope naming a topic that does not exist",
+                "orders",
+                PatternType::Literal,
+                Ok(()),
+            ),
+            (
+                "a prefix scope, which names no topic by construction",
+                "tenant-a.",
+                PatternType::Prefixed,
+                Ok(()),
+            ),
+            (
+                "an empty literal scope",
+                "",
+                PatternType::Literal,
+                Err(MetadataError::EmptyFreezeScope),
+            ),
+            (
+                "an empty prefix scope",
+                "",
+                PatternType::Prefixed,
+                Err(MetadataError::EmptyFreezeScope),
+            ),
+        ] {
+            let rec = MetadataRecord::V1TopicFreeze(freeze(scope, pattern_type));
+            check!(image.validate(&rec) == want, "{label}");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_a_break_glass_proposal_that_is_not_yet_stored() {
+        let image = img();
+        let rec = MetadataRecord::V1BreakGlassProposal(proposal(Uuid::from_u128(0xB1)));
+        check!(image.validate(&rec) == Ok(()));
+    }
+
+    #[test]
+    fn validate_accepts_only_an_appended_approval() {
+        let id = Uuid::from_u128(0xB1);
+        let (alice, bob, carol) = (
+            approval("User:alice"),
+            approval("User:bob"),
+            approval("User:carol"),
+        );
+        let mut image = img();
+        let stored = BreakGlassProposalRecord {
+            approvals: vec![alice.clone(), bob.clone()],
+            ..proposal(id)
+        };
+        image.apply(&MetadataRecord::V1BreakGlassProposal(stored.clone()));
+
+        for (label, approvals, want) in [
+            (
+                "the stored list unchanged, which a consumption writes back",
+                vec![alice.clone(), bob.clone()],
+                Ok(()),
+            ),
+            (
+                "one appended approval",
+                vec![alice.clone(), bob.clone(), carol.clone()],
+                Ok(()),
+            ),
+            (
+                "a reordered list",
+                vec![bob.clone(), alice.clone()],
+                Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
+            ),
+            (
+                "a truncated list",
+                vec![alice.clone()],
+                Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
+            ),
+            (
+                "an empty list",
+                Vec::new(),
+                Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
+            ),
+            (
+                "a replaced approval",
+                vec![alice.clone(), carol.clone()],
+                Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
+            ),
+        ] {
+            let candidate = MetadataRecord::V1BreakGlassProposal(BreakGlassProposalRecord {
+                approvals,
+                ..stored.clone()
+            });
+            check!(image.validate(&candidate) == want, "{label}");
+        }
+    }
+
+    /// Two approvers read the same image and each submits the list it read
+    /// plus its own entry. Without the extension rule the second write drops
+    /// the first approval, and the proposal never reaches two principals.
+    #[test]
+    fn a_concurrent_approval_cannot_drop_the_stored_one() {
+        let id = Uuid::from_u128(0xB1);
+        let mut image = img();
+        image.apply(&MetadataRecord::V1BreakGlassProposal(proposal(id)));
+
+        let by_bob = BreakGlassProposalRecord {
+            approvals: vec![approval("User:bob")],
+            ..proposal(id)
+        };
+        let by_carol = BreakGlassProposalRecord {
+            approvals: vec![approval("User:carol")],
+            ..proposal(id)
+        };
+        check!(image.validate(&MetadataRecord::V1BreakGlassProposal(by_bob.clone())) == Ok(()));
+        image.apply(&MetadataRecord::V1BreakGlassProposal(by_bob));
+
+        check!(
+            image.validate(&MetadataRecord::V1BreakGlassProposal(by_carol))
+                == Err(MetadataError::BreakGlassApprovalsNotAnExtension(id))
+        );
+
+        let both = BreakGlassProposalRecord {
+            approvals: vec![approval("User:bob"), approval("User:carol")],
+            ..proposal(id)
+        };
+        check!(image.validate(&MetadataRecord::V1BreakGlassProposal(both)) == Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_every_change_to_a_settled_proposal() {
+        let id = Uuid::from_u128(0xB1);
+        for (label, settled, want) in [
+            (
+                "a consumed proposal",
+                BreakGlassProposalRecord {
+                    consumed_at_ms: 1_700_000_120_000,
+                    ..proposal(id)
+                },
+                MetadataError::BreakGlassProposalConsumed(id),
+            ),
+            (
+                "a withdrawn proposal",
+                BreakGlassProposalRecord {
+                    withdrawn: true,
+                    ..proposal(id)
+                },
+                MetadataError::BreakGlassProposalWithdrawn(id),
+            ),
+        ] {
+            let mut image = img();
+            image.apply(&MetadataRecord::V1BreakGlassProposal(settled.clone()));
+
+            for (change_label, candidate) in [
+                (
+                    "an appended approval",
+                    BreakGlassProposalRecord {
+                        approvals: vec![approval("User:bob")],
+                        ..settled.clone()
+                    },
+                ),
+                (
+                    "a second consumption",
+                    BreakGlassProposalRecord {
+                        consumed_at_ms: 1_700_000_180_000,
+                        ..settled.clone()
+                    },
+                ),
+                ("the record unchanged", settled.clone()),
+            ] {
+                let rec = MetadataRecord::V1BreakGlassProposal(candidate);
+                check!(
+                    image.validate(&rec) == Err(want.clone()),
+                    "{label}, {change_label}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validate_accepts_a_break_glass_tombstone_for_any_id() {
+        let image = img();
+        let rec = MetadataRecord::V1DeleteBreakGlassProposal(Uuid::from_u128(0xB1));
+        check!(image.validate(&rec) == Ok(()));
     }
 }

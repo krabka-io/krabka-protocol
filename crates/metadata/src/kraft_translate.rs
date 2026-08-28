@@ -779,6 +779,22 @@ fn to_kraft_iter(
         MetadataRecord::V1PartitionOffsetAdvance(_) => {
             vec![wincode_carrier(rec, PRIVATE_PARTITION_OFFSET_ADVANCE_KEY)?]
         }
+        // KFC-9 freeze registry and break-glass proposals. KIP-631 has no
+        // counterpart for either, and `NoCounterpart` is not an option: the
+        // controller submits all three through `submit_change`, which encodes
+        // every record it appends. So they ride the private carrier.
+        MetadataRecord::V1TopicFreeze(_) => {
+            vec![wincode_carrier(rec, PRIVATE_TOPIC_FREEZE_KEY)?]
+        }
+        MetadataRecord::V1BreakGlassProposal(_) => {
+            vec![wincode_carrier(rec, PRIVATE_BREAK_GLASS_PROPOSAL_KEY)?]
+        }
+        MetadataRecord::V1DeleteBreakGlassProposal(_) => {
+            vec![wincode_carrier(
+                rec,
+                PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_KEY,
+            )?]
+        }
         // ----- no KIP-631 metadata counterpart -----
         MetadataRecord::V1Voters(_) => {
             return Err(TranslateError::NoCounterpart("V1Voters"));
@@ -798,6 +814,14 @@ const PRIVATE_FEATURES_EPOCH_KEY: u32 = 1001;
 /// Diskless offset-advance delta carried verbatim so it stays a per-partition
 /// increment on apply (never a full-record replace).
 const PRIVATE_PARTITION_OFFSET_ADVANCE_KEY: u32 = 1003;
+// 1002 is an unexplained gap in this numbering. Do not reuse it.
+/// KFC-9 write-freeze registry entry.
+const PRIVATE_TOPIC_FREEZE_KEY: u32 = 1004;
+/// KFC-9 break-glass proposal, carried verbatim so the approval list, the
+/// consumption stamp, and the signatures all survive a snapshot.
+const PRIVATE_BREAK_GLASS_PROPOSAL_KEY: u32 = 1005;
+/// KFC-9 break-glass proposal tombstone, which the expiry sweep emits.
+const PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_KEY: u32 = 1006;
 
 /// Wrap a wincode-serialized `MetadataRecord` in an `Unknown` KIP-631 envelope
 /// under a Krabka-private apiKey, so it round-trips byte-faithfully through the
@@ -1137,7 +1161,10 @@ pub fn from_kraft(
         // wincode body back to the original record.
         KraftMetadataRecord::Unknown { api_key, body, .. }
             if *api_key == PRIVATE_FEATURES_EPOCH_KEY
-                || *api_key == PRIVATE_PARTITION_OFFSET_ADVANCE_KEY =>
+                || *api_key == PRIVATE_PARTITION_OFFSET_ADVANCE_KEY
+                || *api_key == PRIVATE_TOPIC_FREEZE_KEY
+                || *api_key == PRIVATE_BREAK_GLASS_PROPOSAL_KEY
+                || *api_key == PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_KEY =>
         {
             <serde_wincode::SerdeCompat<MetadataRecord>>::deserialize(body)
                 .map_err(|e| TranslateError::Decode(e.to_string()))
@@ -2725,6 +2752,93 @@ mod tests {
         let back = from_kraft_value(&values[0], &img()).unwrap();
 
         assert_eq!(back, rec);
+    }
+
+    // ---------- KFC-9 private carriers ----------
+
+    fn freeze_records() -> [(&'static str, MetadataRecord, u32); 3] {
+        let id = uuid::Uuid::from_u128(0xB1);
+        [
+            (
+                "topic freeze",
+                MetadataRecord::V1TopicFreeze(crate::write_freeze::TopicFreezeRecord {
+                    scope: "tenant-a.".into(),
+                    pattern_type: PatternType::Prefixed,
+                    frozen: true,
+                    reason: "DR cutover".into(),
+                    set_by: "User:alice".into(),
+                    set_at_ms: 1_700_000_000_000,
+                    proposal_id: id,
+                    key_id: "alice-yubi".into(),
+                    signature: vec![0xAB; 64],
+                }),
+                PRIVATE_TOPIC_FREEZE_KEY,
+            ),
+            (
+                "break-glass proposal",
+                MetadataRecord::V1BreakGlassProposal(
+                    crate::break_glass::BreakGlassProposalRecord {
+                        proposal_id: id,
+                        action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
+                        target: "literal:orders".into(),
+                        proposer: "User:alice".into(),
+                        reason: "incident 4711 closed".into(),
+                        created_at_ms: 1_700_000_000_000,
+                        expires_at_ms: 1_700_000_600_000,
+                        approvals: vec![crate::break_glass::BreakGlassApproval {
+                            principal: "User:bob".into(),
+                            approved_at_ms: 1_700_000_060_000,
+                            key_id: "bob-yubi".into(),
+                            signature: vec![0xCD; 64],
+                        }],
+                        consumed_at_ms: 1_700_000_120_000,
+                        withdrawn: false,
+                    },
+                ),
+                PRIVATE_BREAK_GLASS_PROPOSAL_KEY,
+            ),
+            (
+                "break-glass tombstone",
+                MetadataRecord::V1DeleteBreakGlassProposal(id),
+                PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_KEY,
+            ),
+        ]
+    }
+
+    #[test]
+    fn freeze_and_break_glass_records_round_trip_through_carriers() {
+        for (label, rec, _) in freeze_records() {
+            let values = to_kraft_values(&rec, &img()).unwrap();
+            check!(values.len() == 1, "{label}");
+            check!(
+                from_kraft_value(&values[0], &img()).unwrap() == rec,
+                "{label}"
+            );
+        }
+    }
+
+    /// The three api keys are a durable on-disk contract, so pin them. 1002 is
+    /// an unexplained gap in the numbering and stays free.
+    #[test]
+    fn freeze_and_break_glass_carriers_use_the_pinned_private_api_keys() {
+        for (label, rec, want) in freeze_records() {
+            let KraftMetadataRecord::Unknown {
+                api_key,
+                api_version,
+                ..
+            } = to_kraft(&rec, &img()).unwrap()
+            else {
+                panic!("{label}: expected a private Unknown carrier");
+            };
+            check!((api_key, api_version) == (want, 0), "{label}");
+        }
+        check!(
+            [
+                PRIVATE_TOPIC_FREEZE_KEY,
+                PRIVATE_BREAK_GLASS_PROPOSAL_KEY,
+                PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_KEY,
+            ] == [1004, 1005, 1006]
+        );
     }
 
     #[test]

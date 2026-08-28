@@ -13,10 +13,13 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
-    krabka::barrier::common::{
-        BarrierCutTopic, BarrierMissingPartition, I8_LEN, I16_LEN, I32_LEN, I64_LEN, array_len,
-        check_version, decode_array, encode_array, read_unknown_tagged_fields,
-        unknown_tagged_fields_len, write_unknown_tagged_fields,
+    krabka::{
+        barrier::cut::{BarrierCutTopic, BarrierMissingPartition},
+        common::{
+            I8_LEN, I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array,
+            encode_array, read_unknown_tagged_fields, unknown_tagged_fields_len,
+            write_unknown_tagged_fields,
+        },
     },
     primitives::{
         fixed::{get_i8, get_i16, get_i32, get_i64, put_i8, put_i16, put_i32, put_i64},
@@ -171,7 +174,7 @@ impl TriggerBarrierRequest {
         Self {
             group: "orders".to_string(),
             timeout_ms: 30_000,
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -189,7 +192,7 @@ impl TriggerBarrierResponse {
             status: crate::krabka::barrier::CUT_STATUS_PARTIAL,
             topics: super::test_support::sample_cut_topics(),
             missing: super::test_support::sample_missing_partitions(),
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -199,9 +202,9 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::krabka::barrier::{
-        CUT_STATUS_COMPLETE, CUT_STATUS_PARTIAL,
-        test_support::{roundtrip, sample_cut_topics, unsupported_versions},
+    use crate::krabka::{
+        barrier::{CUT_STATUS_COMPLETE, CUT_STATUS_PARTIAL, test_support::sample_cut_topics},
+        test_support::{roundtrip, unsupported_versions},
     };
 
     #[test]

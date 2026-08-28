@@ -363,6 +363,19 @@ pub enum MetadataRecord {
     V1GroupConfig(GroupConfigRecord),
     /// KIP-919 controller registration.
     V1ControllerRegistration(ControllerRegistrationRecord),
+    /// One write-freeze registry entry (see
+    /// [`TopicFreezeRecord`](crate::write_freeze::TopicFreezeRecord)).
+    /// `frozen: false` removes the entry and is the thaw, so the registry
+    /// needs no separate tombstone record.
+    V1TopicFreeze(crate::write_freeze::TopicFreezeRecord),
+    /// One break-glass proposal (see
+    /// [`BreakGlassProposalRecord`](crate::break_glass::BreakGlassProposalRecord)).
+    /// Replacement semantics on `proposal_id`: an approval and a consumption
+    /// each write the whole record back.
+    V1BreakGlassProposal(crate::break_glass::BreakGlassProposalRecord),
+    /// Tombstone that removes a break-glass proposal by id. The expiry sweep
+    /// emits it, in the same shape as `V1DeleteDelegationToken`.
+    V1DeleteBreakGlassProposal(Uuid),
 }
 
 #[cfg(test)]
@@ -680,6 +693,51 @@ mod tests {
             name: "sub-a".into(),
             configs: overrides,
         });
+        assert2::assert!(round_trip(&r) == r);
+    }
+
+    #[test]
+    fn topic_freeze_round_trip() {
+        let r = MetadataRecord::V1TopicFreeze(crate::write_freeze::TopicFreezeRecord {
+            scope: "tenant-a.".into(),
+            pattern_type: crate::PatternType::Prefixed,
+            frozen: true,
+            reason: "DR cutover".into(),
+            set_by: "User:alice".into(),
+            set_at_ms: 1_700_000_000_000,
+            proposal_id: Uuid::from_u128(0xB1),
+            key_id: "alice-yubi".into(),
+            signature: vec![0xAB; 64],
+        });
+        assert2::assert!(round_trip(&r) == r);
+    }
+
+    #[test]
+    fn break_glass_proposal_round_trip() {
+        let r =
+            MetadataRecord::V1BreakGlassProposal(crate::break_glass::BreakGlassProposalRecord {
+                proposal_id: Uuid::from_u128(0xB1),
+                action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
+                target: "literal:orders".into(),
+                proposer: "User:alice".into(),
+                reason: "incident 4711 closed".into(),
+                created_at_ms: 1_700_000_000_000,
+                expires_at_ms: 1_700_000_600_000,
+                approvals: vec![crate::break_glass::BreakGlassApproval {
+                    principal: "User:bob".into(),
+                    approved_at_ms: 1_700_000_060_000,
+                    key_id: "bob-yubi".into(),
+                    signature: vec![0xCD; 64],
+                }],
+                consumed_at_ms: 0,
+                withdrawn: false,
+            });
+        assert2::assert!(round_trip(&r) == r);
+    }
+
+    #[test]
+    fn delete_break_glass_proposal_round_trip() {
+        let r = MetadataRecord::V1DeleteBreakGlassProposal(Uuid::from_u128(0xB1));
         assert2::assert!(round_trip(&r) == r);
     }
 
