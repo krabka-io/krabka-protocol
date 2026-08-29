@@ -1,7 +1,7 @@
 //! The hybrid logical clock stamp and its fixed-width byte layout.
 
-use krabka_ids::NodeId;
 use derive_more::{Display, From, Into};
+use krabka_ids::NodeId;
 
 use crate::{error::HlcError, headers::HLC_HEADER};
 
