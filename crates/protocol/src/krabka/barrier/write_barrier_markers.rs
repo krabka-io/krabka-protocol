@@ -12,7 +12,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
-    krabka::barrier::common::{
+    krabka::common::{
         I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array, encode_array,
         read_unknown_tagged_fields, unknown_tagged_fields_len, write_unknown_tagged_fields,
     },
@@ -314,7 +314,8 @@ impl WriteBarrierMarkersRequest {
                         WritableBarrierPartition {
                             partition: 3,
                             expected_leader_epoch: -1,
-                            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                            unknown_tagged_fields:
+                                crate::krabka::test_support::sample_tagged_fields(),
                         },
                         WritableBarrierPartition {
                             partition: 7,
@@ -322,7 +323,7 @@ impl WriteBarrierMarkersRequest {
                             unknown_tagged_fields: UnknownTaggedFields::default(),
                         },
                     ],
-                    unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
                 },
                 WritableBarrierTopic {
                     topic: "payments".to_string(),
@@ -330,7 +331,7 @@ impl WriteBarrierMarkersRequest {
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
             ],
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -353,12 +354,12 @@ impl WriteBarrierMarkersResponse {
                         partition: 3,
                         error_code: 6,
                         offset: -1,
-                        unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                        unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
                     },
                 ],
                 unknown_tagged_fields: UnknownTaggedFields::default(),
             }],
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -368,7 +369,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::krabka::barrier::test_support::{reject_truncated, roundtrip, unsupported_versions};
+    use crate::krabka::test_support::{reject_truncated, roundtrip, unsupported_versions};
 
     #[test]
     fn default_roundtrips_all_versions() {

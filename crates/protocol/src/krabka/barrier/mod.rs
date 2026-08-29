@@ -32,7 +32,7 @@
 //! topic, and any Kafka consumer can read that topic.
 
 pub mod alter_barrier_groups;
-pub mod common;
+pub mod cut;
 pub mod describe_barrier_groups;
 pub mod list_barrier_cuts;
 #[cfg(test)]
@@ -40,20 +40,22 @@ mod test_support;
 pub mod trigger_barrier;
 pub mod write_barrier_markers;
 
-pub use alter_barrier_groups::{
-    AlterBarrierGroupResult, AlterBarrierGroupsRequest, AlterBarrierGroupsResponse,
-    AlterableBarrierGroup,
-};
-pub use common::{
-    BarrierCutPartition, BarrierCutTopic, BarrierMissingPartition, CUT_STATUS_COMPLETE,
-    CUT_STATUS_PARTIAL,
-};
-pub use describe_barrier_groups::{
-    DescribeBarrierGroupsRequest, DescribeBarrierGroupsResponse, DescribedBarrierGroup,
-};
-pub use list_barrier_cuts::{BarrierCut, ListBarrierCutsRequest, ListBarrierCutsResponse};
-pub use trigger_barrier::{TriggerBarrierRequest, TriggerBarrierResponse};
-pub use write_barrier_markers::{
-    WritableBarrierPartition, WritableBarrierTopic, WriteBarrierMarkersRequest,
-    WriteBarrierMarkersResponse, WrittenBarrierPartition, WrittenBarrierTopic,
+pub use self::{
+    alter_barrier_groups::{
+        AlterBarrierGroupResult, AlterBarrierGroupsRequest, AlterBarrierGroupsResponse,
+        AlterableBarrierGroup,
+    },
+    cut::{
+        BarrierCutPartition, BarrierCutTopic, BarrierMissingPartition, CUT_STATUS_COMPLETE,
+        CUT_STATUS_PARTIAL,
+    },
+    describe_barrier_groups::{
+        DescribeBarrierGroupsRequest, DescribeBarrierGroupsResponse, DescribedBarrierGroup,
+    },
+    list_barrier_cuts::{BarrierCut, ListBarrierCutsRequest, ListBarrierCutsResponse},
+    trigger_barrier::{TriggerBarrierRequest, TriggerBarrierResponse},
+    write_barrier_markers::{
+        WritableBarrierPartition, WritableBarrierTopic, WriteBarrierMarkersRequest,
+        WriteBarrierMarkersResponse, WrittenBarrierPartition, WrittenBarrierTopic,
+    },
 };

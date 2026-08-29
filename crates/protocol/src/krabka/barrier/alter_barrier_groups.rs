@@ -11,7 +11,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
-    krabka::barrier::common::{
+    krabka::common::{
         BOOL_LEN, I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array,
         decode_string_array, encode_array, encode_string_array, read_unknown_tagged_fields,
         string_array_len, unknown_tagged_fields_len, write_unknown_tagged_fields,
@@ -244,7 +244,7 @@ impl AlterBarrierGroupsRequest {
                     interval_ms: 60_000,
                     retained_cuts: 32,
                     delete: false,
-                    unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
                 },
                 AlterableBarrierGroup {
                     group: "retired".to_string(),
@@ -255,7 +255,7 @@ impl AlterBarrierGroupsRequest {
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
             ],
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -277,7 +277,7 @@ impl AlterBarrierGroupsResponse {
                     group: "retired".to_string(),
                     error_code: 69,
                     error_message: Some("barrier group not found".to_string()),
-                    unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
                 },
             ],
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -290,7 +290,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::krabka::barrier::test_support::{roundtrip, unsupported_versions};
+    use crate::krabka::test_support::{roundtrip, unsupported_versions};
 
     #[test]
     fn default_roundtrips_all_versions() {

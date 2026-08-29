@@ -7,7 +7,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
-    krabka::barrier::common::{
+    krabka::common::{
         I16_LEN, I32_LEN, I64_LEN, array_len, check_version, decode_array, decode_string_array,
         encode_array, encode_string_array, read_unknown_tagged_fields, string_array_len,
         unknown_tagged_fields_len, write_unknown_tagged_fields,
@@ -212,7 +212,7 @@ impl DescribeBarrierGroupsRequest {
     fn populated() -> Self {
         Self {
             groups: vec!["orders".to_string(), "audit".to_string()],
-            unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
         }
     }
 }
@@ -233,7 +233,7 @@ impl DescribeBarrierGroupsResponse {
                     retained_cuts: 64,
                     last_epoch: 12,
                     coordinator_id: 3,
-                    unknown_tagged_fields: super::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
                 },
                 DescribedBarrierGroup {
                     group: "audit".to_string(),
@@ -252,7 +252,7 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::krabka::barrier::test_support::{roundtrip, unsupported_versions};
+    use crate::krabka::test_support::{roundtrip, unsupported_versions};
 
     #[test]
     fn default_roundtrips_all_versions() {
