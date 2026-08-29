@@ -6,8 +6,8 @@ use std::{
     time::SystemTime,
 };
 
-use crabka_ids::NodeId;
-use crabka_units::{Time, convert::TimeExt as _, millis};
+use krabka_ids::NodeId;
+use krabka_units::{Time, convert::TimeExt as _, millis};
 
 use crate::{
     error::HlcError,

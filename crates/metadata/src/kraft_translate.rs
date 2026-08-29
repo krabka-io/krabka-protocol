@@ -1,10 +1,10 @@
-//! Translate Crabka's internal [`MetadataRecord`] currency to and from the
+//! Translate Krabka's internal [`MetadataRecord`] currency to and from the
 //! KIP-631 [`KraftMetadataRecord`] wire shape, so the controller log and
 //! snapshots are genuinely KIP-631-framed.
 //!
-//! The conversion is *not* a pure field rename. Several Crabka records
+//! The conversion is *not* a pure field rename. Several Krabka records
 //! carry state that the KIP-631 records do not, and the reverse also holds.
-//! This module bridges the gap and defaults the KIP-631 extras that Crabka
+//! This module bridges the gap and defaults the KIP-631 extras that Krabka
 //! does not model. The round-trip
 //! `rec -> to_kraft(&image) -> from_kraft(&image) == rec` is the
 //! correctness bar for every modeled variant.
@@ -27,20 +27,20 @@
 //!   the replace semantics of `MetadataImage::apply` stay unchanged. Records
 //!   must apply in log order against a live image.
 //! - `V1DeleteAccessControlEntry(AclEntryFilter)`: KIP-631's
-//!   `RemoveAccessControlEntryRecord` deletes by `id: Uuid` only. Crabka does
+//!   `RemoveAccessControlEntryRecord` deletes by `id: Uuid` only. Krabka does
 //!   not model ACL ids, so [`to_kraft_records`] resolves the filter against
 //!   the image to the matching entries and emits one `RemoveAccessControlEntry`
 //!   per match, keyed by a deterministic content-hash id. That is the same id
 //!   that the add path stamps. [`from_kraft`] rescans the image by that hash to
 //!   recover the entry and emit a pinned filter. This is self-consistent within
-//!   Crabka.
+//!   Krabka.
 //!
 //! ## Lossy / awkward mappings (documented)
 //!
-//! - `RegisterBroker`: Crabka stores a top-level `(host, port)` plus a
+//! - `RegisterBroker`: Krabka stores a top-level `(host, port)` plus a
 //!   per-listener `endpoints` list; KIP-631 has only `end_points` (no
 //!   top-level host/port). When listeners exist, their first entry supplies
-//!   the legacy top-level pair on decode. A legacy Crabka record with no
+//!   the legacy top-level pair on decode. A legacy Krabka record with no
 //!   listeners uses one empty-name compatibility entry. All the
 //!   other KIP-631 extras (`incarnation_id`, `features`, `fenced`, …) are
 //!   defaulted on encode and dropped on decode. `broker_epoch` IS carried
@@ -51,7 +51,7 @@
 //!   form.
 
 use bytes::Bytes;
-use crabka_protocol::{
+use krabka_protocol::{
     owned::{
         access_control_entry_record::AccessControlEntryRecord,
         client_quota_record::{ClientQuotaRecord as KClientQuotaRecord, EntityData},
@@ -79,7 +79,7 @@ use crabka_protocol::{
     primitives::uuid::Uuid as KUuid,
     records::metadata::KraftMetadataRecord,
 };
-use crabka_security::{KafkaPrincipal, ListenerProtocol, SaslMechanism};
+use krabka_security::{KafkaPrincipal, ListenerProtocol, SaslMechanism};
 use wincode::{Deserialize as _, Serialize as _};
 
 use crate::{
@@ -110,7 +110,7 @@ pub enum TranslateError {
     #[error("KIP-631 value decode failed: {0}")]
     Decode(String),
     /// A `RemoveAccessControlEntry{{id}}` referenced an ACL id absent from the
-    /// image. On the Crabka-only path the matching add always precedes the
+    /// image. On the Krabka-only path the matching add always precedes the
     /// remove in log order, so this means a corrupt or out-of-order log.
     #[error("unknown ACL id {0} on decode")]
     UnknownAclId(uuid::Uuid),
@@ -152,7 +152,7 @@ fn scram_mechanism_from_wire(b: i8) -> Result<SaslMechanism, TranslateError> {
 
 // ----- ACL enum <-> Kafka i8 wire discriminants -----
 //
-// These mirror the canonical mappings in crabka-broker's `acl_wire`
+// These mirror the canonical mappings in krabka-broker's `acl_wire`
 // (Kafka serializes ACL enums as `i8`). Replicated here so the metadata
 // crate does not depend on the broker.
 
@@ -254,16 +254,16 @@ fn permission_from_wire(b: i8) -> Result<PermissionType, TranslateError> {
     }
 }
 
-// ----- ACL content-hash id (KIP-631 keys ACLs by Uuid; Crabka keys by content) -----
+// ----- ACL content-hash id (KIP-631 keys ACLs by Uuid; Krabka keys by content) -----
 //
 // KIP-631's `AccessControlEntryRecord` carries a controller-assigned `id`, and
-// `RemoveAccessControlEntryRecord` deletes by that id alone. Crabka's image does
+// `RemoveAccessControlEntryRecord` deletes by that id alone. Krabka's image does
 // not model ACL ids (it keys entries by their full tuple), so to keep the log
 // genuinely id-keyed and round-trippable we synthesize a *deterministic*
 // 128-bit id from the entry's canonical content. The add path stamps this id;
 // the delete path resolves a filter to matching entries and emits one
 // `RemoveAccessControlEntry{id}` each; decode rescans the image by the same hash
-// to recover the entry. The derivation is self-consistent within Crabka — Slice
+// to recover the entry. The derivation is self-consistent within Krabka — Slice
 // 6 replaces it with Kafka's real id scheme for cross-impl fidelity.
 fn acl_id(e: &AclEntry) -> KUuid {
     // Canonical byte encoding: the four enum axes (i8) then the three string
@@ -462,7 +462,7 @@ pub fn to_kraft_values(
             // record versions, so the generated encoder cannot by itself
             // express the semantic version gate. Strip fields introduced by
             // later RegisterBroker versions before encoding a downgraded
-            // image; otherwise a future Crabka reader would resurrect data
+            // image; otherwise a future Krabka reader would resurrect data
             // that the target Kafka version was required to discard.
             if let KraftMetadataRecord::RegisterBroker(register) = &mut kr {
                 if version < 3 {
@@ -697,7 +697,7 @@ fn to_kraft_iter(
         }
         MetadataRecord::V1DeleteDelegationToken(t) => {
             vec![KraftMetadataRecord::RemoveDelegationToken(
-            crabka_protocol::owned::remove_delegation_token_record::RemoveDelegationTokenRecord {
+            krabka_protocol::owned::remove_delegation_token_record::RemoveDelegationTokenRecord {
                 token_id: t.token_id.clone(),
                 ..Default::default()
             },
@@ -790,9 +790,9 @@ fn to_kraft_iter(
     Ok(recs.into_iter())
 }
 
-/// Crabka-private metadata-record apiKeys (well outside Kafka's real
+/// Krabka-private metadata-record apiKeys (well outside Kafka's real
 /// non-sequential range 0..=27) for records carried verbatim through the
-/// KIP-631 `Unknown` envelope. NOT wire-faithful to a JVM peer — Crabka-only
+/// KIP-631 `Unknown` envelope. NOT wire-faithful to a JVM peer — Krabka-only
 /// round-trip carriers.
 const PRIVATE_FEATURES_EPOCH_KEY: u32 = 1001;
 /// Diskless offset-advance delta carried verbatim so it stays a per-partition
@@ -800,7 +800,7 @@ const PRIVATE_FEATURES_EPOCH_KEY: u32 = 1001;
 const PRIVATE_PARTITION_OFFSET_ADVANCE_KEY: u32 = 1003;
 
 /// Wrap a wincode-serialized `MetadataRecord` in an `Unknown` KIP-631 envelope
-/// under a Crabka-private apiKey, so it round-trips byte-faithfully through the
+/// under a Krabka-private apiKey, so it round-trips byte-faithfully through the
 /// KIP-631 log and snapshot without a real KIP-631 schema.
 fn wincode_carrier(
     rec: &MetadataRecord,
@@ -819,7 +819,7 @@ fn register_broker_to_kraft(
     b: &BrokerRegistrationRecord,
 ) -> Result<RegisterBrokerRecord, TranslateError> {
     // A JVM broker expects every endpoint to carry a valid listener name.
-    // Encode the real listeners verbatim. Only old single-listener Crabka
+    // Encode the real listeners verbatim. Only old single-listener Krabka
     // records need the empty-name compatibility carrier for their separate
     // top-level host/port fields.
     let end_points = if b.endpoints.is_empty() {
@@ -863,7 +863,7 @@ fn register_broker_to_kraft(
         log_dirs: b.log_dirs.iter().copied().map(to_kuuid).collect(),
         broker_epoch: b.broker_epoch,
         incarnation_id: to_kuuid(b.incarnation_id),
-        // Crabka brokers are always-active; there is no fence/unfence lifecycle.
+        // Krabka brokers are always-active; there is no fence/unfence lifecycle.
         // Emit false rather than the schema default (true) so JVM tools do not
         // interpret our brokers as fenced on startup.
         fenced: false,
@@ -994,7 +994,7 @@ fn client_quota_to_kraft(q: &ClientQuotaRecord) -> KClientQuotaRecord {
             ..Default::default()
         })
         .collect();
-    // KIP-631 splits Crabka's Option<f64> into (value, remove): None => the
+    // KIP-631 splits Krabka's Option<f64> into (value, remove): None => the
     // remove tombstone; Some(v) => value with remove=false.
     let (value, remove) = match q.config_value {
         Some(v) => (v, false),
@@ -1013,7 +1013,7 @@ fn delegation_token_to_kraft(t: &DelegationTokenRecord) -> KDelegationTokenRecor
     KDelegationTokenRecord {
         owner: t.owner.to_string(),
         // KIP-631 has no hmac field; smuggle it through `requester` (unused
-        // by Crabka) as hex so the round-trip is lossless.
+        // by Krabka) as hex so the round-trip is lossless.
         requester: hex_encode(&t.hmac),
         renewers: t.renewers.iter().map(ToString::to_string).collect(),
         issue_timestamp: t.issue_timestamp_ms,
@@ -1133,7 +1133,7 @@ pub fn from_kraft(
                 entry,
             )))
         }
-        // Crabka-private carriers (see `wincode_carrier`): decode the verbatim
+        // Krabka-private carriers (see `wincode_carrier`): decode the verbatim
         // wincode body back to the original record.
         KraftMetadataRecord::Unknown { api_key, body, .. }
             if *api_key == PRIVATE_FEATURES_EPOCH_KEY
@@ -1162,8 +1162,8 @@ fn kraft_variant_name(rec: &KraftMetadataRecord) -> &'static str {
 fn register_broker_from_kraft(
     b: &RegisterBrokerRecord,
 ) -> Result<BrokerRegistrationRecord, TranslateError> {
-    // Older Crabka logs used an empty-name leading endpoint solely to carry
-    // the legacy top-level pair. New Crabka and JVM records contain only real
+    // Older Krabka logs used an empty-name leading endpoint solely to carry
+    // the legacy top-level pair. New Krabka and JVM records contain only real
     // listener endpoints; in that case the first endpoint supplies the
     // legacy fields while every endpoint stays in the listener list.
     let (host, port, endpoints_on_wire) = match b.end_points.split_first() {
@@ -1305,13 +1305,13 @@ fn partition_change_from_kraft(
     if change.leader_recovery_state != -1 {
         return Err(TranslateError::Invalid {
             field: "partition change leader recovery state",
-            detail: "Crabka does not yet model unclean-election recovery state".into(),
+            detail: "Krabka does not yet model unclean-election recovery state".into(),
         });
     }
     if change.eligible_leader_replicas.is_some() || change.last_known_elr.is_some() {
         return Err(TranslateError::Invalid {
             field: "partition change eligible leader replicas",
-            detail: "Crabka does not yet model KIP-966 eligible leader replicas".into(),
+            detail: "Krabka does not yet model KIP-966 eligible leader replicas".into(),
         });
     }
 
@@ -1857,7 +1857,7 @@ mod tests {
                 name: "CONTROLLER".into(),
                 host: "controller-3".into(),
                 port: 9093,
-                protocol: crabka_security::ListenerProtocol::SaslSsl,
+                protocol: krabka_security::ListenerProtocol::SaslSsl,
             }],
             features: std::collections::BTreeMap::from([(
                 "kraft.version".to_string(),
@@ -2365,14 +2365,14 @@ mod tests {
 
     #[test]
     fn features_epoch_round_trips_via_private_carrier() {
-        // The synthetic `V1FeaturesEpoch` epoch pin is Crabka-internal (no KRaft
+        // The synthetic `V1FeaturesEpoch` epoch pin is Krabka-internal (no KRaft
         // record); it round-trips through the same private `Unknown` carrier so
         // a snapshot preserves `finalized_features_epoch`.
         let rec = MetadataRecord::V1FeaturesEpoch(FeaturesEpochRecord { epoch: 42 });
         let k = to_kraft(&rec, &img()).unwrap();
         assert2::assert!(matches!(
             k,
-            crabka_protocol::records::metadata::KraftMetadataRecord::Unknown { api_key, .. }
+            krabka_protocol::records::metadata::KraftMetadataRecord::Unknown { api_key, .. }
                 if api_key == PRIVATE_FEATURES_EPOCH_KEY
         ));
         round_trip(&rec, &img());
@@ -2800,25 +2800,25 @@ mod tests {
         for (record, want) in [
             (
                 KraftMetadataRecord::BrokerRegistrationChange(
-                    crabka_protocol::owned::broker_registration_change_record::BrokerRegistrationChangeRecord::default(),
+                    krabka_protocol::owned::broker_registration_change_record::BrokerRegistrationChangeRecord::default(),
                 ),
                 "BrokerRegistrationChange",
             ),
             (
                 KraftMetadataRecord::NoOp(
-                    crabka_protocol::owned::no_op_record::NoOpRecord::default(),
+                    krabka_protocol::owned::no_op_record::NoOpRecord::default(),
                 ),
                 "NoOp",
             ),
             (
                 KraftMetadataRecord::BeginTransaction(
-                    crabka_protocol::owned::begin_transaction_record::BeginTransactionRecord::default(),
+                    krabka_protocol::owned::begin_transaction_record::BeginTransactionRecord::default(),
                 ),
                 "BeginTransaction",
             ),
             (
                 KraftMetadataRecord::EndTransaction(
-                    crabka_protocol::owned::end_transaction_record::EndTransactionRecord::default(),
+                    krabka_protocol::owned::end_transaction_record::EndTransactionRecord::default(),
                 ),
                 "EndTransaction",
             ),

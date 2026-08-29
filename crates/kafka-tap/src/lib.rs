@@ -126,7 +126,7 @@ fn pump(
 mod tests {
     use std::time::Duration;
 
-    use crabka_ids::{ApiKey, ApiVersion};
+    use krabka_ids::{ApiKey, ApiVersion};
 
     use super::*;
 

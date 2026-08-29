@@ -6,7 +6,7 @@
 //! Kafka's `DefaultKafkaPrincipalBuilder` uses the cert's Subject
 //! Distinguished Name in RFC 2253 format, for example `CN=alice,OU=foo,O=org`,
 //! as the principal name. Operators and `KafkaUser` mTLS provisioning pin ACLs
-//! by that DN, so Crabka matches it byte-for-byte.
+//! by that DN, so Krabka matches it byte-for-byte.
 
 use x509_parser::prelude::{FromDer, X509Certificate};
 
@@ -43,11 +43,11 @@ mod tests {
         let mut iter = CertificateDer::pem_slice_iter(pem);
         let cert: CertificateDer<'static> = iter.next().expect("at least one cert").unwrap();
         let dn = extract_principal_from_cert(cert.as_ref()).expect("parse fixture cert");
-        // openssl-rendered subject is CN=test-client,OU=integration,O=crabka.
+        // openssl-rendered subject is CN=test-client,OU=integration,O=krabka.
         // x509-parser preserves that order (most-significant first),
         // comma-separated, no spaces. Operators pin this DN verbatim in
         // ACLs and super_users.
-        assert2::assert!(dn == "CN=test-client,OU=integration,O=crabka");
+        assert2::assert!(dn == "CN=test-client,OU=integration,O=krabka");
     }
 
     #[test]

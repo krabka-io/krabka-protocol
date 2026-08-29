@@ -5,8 +5,8 @@
 //! 16-byte value is a stamp, and re-rendering it gives the same bytes. Every
 //! other length is a [`HlcError::Length`], and no input panics.
 
-use crabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
-use crabka_ids::NodeId;
+use krabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
+use krabka_ids::NodeId;
 use proptest::prelude::*;
 
 // A stamp over the whole range each field can hold on the wire.

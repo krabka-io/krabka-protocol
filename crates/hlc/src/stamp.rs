@@ -1,6 +1,6 @@
 //! The hybrid logical clock stamp and its fixed-width byte layout.
 
-use crabka_ids::NodeId;
+use krabka_ids::NodeId;
 use derive_more::{Display, From, Into};
 
 use crate::{error::HlcError, headers::HLC_HEADER};
@@ -14,7 +14,7 @@ pub const HLC_ENCODED_LEN: usize = 16;
 /// A wall-clock instant, in microseconds since the Unix epoch.
 ///
 /// This is a coordinate on the time line and not an extent of time, so it is a
-/// newtype here and not a [`crabka_units::Time`]. See the code style guide's
+/// newtype here and not a [`krabka_units::Time`]. See the code style guide's
 /// "Dimensioned Values" section for the rule.
 ///
 /// The unit is the microsecond. A Kafka record timestamp counts milliseconds,

@@ -1,4 +1,4 @@
-//! Security primitives used by Crabka brokers, clients, and tooling.
+//! Security primitives used by Krabka brokers, clients, and tooling.
 //!
 //! The crate owns the protocol-independent pieces of TLS, SASL, SCRAM,
 //! OAuth/OIDC, mTLS principal extraction, delegation-token HMACs, Kerberos
@@ -12,7 +12,7 @@
 //! ```rust
 //! use std::collections::HashMap;
 //!
-//! use crabka_security::{AuthMethod, verify_plain};
+//! use krabka_security::{AuthMethod, verify_plain};
 //!
 //! let mut users = HashMap::new();
 //! users.insert("alice".to_string(), "wonderland".to_string());
@@ -25,7 +25,7 @@
 //! ## Storing SCRAM credentials
 //!
 //! ```rust
-//! use crabka_security::{SaslMechanism, hash_scram_password};
+//! use krabka_security::{SaslMechanism, hash_scram_password};
 //!
 //! let credential = hash_scram_password(
 //!     b"correct horse battery staple",

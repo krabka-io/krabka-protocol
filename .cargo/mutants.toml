@@ -83,7 +83,7 @@ exclude_re = [
 
     # `version < 4` guards clearing `cordoned_log_dirs` before encoding a
     # downgraded RegisterBroker. The field appears nowhere else in this crate:
-    # Crabka never populates it, so it is already `None` and the assignment is a
+    # Krabka never populates it, so it is already `None` and the assignment is a
     # no-op whichever way the comparison reads. The guard is defensive against a
     # future encoder that does carry it, and until something sets the field no
     # test can tell these apart.

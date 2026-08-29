@@ -1,5 +1,5 @@
 [package]
-name = "crabka-hlc"
+name = "krabka-hlc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,21 +8,21 @@ rust-version.workspace = true
 description = "Hybrid logical clock stamps that ride on Kafka record headers, with a clock-skew observation seam"
 repository = "https://github.com/robot-head/crabka"
 homepage = "https://github.com/robot-head/crabka"
-documentation = "https://docs.rs/crabka-hlc"
+documentation = "https://docs.rs/krabka-hlc"
 readme = "README.md"
-keywords = ["kafka", "hlc", "clock", "causality", "crabka"]
+keywords = ["kafka", "hlc", "clock", "causality", "krabka"]
 categories = ["date-and-time", "data-structures"]
 
 [lints]
 workspace = true
 
-# A leaf crate with no IO and no async. It does not depend on `crabka-protocol`,
+# A leaf crate with no IO and no async. It does not depend on `krabka-protocol`,
 # so a producer, a consumer, and the observability stack can all stamp and read
 # a record without a link against the wire codec. The carriage stays type-erased
 # over `(&str, impl AsRef<[u8]>)` header pairs, so any header type works.
 [dependencies]
-crabka-ids = { version = "0.4.0", path = "../ids" }
-crabka-units = { workspace = true }
+krabka-ids = { version = "0.4.0", path = "../ids" }
+krabka-units = { workspace = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

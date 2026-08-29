@@ -1,5 +1,5 @@
 use assert2::{assert, check};
-use crabka_trace_context::{SqlCommenterTrace, TraceCarrier, extract_sqlcommenter};
+use krabka_trace_context::{SqlCommenterTrace, TraceCarrier, extract_sqlcommenter};
 
 const TRACEPARENT: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 /// A second well-formed traceparent. Some cases must show *which* tag the

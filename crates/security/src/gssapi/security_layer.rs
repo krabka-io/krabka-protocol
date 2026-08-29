@@ -1,6 +1,6 @@
-use crabka_units::{ByteSize, convert::ByteSizeExt as _};
+use krabka_units::{ByteSize, convert::ByteSizeExt as _};
 
-/// RFC 4752 security-layer bitmask. Crabka supports auth-only, which matches Kafka.
+/// RFC 4752 security-layer bitmask. Krabka supports auth-only, which matches Kafka.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SecurityLayer(pub u8);
 
@@ -105,7 +105,7 @@ pub fn decode_offer_layers(bytes: &[u8]) -> Result<SecurityLayer, LayerError> {
 #[cfg(test)]
 mod tests {
 
-    use crabka_units::kibibytes;
+    use krabka_units::kibibytes;
 
     use super::*;
 

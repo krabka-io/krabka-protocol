@@ -6,7 +6,7 @@
 //! [`sspi::KeytabIdentity`], to drive the AS/TGS exchange with no password.
 use std::sync::Mutex;
 
-use crabka_units::{Time, convert::TimeExt as _};
+use krabka_units::{Time, convert::TimeExt as _};
 use sspi::{
     BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
     DataRepresentation, EncryptionFlags, Kerberos, KerberosConfig, KeytabIdentity, Secret,
@@ -143,7 +143,7 @@ impl SspiAcceptor {
         }
 
         let server = Kerberos::new_server_from_config(
-            KerberosConfig::new(&kdc_url_from_env(), "crabka-broker".to_string()),
+            KerberosConfig::new(&kdc_url_from_env(), "krabka-broker".to_string()),
             server_properties,
         )
         .map_err(ctx_err)?;
@@ -225,7 +225,7 @@ impl SspiInitiator {
     /// This function reads `keytab_path` and extracts the aes256 key for the
     /// first component of `client_principal`. It then builds an sspi client
     /// that authenticates as `client_principal`, for example
-    /// `"alice@CRABKA.TEST"` or `"kafka/host@CRABKA.TEST"`.
+    /// `"alice@KRABKA.TEST"` or `"kafka/host@KRABKA.TEST"`.
     ///
     /// `target_spn` is the service SPN without the realm, for example
     /// `"kafka/localhost"`. `kdc_url` is the KDC endpoint, for example
@@ -267,7 +267,7 @@ impl SspiInitiator {
 
         let mut client = Kerberos::new_client_from_config(KerberosConfig::new(
             kdc_url,
-            "crabka-broker".to_string(),
+            "krabka-broker".to_string(),
         ))
         .map_err(ctx_err)?;
 

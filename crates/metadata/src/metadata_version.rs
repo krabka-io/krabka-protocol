@@ -1,6 +1,6 @@
 //! KIP-778 `metadata.version` feature-level model. The canonical
 //! string<->integer-level table, mirrored byte-for-byte from upstream
-//! Kafka's `MetadataVersion` enum over the range Crabka advertises
+//! Kafka's `MetadataVersion` enum over the range Krabka advertises
 //! (`[METADATA_VERSION_MIN, METADATA_VERSION_MAX]`). JVM clients call
 //! `MetadataVersion.fromFeatureLevel(N)` and throw on any level their
 //! enum does not know, so the levels and `X.Y-IVn` names here MUST match
@@ -9,12 +9,12 @@
 /// The `metadata.version` feature name (KIP-584 / KIP-778).
 pub const METADATA_VERSION_FEATURE: &str = "metadata.version";
 
-/// Crabka registration-only marker for KIP-1155 downgrade support. The KIP is
+/// Krabka registration-only marker for KIP-1155 downgrade support. The KIP is
 /// still under discussion and has not assigned its promised capability
 /// `metadata.version` level, so this must not extend the canonical 7..=25
 /// metadata-version range or appear in `ApiVersions`. It is carried only in
 /// broker/controller registration feature maps; pre-KIP JVM nodes omit it.
-pub const METADATA_DOWNGRADE_CAPABILITY_FEATURE: &str = "crabka.metadata.downgrade";
+pub const METADATA_DOWNGRADE_CAPABILITY_FEATURE: &str = "krabka.metadata.downgrade";
 /// The only supported level of [`METADATA_DOWNGRADE_CAPABILITY_FEATURE`].
 pub const METADATA_DOWNGRADE_CAPABILITY_LEVEL: i16 = 1;
 
@@ -53,7 +53,7 @@ pub const ONLINE_DOWNGRADE_MIN_LEVEL: i16 = 15;
 /// metadata records (`3.7-IV2`, KIP-858).
 pub const DIRECTORY_ASSIGNMENT_MIN_LEVEL: i16 = 17;
 /// Level at which partition records gained KIP-966 eligible-leader fields
-/// (`4.0-IV1`). Crabka does not model ELR state, but it must still select the
+/// (`4.0-IV1`). Krabka does not model ELR state, but it must still select the
 /// record version Kafka readers expect at this metadata version.
 pub const ELR_MIN_LEVEL: i16 = 23;
 

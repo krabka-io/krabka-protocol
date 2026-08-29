@@ -5,7 +5,7 @@
 //! The broker uses the same range for its controller RPCs in
 //! `crates/raft/src/wire.rs`, at keys 1003 and 1004.
 //!
-//! `crabka-protocol-codegen` reads the upstream Kafka schemas, so it cannot emit
+//! `krabka-protocol-codegen` reads the upstream Kafka schemas, so it cannot emit
 //! these messages. They are hand-written, and they live under `src/` beside the
 //! KIP-405 record codec in [`crate::records::remote_log_metadata`].
 //!

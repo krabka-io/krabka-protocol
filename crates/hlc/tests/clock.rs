@@ -3,12 +3,12 @@
 use std::sync::Arc;
 
 use assert2::check;
-use crabka_hlc::{
+use krabka_hlc::{
     ClockObservation, DEFAULT_MAX_OFFSET, Hlc, HlcClock, HlcError, ManualClock, PhysicalClock as _,
     WallMicros,
 };
-use crabka_ids::NodeId;
-use crabka_units::{Time, convert::TimeExt as _, micros, millis};
+use krabka_ids::NodeId;
+use krabka_units::{Time, convert::TimeExt as _, micros, millis};
 
 const LOCAL: NodeId = NodeId(1);
 const PEER: NodeId = NodeId(9);

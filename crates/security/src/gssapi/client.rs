@@ -1,4 +1,4 @@
-use crabka_units::ByteSize;
+use krabka_units::ByteSize;
 
 use super::{
     GssError, GssInitiator, InitStep,
@@ -142,7 +142,7 @@ impl GssapiClientExchange {
     /// # Errors
     /// Returns an error if a GSS context/wrap/unwrap operation fails, the
     /// server's offer is malformed, or the server offers no security layer that
-    /// Crabka supports.
+    /// Krabka supports.
     // Per-step GSSAPI initiate driver. skip_all keeps the opaque `server_token`
     // (GSS/Kerberos context bytes) out of span fields; only the non-sensitive
     // mechanism is recorded. `err` surfaces the failure (Debug).
@@ -168,7 +168,7 @@ impl GssapiClientExchange {
 #[cfg(test)]
 mod tests {
 
-    use crabka_units::kibibytes;
+    use krabka_units::kibibytes;
 
     use super::*;
     use crate::gssapi::{GssError, GssInitiator, InitStep};

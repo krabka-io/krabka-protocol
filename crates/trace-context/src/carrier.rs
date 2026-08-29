@@ -16,13 +16,13 @@ const TRACE_ID_RANGE: std::ops::Range<usize> = 3..35;
 const SPAN_ID_RANGE: std::ops::Range<usize> = 36..52;
 const FLAGS_RANGE: std::ops::Range<usize> = 53..55;
 
-/// W3C caps `tracestate` at 512 bytes and 32 list members. Crabka drops a
+/// W3C caps `tracestate` at 512 bytes and 32 list members. Krabka drops a
 /// larger value and does not forward it, so a client cannot use `tracestate`
-/// as free storage on every span Crabka emits.
+/// as free storage on every span Krabka emits.
 const MAX_TRACESTATE_BYTES: usize = 512;
 const MAX_TRACESTATE_MEMBERS: usize = 32;
 
-/// Why Crabka rejected a client-supplied W3C trace context.
+/// Why Krabka rejected a client-supplied W3C trace context.
 ///
 /// No variant holds the input that failed. An attacker controls a rejected
 /// `traceparent`, and a message that keeps it verbatim would put that string
@@ -34,7 +34,7 @@ pub enum TraceContextError {
     #[error("traceparent must be {TRACEPARENT_LEN} bytes, got {0}")]
     Length(usize),
 
-    /// Crabka reads only version `00` of the W3C traceparent format.
+    /// Krabka reads only version `00` of the W3C traceparent format.
     #[error("unsupported traceparent version")]
     UnsupportedVersion,
 
@@ -57,7 +57,7 @@ pub enum TraceContextError {
 /// sampling, or OTLP switched off. The carrier is then two `None`s that
 /// serialise to nothing. `#[serde(default, skip_serializing_if = …)]` makes
 /// that free on the wire. It is a payload-size optimisation for the common
-/// empty case, **not** a compatibility shim for older encodings. Crabka keeps
+/// empty case, **not** a compatibility shim for older encodings. Krabka keeps
 /// no such shims: see `CLAUDE.md`.
 ///
 /// This type does not derive `PartialEq`, and that is deliberate. RPC envelopes

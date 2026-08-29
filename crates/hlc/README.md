@@ -1,17 +1,17 @@
-# crabka-hlc
+# krabka-hlc
 
-[![Crates.io](https://img.shields.io/crates/v/crabka-hlc.svg)](https://crates.io/crates/crabka-hlc)
-[![Docs.rs](https://docs.rs/crabka-hlc/badge.svg)](https://docs.rs/crabka-hlc)
+[![Crates.io](https://img.shields.io/crates/v/krabka-hlc.svg)](https://crates.io/crates/krabka-hlc)
+[![Docs.rs](https://docs.rs/krabka-hlc/badge.svg)](https://docs.rs/krabka-hlc)
 
 Hybrid logical clock stamps that ride on Kafka record headers.
 
-Part of [Crabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
+Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
 
 ## Overview
 
 A hybrid logical clock (HLC) gives every event in the cluster one timestamp that stays close to real time and that still respects cause and effect. The stamp holds a wall time, a logical counter, and the node that minted it, so it sorts totally and every node computes the same order. The algorithm is the one in Kulkarni et al., *Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases* (OPODIS 2014).
 
-A stamp travels on one Kafka record header, `krabka.hlc`. Like `crabka-trace-context`, this crate does not depend on `crabka-protocol`. It stays type-erased over `(&str, impl AsRef<[u8]>)` header pairs, so any producer or consumer header type works, and the caller converts to and from its own `Header` at the edge.
+A stamp travels on one Kafka record header, `krabka.hlc`. Like `krabka-trace-context`, this crate does not depend on `krabka-protocol`. It stays type-erased over `(&str, impl AsRef<[u8]>)` header pairs, so any producer or consumer header type works, and the caller converts to and from its own `Header` at the edge.
 
 ## Features
 
@@ -24,8 +24,8 @@ A stamp travels on one Kafka record header, `krabka.hlc`. Like `crabka-trace-con
 ## Usage
 
 ```rust
-use crabka_hlc::{HlcClock, HlcError, extract_from_headers};
-use crabka_ids::NodeId;
+use krabka_hlc::{HlcClock, HlcError, extract_from_headers};
+use krabka_ids::NodeId;
 
 fn round_trip(clock: &HlcClock) -> Result<(), HlcError> {
     // A producer stamps the record it writes.
@@ -48,8 +48,8 @@ round_trip(&clock).unwrap();
 
 ## Documentation
 
-- [API Documentation](https://docs.rs/crabka-hlc)
-- [Crabka repository](https://github.com/robot-head/crabka)
+- [API Documentation](https://docs.rs/krabka-hlc)
+- [Krabka repository](https://github.com/robot-head/crabka)
 
 ## License
 

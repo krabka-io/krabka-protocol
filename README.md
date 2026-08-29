@@ -12,15 +12,15 @@ Nothing in this repository depends on either.
 
 | Crate | What it is |
 | --- | --- |
-| `crabka-protocol` | Kafka request/response codecs, generated from the upstream JSON schemas. |
-| `crabka-metadata` | KRaft metadata records and the in-memory metadata image. |
-| `crabka-security` | SASL (SCRAM, OAUTHBEARER, GSSAPI, PLAIN) and TLS configuration. |
-| `crabka-compression` | gzip, snappy, lz4 and zstd record-batch codecs. |
-| `crabka-voters` | KRaft voter-set model. |
-| `crabka-ids` | Topic, partition, broker and producer identifiers. |
-| `crabka-units` | Typed quantities (bytes, durations, rates) used across the stack. |
-| `crabka-trace-context` | W3C trace-context and sqlcommenter propagation. |
-| `crabka-kafka-tap` | Test-only TCP tap that records Kafka frames for corpus capture. |
+| `krabka-protocol` | Kafka request/response codecs, generated from the upstream JSON schemas. |
+| `krabka-metadata` | KRaft metadata records and the in-memory metadata image. |
+| `krabka-security` | SASL (SCRAM, OAUTHBEARER, GSSAPI, PLAIN) and TLS configuration. |
+| `krabka-compression` | gzip, snappy, lz4 and zstd record-batch codecs. |
+| `krabka-voters` | KRaft voter-set model. |
+| `krabka-ids` | Topic, partition, broker and producer identifiers. |
+| `krabka-units` | Typed quantities (bytes, durations, rates) used across the stack. |
+| `krabka-trace-context` | W3C trace-context and sqlcommenter propagation. |
+| `krabka-kafka-tap` | Test-only TCP tap that records Kafka frames for corpus capture. |
 
 ## Build
 
@@ -126,5 +126,5 @@ directory, only works when it is launched the way Cargo happens to launch it.
 
 These crates are published to crates.io from
 [`robot-head/crabka`](https://github.com/robot-head/crabka), which is still the
-release home for the `crabka-*` names. This repository has no release
+release home for the `krabka-*` names. This repository has no release
 automation; consumers pin it by git revision.

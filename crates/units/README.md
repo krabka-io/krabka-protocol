@@ -1,8 +1,8 @@
-# crabka-units
+# krabka-units
 
-Dimensioned quantities for Crabka: byte counts, byte rates, durations, frequencies, and ratios.
+Dimensioned quantities for Krabka: byte counts, byte rates, durations, frequencies, and ratios.
 
-Part of [Crabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
+Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
 
 It wraps [`uom`](https://docs.rs/uom) in a small vocabulary: `ByteSize`, `ByteRate`, `Time`, `Frequency`, and `Ratio`. A configured size, quota, or timeout carries its dimension in the type, and the compiler rejects a millisecond where the code needs bytes. The compiler also checks cross-dimension arithmetic such as `ByteSize / Time == ByteRate`. The types enforce that rule, so no comment has to describe it.
 
