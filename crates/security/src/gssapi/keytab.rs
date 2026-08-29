@@ -35,7 +35,7 @@ pub const ENCTYPE_AES256_CTS_HMAC_SHA1_96: u16 = 18;
 pub struct KeytabKey {
     /// Principal name components, excluding the realm (e.g. `["kafka", "host"]`).
     pub components: Vec<String>,
-    /// The principal's realm (e.g. `"KRABKA.TEST"`).
+    /// The principal's realm (e.g. `"CRABKA.TEST"`).
     pub realm: String,
     /// Kerberos encryption type (18 = aes256-cts-hmac-sha1-96).
     pub enctype: u16,
@@ -323,12 +323,12 @@ mod tests {
     #[test]
     fn parses_single_aes256_entry() {
         // Mirrors the fixture hexdump documented in the task:
-        // 0502 0000 0052 0002 000b "KRABKA.TEST" 0005 "kafka" 0009 "localhost"
+        // 0502 0000 0052 0002 000b "CRABKA.TEST" 0005 "kafka" 0009 "localhost"
         // 00000001 <ts> 01 0012 0020 <32 key bytes> 00000001
         let key: Vec<u8> = (0u8..32).collect();
         let body = entry_body(&EntrySpec {
             components: &["kafka", "localhost"],
-            realm: "KRABKA.TEST",
+            realm: "CRABKA.TEST",
             kvno8: 1,
             enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
             key: &key,
@@ -341,7 +341,7 @@ mod tests {
             entries
                 == vec![KeytabKey {
                     components: vec!["kafka".to_string(), "localhost".to_string()],
-                    realm: "KRABKA.TEST".to_string(),
+                    realm: "CRABKA.TEST".to_string(),
                     enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
                     kvno: 1,
                     key: key.clone(),

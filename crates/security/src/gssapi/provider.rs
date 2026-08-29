@@ -225,7 +225,7 @@ impl SspiInitiator {
     /// This function reads `keytab_path` and extracts the aes256 key for the
     /// first component of `client_principal`. It then builds an sspi client
     /// that authenticates as `client_principal`, for example
-    /// `"alice@KRABKA.TEST"` or `"kafka/host@KRABKA.TEST"`.
+    /// `"alice@CRABKA.TEST"` or `"kafka/host@CRABKA.TEST"`.
     ///
     /// `target_spn` is the service SPN without the realm, for example
     /// `"kafka/localhost"`. `kdc_url` is the KDC endpoint, for example

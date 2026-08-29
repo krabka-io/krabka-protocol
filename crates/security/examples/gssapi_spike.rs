@@ -36,9 +36,9 @@ use sspi::{
     kerberos::ServerProperties,
 };
 
-const REALM: &str = "KRABKA.TEST";
+const REALM: &str = "CRABKA.TEST";
 const SERVICE_SPN: &str = "kafka/localhost"; // realm is supplied via the client principal
-const CLIENT_PRINCIPAL: &str = "alice@KRABKA.TEST";
+const CLIENT_PRINCIPAL: &str = "alice@CRABKA.TEST";
 const CLIENT_PASSWORD: &str = "alicepw";
 const MAX_TIME_SKEW: std::time::Duration = std::time::Duration::from_mins(5);
 

@@ -16,9 +16,9 @@
 //!   cargo test -p krabka-security --test gssapi_provider -- --ignored
 //! ```
 //!
-//! The test drives the full GSSAPI loop against the fixture. `alice@KRABKA.TEST`
+//! The test drives the full GSSAPI loop against the fixture. `alice@CRABKA.TEST`
 //! initiates *from a keytab*, `alice.keytab`, with no password, to the
-//! `kafka/localhost@KRABKA.TEST` service whose key lives in `kafka.keytab`. The
+//! `kafka/localhost@CRABKA.TEST` service whose key lives in `kafka.keytab`. The
 //! test then asserts the recovered source principal and round-trips a wrapped
 //! RFC 4752 security-layer message. This drives the released sspi
 //! keytab-client-auth path end-to-end against a real KDC.
@@ -32,7 +32,7 @@ use krabka_units::secs;
 const KEYTAB_PATH: &str = "tests/fixtures/kdc/kafka.keytab";
 const SERVICE_NAME: &str = "kafka";
 const TARGET_SPN: &str = "kafka/localhost";
-const CLIENT_PRINCIPAL: &str = "alice@KRABKA.TEST";
+const CLIENT_PRINCIPAL: &str = "alice@CRABKA.TEST";
 const CLIENT_KEYTAB_PATH: &str = "tests/fixtures/kdc/alice.keytab";
 
 /// Resolve a crate-relative fixture against the working directory.
