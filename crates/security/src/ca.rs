@@ -62,7 +62,7 @@ fn validity_window(validity_days: u32) -> Result<(OffsetDateTime, OffsetDateTime
     Ok((not_before, not_after))
 }
 
-/// Generate a self-signed clients CA with `Subject = CN=<cn>, O=crabka`,
+/// Generate a self-signed clients CA with `Subject = CN=<cn>, O=krabka`,
 /// `BasicConstraints: CA:TRUE`, and `KeyUsage = keyCertSign|cRLSign`.
 /// ECDSA P-256.
 // Clients-CA issuance. skip_all keeps the generated private key (a local)
@@ -81,7 +81,7 @@ pub fn generate_clients_ca(cn: &str, validity_days: u32) -> Result<CaMaterial, C
 
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, cn);
-    dn.push(DnType::OrganizationName, "crabka");
+    dn.push(DnType::OrganizationName, "krabka");
     params.distinguished_name = dn;
 
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
@@ -117,7 +117,7 @@ pub fn generate_cluster_ca(cn: &str, validity_days: u32) -> Result<CaMaterial, C
 
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, cn);
-    dn.push(DnType::OrganizationName, "crabka");
+    dn.push(DnType::OrganizationName, "krabka");
     dn.push(DnType::OrganizationalUnitName, "cluster");
     params.distinguished_name = dn;
 
@@ -135,7 +135,7 @@ pub fn generate_cluster_ca(cn: &str, validity_days: u32) -> Result<CaMaterial, C
 /// Re-sign a cluster CA cert with an existing key, a same-key renewal.
 ///
 /// This function generates a fresh self-signed cert with the SAME subject DN,
-/// `CN=<cn>, O=crabka, OU=cluster`, plus `CA:TRUE`, `KU keyCertSign|cRLSign`,
+/// `CN=<cn>, O=krabka, OU=cluster`, plus `CA:TRUE`, `KU keyCertSign|cRLSign`,
 /// and a new `validityDays` window. It keys the cert with `key_pem` and not
 /// with a freshly generated key. The public key (SPKI) and the subject DN are
 /// identical to the cert this one replaces, so leaf certs issued under the old
@@ -176,7 +176,7 @@ fn renew_ca(key_pem: &str, cn: &str, validity_days: u32, cluster: bool) -> Resul
 
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, cn);
-    dn.push(DnType::OrganizationName, "crabka");
+    dn.push(DnType::OrganizationName, "krabka");
     if cluster {
         dn.push(DnType::OrganizationalUnitName, "cluster");
     }
@@ -339,7 +339,7 @@ mod tests {
 
         let subject = cert.subject().to_string();
         assert2::assert!(subject.contains("CN=root"));
-        assert2::assert!(subject.contains("O=crabka"));
+        assert2::assert!(subject.contains("O=krabka"));
 
         let bc = cert
             .basic_constraints()
@@ -408,7 +408,7 @@ mod tests {
         let der = pem_to_der(&ca.cert_pem);
         let (_, cert) = X509Certificate::from_der(der.as_ref()).expect("parse cluster CA DER");
         let subject = cert.subject().to_string();
-        for part in ["CN=c1", "O=crabka", "OU=cluster"] {
+        for part in ["CN=c1", "O=krabka", "OU=cluster"] {
             assert2::assert!(subject.contains(part));
         }
         let bc = cert
@@ -522,7 +522,7 @@ mod tests {
         let der = pem_to_der(&renewed_pem);
         let (_, cert) = X509Certificate::from_der(der.as_ref()).expect("parse renewed");
         let subject = cert.subject().to_string();
-        for part in ["CN=c1-cluster-ca", "O=crabka", "OU=cluster"] {
+        for part in ["CN=c1-cluster-ca", "O=krabka", "OU=cluster"] {
             assert2::assert!(subject.contains(part));
         }
         assert2::assert!(

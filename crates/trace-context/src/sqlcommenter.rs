@@ -2,7 +2,7 @@
 //!
 //! OpenTelemetry-instrumented database drivers append
 //! `/*traceparent='00-<32 hex>-<16 hex>-<2 hex>'*/` to the statements they send.
-//! `PostgreSQL` and Crabka's own lexer both skip `--` comments and `/* */`
+//! `PostgreSQL` and Krabka's own lexer both skip `--` comments and `/* */`
 //! comments, and emit no token for them. The tag changes no AST, so nothing
 //! rewrites the SQL text before the parser reads it.
 //!

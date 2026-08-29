@@ -5,7 +5,7 @@
 //! value equals the original.
 
 use bytes::{Bytes, BytesMut};
-use crabka_protocol::{
+use krabka_protocol::{
     Decode, Encode, UnknownTaggedField, UnknownTaggedFields,
     krabka::barrier::{
         AlterBarrierGroupResult, AlterBarrierGroupsRequest, AlterBarrierGroupsResponse,

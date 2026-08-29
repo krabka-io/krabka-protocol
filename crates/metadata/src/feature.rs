@@ -2,7 +2,7 @@
 //! cluster feature: the supported range, the per-release default, the downgrade
 //! floor, the KIP-1022 dependencies, and an optional level name. The static
 //! [`feature_registry`] is the single source of truth for `ApiVersions`,
-//! `UpdateFeatures`, the `crabka format` bootstrap, and the Raft range guards.
+//! `UpdateFeatures`, the `krabka format` bootstrap, and the Raft range guards.
 //! Behavioral *gating*, that is, the rejection of RPCs below a level, lives in
 //! the broker handlers that read the finalized level from the image, not here.
 
@@ -19,7 +19,7 @@ pub trait Feature: Sync {
     /// `ApiVersions.supported_features` and accepted by `UpdateFeatures`.
     fn supported_range(&self) -> (i16, i16);
 
-    /// The level finalized at `crabka format` for the bootstrap
+    /// The level finalized at `krabka format` for the bootstrap
     /// `metadata.version` level, which is the resolved `--release-version`.
     /// Kafka derives the default of every feature from the release in this way.
     fn default_level(&self, bootstrap_mv: i16) -> i16;
@@ -217,7 +217,7 @@ pub fn feature_registry() -> &'static [&'static dyn Feature] {
     REGISTRY
 }
 
-/// Supported feature ranges advertised by a Crabka broker or controller when
+/// Supported feature ranges advertised by a Krabka broker or controller when
 /// it registers with the `KRaft` controller.
 #[must_use]
 pub fn supported_feature_ranges() -> BTreeMap<String, (i16, i16)> {
@@ -250,7 +250,7 @@ pub fn feature(name: &str) -> Option<&'static dyn Feature> {
 
 /// KIP-584/1022 bootstrap: one `V1FeatureLevel` record per registered feature
 /// at its per-release default, derived from `bootstrap_mv`, the bootstrap
-/// metadata.version level. Both `crabka format` and the broker's standalone
+/// metadata.version level. Both `krabka format` and the broker's standalone
 /// self-bootstrap use this, so a fresh cluster finalizes the release default of
 /// every feature.
 #[must_use]
@@ -258,7 +258,7 @@ pub fn bootstrap_feature_records(bootstrap_mv: i16) -> Vec<crate::MetadataRecord
     bootstrap_feature_records_with_overrides(bootstrap_mv, &BTreeMap::new())
 }
 
-/// KIP-1022 `crabka format` seeding: one `V1FeatureLevel` record per registered
+/// KIP-1022 `krabka format` seeding: one `V1FeatureLevel` record per registered
 /// feature, each at its explicit `--feature NAME=LEVEL` override if present in
 /// `overrides`, else its per-release default for `bootstrap_mv`.
 ///
@@ -290,7 +290,7 @@ pub fn bootstrap_feature_records_with_overrides(
 }
 
 /// KIP-1022 dependency validation for a fully-resolved feature→level map, as
-/// seeded by `crabka format`. For every finalized feature, each of its
+/// seeded by `krabka format`. For every finalized feature, each of its
 /// `dependencies(level)` must be present in `resolved` at `>=` the required
 /// level. Returns `Err` with the name of the first unmet dependency. The check
 /// does nothing for today's registry, because no feature declares dependencies,

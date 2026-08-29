@@ -27,7 +27,7 @@
 //!
 //! [keytab file format]: https://web.mit.edu/kerberos/krb5-devel/doc/formats/keytab_file_format.html
 
-/// aes256-cts-hmac-sha1-96. The only enctype Crabka's acceptor uses.
+/// aes256-cts-hmac-sha1-96. The only enctype Krabka's acceptor uses.
 pub const ENCTYPE_AES256_CTS_HMAC_SHA1_96: u16 = 18;
 
 /// A single key entry parsed from a keytab.

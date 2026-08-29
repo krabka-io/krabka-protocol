@@ -1,8 +1,8 @@
 //! Carriage of a stamp on Kafka record headers.
 
 use assert2::check;
-use crabka_hlc::{HLC_HEADER, Hlc, WallMicros, extract_from_headers};
-use crabka_ids::NodeId;
+use krabka_hlc::{HLC_HEADER, Hlc, WallMicros, extract_from_headers};
+use krabka_ids::NodeId;
 
 // A named case plus the record headers it feeds to `extract_from_headers`.
 type HeaderCase<'a> = (&'a str, Vec<(&'a str, Vec<u8>)>);
@@ -12,7 +12,7 @@ fn stamp() -> Hlc {
 }
 
 #[test]
-fn header_pairs_the_crabka_key_with_the_encoded_value() {
+fn header_pairs_the_krabka_key_with_the_encoded_value() {
     let (key, value) = stamp().header().unwrap();
     check!(key == "krabka.hlc");
     check!(key == HLC_HEADER);

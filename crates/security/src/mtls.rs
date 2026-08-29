@@ -6,7 +6,7 @@
 //! Kafka's `DefaultKafkaPrincipalBuilder` uses the cert's Subject
 //! Distinguished Name in RFC 2253 format, for example `CN=alice,OU=foo,O=org`,
 //! as the principal name. Operators and `KafkaUser` mTLS provisioning pin ACLs
-//! by that DN, so Crabka matches it byte-for-byte.
+//! by that DN, so Krabka matches it byte-for-byte.
 
 use x509_parser::prelude::{FromDer, X509Certificate};
 

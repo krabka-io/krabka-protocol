@@ -103,6 +103,6 @@ shape.
 
 ## Releases
 
-This repository has no release automation. The `crabka-*` crates.io names are
+This repository has no release automation. The `krabka-*` crates.io names are
 still published from [`robot-head/crabka`](https://github.com/robot-head/crabka);
 consumers here pin by git revision.

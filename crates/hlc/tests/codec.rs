@@ -1,8 +1,8 @@
 //! The fixed-width byte layout of a stamp, and the validation of a decode.
 
 use assert2::check;
-use crabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
-use crabka_ids::NodeId;
+use krabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
+use krabka_ids::NodeId;
 
 // A stamp whose three fields hold distinct ascending bytes, so a field that
 // moves, or a field written in the wrong byte order, changes the output.

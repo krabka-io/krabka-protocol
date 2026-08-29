@@ -5,7 +5,7 @@ use crate::stamp::Hlc;
 /// The Kafka record header key that carries a hybrid logical clock stamp.
 ///
 /// The key is lower case, and a reader matches it byte for byte. Kafka header
-/// keys are case-sensitive, and this key belongs to Crabka, so there is no
+/// keys are case-sensitive, and this key belongs to Krabka, so there is no
 /// second spelling to accept.
 pub const HLC_HEADER: &str = "krabka.hlc";
 

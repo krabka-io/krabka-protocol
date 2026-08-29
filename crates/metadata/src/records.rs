@@ -2,8 +2,8 @@
 //! reader can skip an unknown variant because we encode each variant
 //! length-prefixed inside the `bincode` payload.
 
-pub use crabka_ids::LeaderEpoch;
-pub use crabka_voters::NodeId;
+pub use krabka_ids::LeaderEpoch;
+pub use krabka_voters::NodeId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -75,7 +75,7 @@ pub struct PartitionDirAssignmentRecord {
 ///
 /// Applied as a delta, never a full-record replace, so sequential advances on
 /// the committed metadata log yield a gap-free, strictly-monotonic, unique
-/// offset sequence. On the `KRaft` log it still uses a Crabka-private carrier.
+/// offset sequence. On the `KRaft` log it still uses a Krabka-private carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartitionOffsetAdvanceRecord {
     pub topic: String,
@@ -96,7 +96,7 @@ pub struct BrokerEndpoint {
     pub name: String,
     pub host: String,
     pub port: u16,
-    pub protocol: crabka_security::ListenerProtocol,
+    pub protocol: krabka_security::ListenerProtocol,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,7 +128,7 @@ pub struct BrokerRegistrationRecord {
     #[serde(default)]
     pub log_dirs: Vec<uuid::Uuid>,
     /// KIP-584 feature ranges advertised by this broker at registration.
-    /// Empty only for legacy Crabka snapshots written before the ranges were
+    /// Empty only for legacy Krabka snapshots written before the ranges were
     /// retained in the image.
     #[serde(default)]
     pub features: std::collections::BTreeMap<String, (i16, i16)>,
@@ -240,7 +240,7 @@ pub struct ProducerIdsRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScramCredentialRecord {
     pub user: String,
-    pub mechanism: crabka_security::SaslMechanism,
+    pub mechanism: krabka_security::SaslMechanism,
     pub salt: Vec<u8>,
     pub stored_key: Vec<u8>,
     pub server_key: Vec<u8>,
@@ -250,7 +250,7 @@ pub struct ScramCredentialRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeleteScramCredentialRecord {
     pub user: String,
-    pub mechanism: crabka_security::SaslMechanism,
+    pub mechanism: krabka_security::SaslMechanism,
 }
 
 /// A single delegation token's authoritative state (KIP-48).
@@ -264,14 +264,14 @@ pub struct DeleteScramCredentialRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DelegationTokenRecord {
     pub token_id: String,
-    pub owner: crabka_security::KafkaPrincipal,
+    pub owner: krabka_security::KafkaPrincipal,
     pub hmac: Vec<u8>,
     pub issue_timestamp_ms: i64,
     pub expiry_timestamp_ms: i64,
     /// Issue plus max-lifetime. A renewal cannot push `expiry_timestamp_ms`
     /// past this ceiling.
     pub max_timestamp_ms: i64,
-    pub renewers: Vec<crabka_security::KafkaPrincipal>,
+    pub renewers: Vec<krabka_security::KafkaPrincipal>,
 }
 
 /// Tombstone record that removes a delegation token (KIP-48)
@@ -354,7 +354,7 @@ pub enum MetadataRecord {
     V1FeaturesEpoch(FeaturesEpochRecord),
     /// KIP-858 directory-assignment delta (see [`PartitionDirAssignmentRecord`]).
     /// Applied as a merge into one replica's `directories` slot; on the `KRaft`
-    /// log it rides a Crabka-private carrier so it stays a delta end-to-end.
+    /// log it rides a Krabka-private carrier so it stays a delta end-to-end.
     V1PartitionDirAssignment(PartitionDirAssignmentRecord),
     /// Diskless offset-sequencer delta (see [`PartitionOffsetAdvanceRecord`]).
     /// Applied as an increment to the partition's committed next-offset.
@@ -409,7 +409,7 @@ mod tests {
                 name: "CONTROLLER".into(),
                 host: "controller-3".into(),
                 port: 9093,
-                protocol: crabka_security::ListenerProtocol::Plaintext,
+                protocol: krabka_security::ListenerProtocol::Plaintext,
             }],
             features: std::collections::BTreeMap::from([("metadata.version".into(), (7, 25))]),
         });
@@ -501,7 +501,7 @@ mod tests {
                 name: "EXTERNAL".into(),
                 host: "ext.example.com".into(),
                 port: 9092,
-                protocol: crabka_security::ListenerProtocol::SaslSsl,
+                protocol: krabka_security::ListenerProtocol::SaslSsl,
             }],
             features: std::collections::BTreeMap::new(),
         });
@@ -540,7 +540,7 @@ mod tests {
     fn scram_credential_round_trip() {
         let r = MetadataRecord::V1ScramCredential(ScramCredentialRecord {
             user: "alice".into(),
-            mechanism: crabka_security::SaslMechanism::ScramSha512,
+            mechanism: krabka_security::SaslMechanism::ScramSha512,
             salt: vec![1u8; 16],
             stored_key: vec![2u8; 64],
             server_key: vec![3u8; 64],
@@ -553,7 +553,7 @@ mod tests {
     fn delete_scram_credential_round_trip() {
         let r = MetadataRecord::V1DeleteScramCredential(DeleteScramCredentialRecord {
             user: "alice".into(),
-            mechanism: crabka_security::SaslMechanism::ScramSha512,
+            mechanism: krabka_security::SaslMechanism::ScramSha512,
         });
         assert2::assert!(round_trip(&r) == r);
     }
@@ -621,7 +621,7 @@ mod tests {
     fn delegation_token_record_round_trip() {
         let r = MetadataRecord::V1DelegationToken(DelegationTokenRecord {
             token_id: "tok-abc".into(),
-            owner: crabka_security::KafkaPrincipal {
+            owner: krabka_security::KafkaPrincipal {
                 principal_type: "User".into(),
                 name: "alice".into(),
             },
@@ -629,7 +629,7 @@ mod tests {
             issue_timestamp_ms: 1_700_000_000_000,
             expiry_timestamp_ms: 1_700_000_600_000,
             max_timestamp_ms: 1_700_604_800_000,
-            renewers: vec![crabka_security::KafkaPrincipal {
+            renewers: vec![krabka_security::KafkaPrincipal {
                 principal_type: "User".into(),
                 name: "bob".into(),
             }],

@@ -1,6 +1,6 @@
-//! W3C Trace Context propagation shared by Crabka's wire-protocol crates.
+//! W3C Trace Context propagation shared by Krabka's wire-protocol crates.
 //!
-//! This crate is the single place where a trace context crosses a Crabka
+//! This crate is the single place where a trace context crosses a Krabka
 //! process boundary. It covers the three shapes those boundaries take:
 //!
 //! - **Kafka record headers**: [`current_trace_headers`] injects the
@@ -15,11 +15,11 @@
 //!
 //! This crate deliberately depends on nothing but `opentelemetry`, `tracing`,
 //! `tracing-opentelemetry`, and `serde`. The OTLP exporter, its configuration,
-//! and the process-wide subscriber live in `crabka-telemetry`. That crate is
+//! and the process-wide subscriber live in `krabka-telemetry`. That crate is
 //! unpublished, and it pulls in a web server, a CLI parser, and a profiler.
 //! None of those belong in a crate that a protocol codec links against.
-//! `crabka-telemetry` re-exports this crate as
-//! `crabka_telemetry::propagation`.
+//! `krabka-telemetry` re-exports this crate as
+//! `krabka_telemetry::propagation`.
 //!
 //! This crate validates ingress from an untrusted client. See
 //! [`TraceCarrier::from_w3c`] for the exact rules, and for the reason it never

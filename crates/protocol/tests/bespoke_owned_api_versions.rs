@@ -3,7 +3,7 @@
 // part of making those wrappers uniformly generated.
 
 use bytes::BytesMut;
-use crabka_protocol::{
+use krabka_protocol::{
     Decode, Encode, UnknownTaggedFields,
     owned::{
         api_versions_request::ApiVersionsRequest,
@@ -19,7 +19,7 @@ fn owned_api_versions_request_roundtrip_cases() {
             "v3 populated",
             3,
             ApiVersionsRequest {
-                client_software_name: "crabka".to_string(),
+                client_software_name: "krabka".to_string(),
                 client_software_version: "0.0.0".to_string(),
                 unknown_tagged_fields: UnknownTaggedFields::default(),
                 ..Default::default()
@@ -29,7 +29,7 @@ fn owned_api_versions_request_roundtrip_cases() {
             "v5 routing identity",
             5,
             ApiVersionsRequest {
-                client_software_name: "crabka".to_string(),
+                client_software_name: "krabka".to_string(),
                 client_software_version: "0.0.0".to_string(),
                 cluster_id: Some("cluster".to_string()),
                 node_id: 7,

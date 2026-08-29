@@ -13,8 +13,8 @@
 //! calls [`HlcClock::now`] and attaches [`Hlc::header`]. A consumer calls
 //! [`extract_from_headers`] and feeds the result to [`HlcClock::observe`].
 //!
-//! Like `crabka-trace-context`, this crate does not depend on
-//! `crabka-protocol`. It stays type-erased over `(&str, impl AsRef<[u8]>)`
+//! Like `krabka-trace-context`, this crate does not depend on
+//! `krabka-protocol`. It stays type-erased over `(&str, impl AsRef<[u8]>)`
 //! header pairs, so any producer or consumer header type works. The caller
 //! converts to and from its own `Header` at the edge.
 //!
@@ -64,8 +64,8 @@
 //! # Example
 //!
 //! ```
-//! use crabka_hlc::{HlcClock, ManualClock, WallMicros, extract_from_headers};
-//! use crabka_ids::NodeId;
+//! use krabka_hlc::{HlcClock, ManualClock, WallMicros, extract_from_headers};
+//! use krabka_ids::NodeId;
 //!
 //! let physical = ManualClock::new(WallMicros(1_700_000_000_000_000));
 //!
@@ -78,7 +78,7 @@
 //! if let Some(stamp) = extract_from_headers([(key, value.as_slice())]) {
 //!     consumer.observe(stamp)?;
 //! }
-//! # Ok::<(), crabka_hlc::HlcError>(())
+//! # Ok::<(), krabka_hlc::HlcError>(())
 //! ```
 
 #![forbid(unsafe_code)]
