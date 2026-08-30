@@ -40,6 +40,14 @@ fn wrap_err(e: impl std::fmt::Display) -> GssError {
     GssError::Wrap(e.to_string())
 }
 
+fn keytab_username(principal: &str) -> Result<Username, GssError> {
+    if let Some((account, realm)) = principal.rsplit_once('@') {
+        Username::new_down_level_logon_name(account, realm).map_err(ctx_err)
+    } else {
+        Username::parse(principal).map_err(ctx_err)
+    }
+}
+
 /// GSS wrap (`encrypt_message`) with confidentiality disabled, per RFC 4752.
 ///
 /// This function returns `token || data`.
@@ -252,7 +260,7 @@ impl SspiInitiator {
         target_spn: &str,
         kdc_url: &str,
     ) -> Result<Self, GssError> {
-        let principal = Username::parse(client_principal).map_err(ctx_err)?;
+        let principal = keytab_username(client_principal)?;
         // The keytab is keyed by the principal's first component.
         let first_component = principal
             .account_name()
@@ -380,5 +388,17 @@ mod tests {
             !is_established(SecurityStatus::ContinueNeeded),
             "ContinueNeeded owes another round trip"
         );
+    }
+
+    #[test]
+    fn keytab_upn_uses_a_kerberos_principal_name() {
+        let principal = keytab_username("alice@CRABKA.TEST").unwrap();
+        check!(principal.inner() == "CRABKA.TEST\\alice");
+    }
+
+    #[test]
+    fn keytab_down_level_name_is_unchanged() {
+        let principal = keytab_username("CRABKA.TEST\\alice").unwrap();
+        check!(principal.inner() == "CRABKA.TEST\\alice");
     }
 }

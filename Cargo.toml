@@ -83,7 +83,7 @@ sha2 = "0.11"
 snap = "1"
 # SASL/GSSAPI (Kerberos). `network_client` lets the initiator reach the KDC;
 # `ring` keeps crypto provider choice aligned with rustls/rcgen in this workspace.
-sspi = { version = "=0.21.3", default-features = false, features = ["network_client", "ring"] }
+sspi = { git = "https://github.com/robot-head/sspi-rs", rev = "0b88340531a8b25f28171a25ee4fab5f958e9265", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree
 # (syn/quote/proc-macro2/heck/rustversion) is already compiled in the graph,
