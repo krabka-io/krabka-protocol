@@ -551,19 +551,24 @@ mod tests {
     #[test]
     fn elr_version_level_one_requires_the_elr_metadata_version() {
         for (_case, metadata_level, want_err) in [
-            ("below 4.0-IV1", crate::metadata_version::ELR_MIN_LEVEL - 1, true),
+            (
+                "below 4.0-IV1",
+                crate::metadata_version::ELR_MIN_LEVEL - 1,
+                true,
+            ),
             ("at 4.0-IV1", crate::metadata_version::ELR_MIN_LEVEL, false),
-            ("above 4.0-IV1", crate::metadata_version::METADATA_VERSION_MAX, false),
+            (
+                "above 4.0-IV1",
+                crate::metadata_version::METADATA_VERSION_MAX,
+                false,
+            ),
         ] {
             let resolved = BTreeMap::from([
                 (
                     crate::metadata_version::METADATA_VERSION_FEATURE.to_string(),
                     metadata_level,
                 ),
-                (
-                    crate::metadata_version::ELR_VERSION_FEATURE.to_string(),
-                    1,
-                ),
+                (crate::metadata_version::ELR_VERSION_FEATURE.to_string(), 1),
             ]);
             check!(validate_feature_dependencies(&resolved).is_err() == want_err);
         }
