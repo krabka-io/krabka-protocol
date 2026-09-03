@@ -27,6 +27,16 @@ pub const SHARE_VERSION_MIN: i16 = 0;
 /// Maximum supported `share.version` level: `1` (KIP-932 GA).
 pub const SHARE_VERSION_MAX: i16 = 1;
 
+/// The `eligible.leader.replicas.version` feature name (KIP-966). Gates the
+/// controller's maintenance of eligible leader replicas.
+pub const ELR_VERSION_FEATURE: &str = "eligible.leader.replicas.version";
+/// Minimum supported `eligible.leader.replicas.version` level: `0`, `ELRV_0`,
+/// the level at which the controller keeps no ELR.
+pub const ELR_VERSION_MIN: i16 = 0;
+/// Maximum supported `eligible.leader.replicas.version` level: `1`, `ELRV_1`,
+/// which turns KIP-966 ELR maintenance on.
+pub const ELR_VERSION_MAX: i16 = 1;
+
 /// The `streams.version` feature name (KIP-1071). Gates the broker-side
 /// Streams rebalance protocol (`StreamsGroupHeartbeat` / `StreamsGroupDescribe`).
 pub const STREAMS_VERSION_FEATURE: &str = "streams.version";
@@ -53,8 +63,8 @@ pub const ONLINE_DOWNGRADE_MIN_LEVEL: i16 = 15;
 /// metadata records (`3.7-IV2`, KIP-858).
 pub const DIRECTORY_ASSIGNMENT_MIN_LEVEL: i16 = 17;
 /// Level at which partition records gained KIP-966 eligible-leader fields
-/// (`4.0-IV1`). Krabka does not model ELR state, but it must still select the
-/// record version Kafka readers expect at this metadata version.
+/// (`4.0-IV1`). It selects the record version Kafka readers expect, and it is
+/// what [`crate::feature::ElrVersionFeature`] depends on at level 1.
 pub const ELR_MIN_LEVEL: i16 = 23;
 
 /// One `metadata.version` level: its integer feature level, canonical
@@ -232,6 +242,14 @@ mod tests {
         check!(
             (SHARE_VERSION_FEATURE, SHARE_VERSION_MIN, SHARE_VERSION_MAX)
                 == ("share.version", 0, 1)
+        );
+    }
+
+    #[test]
+    fn elr_version_feature_levels() {
+        check!(
+            (ELR_VERSION_FEATURE, ELR_VERSION_MIN, ELR_VERSION_MAX)
+                == ("eligible.leader.replicas.version", 0, 1)
         );
     }
 

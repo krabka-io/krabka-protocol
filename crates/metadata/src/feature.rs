@@ -187,6 +187,49 @@ impl Feature for StreamsVersionFeature {
     // here, mirroring group.version / share.version.
 }
 
+/// `eligible.leader.replicas.version` (KIP-966). A plain integer feature that
+/// gates the controller's ELR bookkeeping: at level 0 no partition gains an
+/// eligible-leader or last-known-leader set, at level 1 the controller
+/// maintains both.
+///
+/// `EligibleLeaderReplicasVersion` in apache/kafka 4.3.1 bootstraps `ELRV_1` at
+/// `4.1-IV0` and declares one KIP-1022 dependency, `metadata.version` at
+/// `4.0-IV1`, the level whose `PartitionRecord` carries the ELR fields. Krabka
+/// advertises `metadata.version` up to `4.0-IV3`, which is below `ELRV_1`'s
+/// bootstrap level, so the release default here is 0 at every level krabka
+/// formats with, exactly as Kafka's `Feature.defaultLevel` computes it. An
+/// operator turns the feature on with `kafka-features upgrade`.
+pub struct ElrVersionFeature;
+
+impl Feature for ElrVersionFeature {
+    fn name(&self) -> &'static str {
+        crate::metadata_version::ELR_VERSION_FEATURE
+    }
+    fn supported_range(&self) -> (i16, i16) {
+        (
+            crate::metadata_version::ELR_VERSION_MIN,
+            crate::metadata_version::ELR_VERSION_MAX,
+        )
+    }
+    fn default_level(&self, _bootstrap_mv: i16) -> i16 {
+        crate::metadata_version::ELR_VERSION_MIN
+    }
+    fn dependencies(&self, level: i16) -> &'static [(&'static str, i16)] {
+        if level >= 1 {
+            const ELRV_1_DEPENDENCIES: &[(&str, i16)] = &[(
+                crate::metadata_version::METADATA_VERSION_FEATURE,
+                crate::metadata_version::ELR_MIN_LEVEL,
+            )];
+            ELRV_1_DEPENDENCIES
+        } else {
+            &[]
+        }
+    }
+    // min_required_floor: inherits the supported min. ELR membership lives in
+    // the MetadataImage, but Kafka clears it with PartitionChangeRecords on a
+    // downgrade to 0 rather than refusing the downgrade, so no floor applies.
+}
+
 /// `kraft.version` is finalized by a `KRaft` control record, never by a
 /// KIP-584 `FeatureLevelRecord`.
 pub struct KRaftVersionFeature;
@@ -212,6 +255,7 @@ pub fn feature_registry() -> &'static [&'static dyn Feature] {
         &TransactionVersionFeature,
         &ShareVersionFeature,
         &StreamsVersionFeature,
+        &ElrVersionFeature,
         &KRaftVersionFeature,
     ];
     REGISTRY
@@ -292,12 +336,8 @@ pub fn bootstrap_feature_records_with_overrides(
 /// KIP-1022 dependency validation for a fully-resolved feature→level map, as
 /// seeded by `krabka format`. For every finalized feature, each of its
 /// `dependencies(level)` must be present in `resolved` at `>=` the required
-/// level. Returns `Err` with the name of the first unmet dependency. The check
-/// does nothing for today's registry, because no feature declares dependencies,
-/// but it enforces the rule at format time in the same way as the
-/// `UpdateFeatures` handler.
-// cargo-mutants: no-op for today's registry (no feature declares deps).
-#[cfg_attr(test, mutants::skip)]
+/// level. Returns `Err` with the name of the first unmet dependency, enforcing
+/// the rule at format time in the same way as the `UpdateFeatures` handler.
 /// # Errors
 /// Returns an error naming the first finalized feature whose required
 /// dependency is absent or finalized below the minimum level.
@@ -418,6 +458,7 @@ mod tests {
             ("transaction.version", (0, 3), 2, 0),
             ("share.version", (0, 1), 0, 0),
             ("streams.version", (0, 1), 0, 0),
+            ("eligible.leader.replicas.version", (0, 1), 0, 0),
             // Registered like the rest, though it is finalized by a KRaft
             // control record rather than by UpdateFeatures. Leaving it out of
             // this table left its name, range and default entirely unasserted.
@@ -482,6 +523,50 @@ mod tests {
                 f.dependencies(1).is_empty(),
             ) == ((0, 1), 0, true)
         );
+    }
+
+    #[test]
+    fn elr_version_is_opt_in_and_depends_on_the_elr_metadata_level() {
+        let f = feature("eligible.leader.replicas.version").expect("registered");
+        // ELRV_1 bootstraps at 4.1-IV0, above the highest metadata.version
+        // krabka advertises, so no bootstrap level enables it by default.
+        check!(
+            (
+                f.supported_range(),
+                f.default_level(crate::metadata_version::METADATA_VERSION_MAX),
+                f.dependencies(0),
+                f.dependencies(1),
+            ) == (
+                (0, 1),
+                0,
+                &[][..],
+                &[(
+                    crate::metadata_version::METADATA_VERSION_FEATURE,
+                    crate::metadata_version::ELR_MIN_LEVEL,
+                )][..],
+            )
+        );
+    }
+
+    #[test]
+    fn elr_version_level_one_requires_the_elr_metadata_version() {
+        for (_case, metadata_level, want_err) in [
+            ("below 4.0-IV1", crate::metadata_version::ELR_MIN_LEVEL - 1, true),
+            ("at 4.0-IV1", crate::metadata_version::ELR_MIN_LEVEL, false),
+            ("above 4.0-IV1", crate::metadata_version::METADATA_VERSION_MAX, false),
+        ] {
+            let resolved = BTreeMap::from([
+                (
+                    crate::metadata_version::METADATA_VERSION_FEATURE.to_string(),
+                    metadata_level,
+                ),
+                (
+                    crate::metadata_version::ELR_VERSION_FEATURE.to_string(),
+                    1,
+                ),
+            ]);
+            check!(validate_feature_dependencies(&resolved).is_err() == want_err);
+        }
     }
 
     #[test]
