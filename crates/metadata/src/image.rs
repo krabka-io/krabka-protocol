@@ -19,8 +19,9 @@ use crate::{
         BrokerConfigRecord, BrokerRegistrationRecord, ClientMetricsConfigRecord, ClientQuotaRecord,
         ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord,
         FeatureLevelRecord, FeaturesEpochRecord, GroupConfigRecord, KRaftVersionRecord,
-        MetadataRecord, NodeId, PartitionOffsetAdvanceRecord, PartitionRecord, ProducerIdsRecord,
-        QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, VotersRecord,
+        MetadataRecord, NodeId, PartitionElrRecord, PartitionOffsetAdvanceRecord, PartitionRecord,
+        ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord,
+        VotersRecord,
     },
     write_freeze::TopicFreezeRecord,
 };
@@ -94,6 +95,9 @@ fn record_variant(rec: &MetadataRecord) -> &'static str {
         MetadataRecord::V1TopicFreeze(_) => "V1TopicFreeze",
         MetadataRecord::V1BreakGlassProposal(_) => "V1BreakGlassProposal",
         MetadataRecord::V1DeleteBreakGlassProposal(_) => "V1DeleteBreakGlassProposal",
+        MetadataRecord::V1PartitionElr(_) => "V1PartitionElr",
+        MetadataRecord::V1PartitionRecovery(_) => "V1PartitionRecovery",
+        MetadataRecord::V1PartitionUpdate(_) => "V1PartitionUpdate",
     }
 }
 
@@ -114,6 +118,8 @@ pub struct MetadataImage {
     /// ascending-index order.
     partitions: HashMap<String, BTreeMap<i32, PartitionRecord>>,
     partition_next_offsets: HashMap<(String, i32), i64>,
+    partition_elr: HashMap<(String, i32), (Vec<NodeId>, Vec<NodeId>)>,
+    partition_recovery: HashMap<(String, i32), crate::LeaderRecoveryState>,
     brokers: HashMap<NodeId, BrokerRegistrationRecord>,
     controllers: HashMap<NodeId, ControllerRegistrationRecord>,
     topic_configs: HashMap<String, BTreeMap<String, String>>,
@@ -170,6 +176,8 @@ impl MetadataImage {
             topic_ids: HashMap::new(),
             partitions: HashMap::new(),
             partition_next_offsets: HashMap::new(),
+            partition_elr: HashMap::new(),
+            partition_recovery: HashMap::new(),
             brokers: HashMap::new(),
             controllers: HashMap::new(),
             topic_configs: HashMap::new(),
@@ -246,6 +254,23 @@ impl MetadataImage {
         self.partition_next_offsets
             .get(&(topic.to_string(), partition))
             .copied()
+    }
+
+    #[must_use]
+    pub fn partition_elr(&self, topic: &str, partition: i32) -> (&[NodeId], &[NodeId]) {
+        self.partition_elr
+            .get(&(topic.to_string(), partition))
+            .map_or((&[], &[]), |(eligible, last_known)| {
+                (eligible.as_slice(), last_known.as_slice())
+            })
+    }
+
+    #[must_use]
+    pub fn leader_recovery_state(&self, topic: &str, partition: i32) -> crate::LeaderRecoveryState {
+        self.partition_recovery
+            .get(&(topic.to_string(), partition))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// The live partition count for `topic`, derived from the partitions
@@ -714,27 +739,7 @@ impl MetadataImage {
                 rec.partitions = self.topics.get(&t.name).map_or(0, |prev| prev.partitions);
                 self.topics.insert(t.name.clone(), rec);
             }
-            MetadataRecord::V1Partition(p) => {
-                // Maintain the owning topic's denormalized partition count / RF
-                // incrementally. Re-scanning the whole partitions map on every
-                // record (the previous approach) made log/snapshot replay
-                // O(P²); bumping the cached count only when a *new* partition
-                // key lands keeps apply O(1) while leaving the count a true
-                // derived view of the partitions map.
-                let is_new = self
-                    .partitions
-                    .entry(p.topic.clone())
-                    .or_default()
-                    .insert(p.partition, p.clone())
-                    .is_none();
-                if let Some(t) = self.topics.get_mut(&p.topic) {
-                    if is_new {
-                        t.partitions = t.partitions.saturating_add(1);
-                    }
-                    t.replication_factor =
-                        i16::try_from(p.replicas.len()).unwrap_or(t.replication_factor);
-                }
-            }
+            MetadataRecord::V1Partition(p) => self.apply_partition(p),
             MetadataRecord::V1BrokerRegistration(b) => {
                 self.brokers.insert(b.node_id, b.clone());
             }
@@ -748,6 +753,8 @@ impl MetadataImage {
                 self.topics.remove(&d.name);
                 self.partitions.remove(&d.name);
                 self.partition_next_offsets.retain(|(t, _), _| t != &d.name);
+                self.partition_elr.retain(|(t, _), _| t != &d.name);
+                self.partition_recovery.retain(|(t, _), _| t != &d.name);
                 self.topic_configs.remove(&d.name);
             }
             MetadataRecord::V1TopicConfig(c) => {
@@ -914,6 +921,11 @@ impl MetadataImage {
                     .entry((r.topic.clone(), r.partition))
                     .or_insert(0) += r.count;
             }
+            MetadataRecord::V1PartitionElr(r) => self.apply_partition_elr(r),
+            MetadataRecord::V1PartitionRecovery(r) => {
+                self.apply_partition_recovery(&r.topic, r.partition, r.state);
+            }
+            MetadataRecord::V1PartitionUpdate(r) => self.apply_partition_update(r),
             // KFC-9 write-freeze registry.
             MetadataRecord::V1TopicFreeze(r) => self.apply_topic_freeze(r),
             // KFC-9 break-glass proposal. Replacement semantics on the id:
@@ -925,6 +937,69 @@ impl MetadataImage {
             MetadataRecord::V1DeleteBreakGlassProposal(id) => {
                 self.break_glass.remove(id);
             }
+        }
+    }
+
+    fn apply_partition(&mut self, partition: &PartitionRecord) {
+        let is_new = self
+            .partitions
+            .entry(partition.topic.clone())
+            .or_default()
+            .insert(partition.partition, partition.clone())
+            .is_none();
+        if let Some(topic) = self.topics.get_mut(&partition.topic) {
+            if is_new {
+                topic.partitions = topic.partitions.saturating_add(1);
+            }
+            topic.replication_factor =
+                i16::try_from(partition.replicas.len()).unwrap_or(topic.replication_factor);
+        }
+    }
+
+    fn apply_partition_update(&mut self, update: &crate::PartitionUpdateRecord) {
+        let key = (update.partition.topic.clone(), update.partition.partition);
+        self.apply_partition(&update.partition);
+        if let (Some(eligible), Some(last_known)) =
+            (&update.eligible_leader_replicas, &update.last_known_elr)
+        {
+            self.apply_partition_elr(&PartitionElrRecord {
+                topic: key.0.clone(),
+                partition: key.1,
+                eligible_leader_replicas: eligible.clone(),
+                last_known_elr: last_known.clone(),
+            });
+        }
+        if let Some(state) = update.recovery_state {
+            self.apply_partition_recovery(&key.0, key.1, state);
+        }
+    }
+
+    fn apply_partition_elr(&mut self, record: &PartitionElrRecord) {
+        let key = (record.topic.clone(), record.partition);
+        if record.eligible_leader_replicas.is_empty() && record.last_known_elr.is_empty() {
+            self.partition_elr.remove(&key);
+        } else {
+            self.partition_elr.insert(
+                key,
+                (
+                    record.eligible_leader_replicas.clone(),
+                    record.last_known_elr.clone(),
+                ),
+            );
+        }
+    }
+
+    fn apply_partition_recovery(
+        &mut self,
+        topic: &str,
+        partition: i32,
+        state: crate::LeaderRecoveryState,
+    ) {
+        let key = (topic.to_owned(), partition);
+        if state == crate::LeaderRecoveryState::Recovered {
+            self.partition_recovery.remove(&key);
+        } else {
+            self.partition_recovery.insert(key, state);
         }
     }
 
@@ -1004,6 +1079,23 @@ impl MetadataImage {
             out.push(MetadataRecord::V1Partition(p.clone()));
         }
         self.push_partition_offset_advances(&mut out);
+        for ((topic, partition), (eligible, last_known)) in &self.partition_elr {
+            out.push(MetadataRecord::V1PartitionElr(crate::PartitionElrRecord {
+                topic: topic.clone(),
+                partition: *partition,
+                eligible_leader_replicas: eligible.clone(),
+                last_known_elr: last_known.clone(),
+            }));
+        }
+        for ((topic, partition), state) in &self.partition_recovery {
+            out.push(MetadataRecord::V1PartitionRecovery(
+                crate::PartitionRecoveryRecord {
+                    topic: topic.clone(),
+                    partition: *partition,
+                    state: *state,
+                },
+            ));
+        }
         for (topic, overrides) in &self.topic_configs {
             out.push(MetadataRecord::V1TopicConfig(TopicConfigRecord {
                 topic: topic.clone(),
@@ -1211,6 +1303,24 @@ impl MetadataImage {
             MetadataRecord::V1Partition(p) => {
                 if !self.topics.contains_key(&p.topic) {
                     return Err(MetadataError::UnknownTopic(p.topic.clone()));
+                }
+                Ok(())
+            }
+            MetadataRecord::V1PartitionUpdate(update) => {
+                if !self.topics.contains_key(&update.partition.topic) {
+                    return Err(MetadataError::UnknownTopic(update.partition.topic.clone()));
+                }
+                Ok(())
+            }
+            MetadataRecord::V1PartitionElr(record) => {
+                if self.partition(&record.topic, record.partition).is_none() {
+                    return Err(MetadataError::UnknownTopic(record.topic.clone()));
+                }
+                Ok(())
+            }
+            MetadataRecord::V1PartitionRecovery(record) => {
+                if self.partition(&record.topic, record.partition).is_none() {
+                    return Err(MetadataError::UnknownTopic(record.topic.clone()));
                 }
                 Ok(())
             }

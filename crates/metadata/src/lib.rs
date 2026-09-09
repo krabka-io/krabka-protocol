@@ -79,9 +79,11 @@ pub use records::{
     ClientQuotaRecord, ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID,
     DelegationTokenRecord, DeleteDelegationTokenRecord, DeleteScramCredentialRecord,
     DeleteTopicRecord, FeatureLevelRecord, FeaturesEpochRecord, GroupConfigRecord,
-    KRaftVersionRecord, LeaderEpoch, MetadataRecord, NodeId, PartitionDirAssignmentRecord,
-    PartitionOffsetAdvanceRecord, PartitionRecord, ProducerIdsRecord, QuotaEntity,
-    ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord, VotersRecord,
+    KRaftVersionRecord, LeaderEpoch, LeaderRecoveryState, MetadataRecord, NodeId,
+    PartitionDirAssignmentRecord, PartitionElrRecord, PartitionOffsetAdvanceRecord,
+    PartitionRecord, PartitionRecoveryRecord, PartitionUpdateRecord, ProducerIdsRecord,
+    QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord,
+    VotersRecord,
 };
 pub use voters::{KRaftVersionRange, Voter, VoterEndpoint, VoterSet};
 pub use write_freeze::TopicFreezeRecord;

@@ -89,9 +89,9 @@ use crate::{
         BrokerConfigRecord, BrokerEndpoint, BrokerRegistrationRecord, ClientQuotaRecord,
         ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord,
         DeleteScramCredentialRecord, DeleteTopicRecord, FeatureLevelRecord, GroupConfigRecord,
-        LeaderEpoch, MetadataRecord, NodeId, PartitionDirAssignmentRecord, PartitionRecord,
-        ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord,
-        UnregisterBrokerRecord,
+        LeaderEpoch, LeaderRecoveryState, MetadataRecord, NodeId, PartitionDirAssignmentRecord,
+        PartitionRecord, ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord,
+        TopicRecord, UnregisterBrokerRecord,
     },
 };
 
@@ -731,6 +731,7 @@ fn to_kraft_iter(
             vec![KraftMetadataRecord::Partition(partition_to_kraft(
                 p,
                 topic.topic_id,
+                image,
             )?)]
         }
         MetadataRecord::V1DeleteTopic(d) => {
@@ -779,6 +780,22 @@ fn to_kraft_iter(
         MetadataRecord::V1PartitionOffsetAdvance(_) => {
             vec![wincode_carrier(rec, PRIVATE_PARTITION_OFFSET_ADVANCE_KEY)?]
         }
+        MetadataRecord::V1PartitionElr(r) => vec![KraftMetadataRecord::PartitionChange(
+            partition_state_to_kraft(
+                image,
+                &r.topic,
+                r.partition,
+                -1,
+                Some(&r.eligible_leader_replicas),
+                Some(&r.last_known_elr),
+            )?,
+        )],
+        MetadataRecord::V1PartitionRecovery(r) => vec![KraftMetadataRecord::PartitionChange(
+            partition_state_to_kraft(image, &r.topic, r.partition, r.state as i8, None, None)?,
+        )],
+        MetadataRecord::V1PartitionUpdate(r) => vec![KraftMetadataRecord::PartitionChange(
+            partition_update_to_kraft(r, image)?,
+        )],
         // KFC-9 freeze registry and break-glass proposals. KIP-631 has no
         // counterpart for either, and `NoCounterpart` is not an option: the
         // controller submits all three through `submit_change`, which encodes
@@ -939,6 +956,7 @@ fn register_controller_to_kraft(
 fn partition_to_kraft(
     p: &PartitionRecord,
     topic_id: uuid::Uuid,
+    image: &MetadataImage,
 ) -> Result<KPartitionRecord, TranslateError> {
     let cast = |v: &[NodeId], field: &'static str| -> Result<Vec<i32>, TranslateError> {
         v.iter()
@@ -950,6 +968,8 @@ fn partition_to_kraft(
             })
             .collect()
     };
+    let (eligible, last_known) = image.partition_elr(&p.topic, p.partition);
+    let has_elr = !eligible.is_empty() || !last_known.is_empty();
     Ok(KPartitionRecord {
         partition_id: p.partition,
         topic_id: to_kuuid(topic_id),
@@ -964,6 +984,13 @@ fn partition_to_kraft(
         partition_epoch: p.partition_epoch,
         // KIP-858: per-replica log-directory assignment, carried at KRaft v1+.
         directories: p.directories.iter().map(|u| to_kuuid(*u)).collect(),
+        leader_recovery_state: image.leader_recovery_state(&p.topic, p.partition) as i8,
+        eligible_leader_replicas: has_elr
+            .then(|| cast(eligible, "eligible leader replica"))
+            .transpose()?,
+        last_known_elr: has_elr
+            .then(|| cast(last_known, "last known eligible leader replica"))
+            .transpose()?,
         ..Default::default()
     })
 }
@@ -1006,6 +1033,110 @@ fn partition_dir_assignment_to_kraft(
         directories: Some(directories.into_iter().map(to_kuuid).collect()),
         ..Default::default()
     })
+}
+
+fn partition_state_to_kraft(
+    image: &MetadataImage,
+    topic: &str,
+    partition: i32,
+    leader_recovery_state: i8,
+    eligible: Option<&[NodeId]>,
+    last_known: Option<&[NodeId]>,
+) -> Result<KPartitionChangeRecord, TranslateError> {
+    let topic_id = image
+        .topic(topic)
+        .ok_or_else(|| TranslateError::UnknownTopicName(topic.to_string()))?
+        .topic_id;
+    let nodes = |values: &[NodeId], field| {
+        values
+            .iter()
+            .map(|node| {
+                i32::try_from(node.0).map_err(|_| TranslateError::Invalid {
+                    field,
+                    detail: format!("node id {node} exceeds i32"),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    Ok(KPartitionChangeRecord {
+        partition_id: partition,
+        topic_id: to_kuuid(topic_id),
+        leader_recovery_state,
+        eligible_leader_replicas: eligible
+            .map(|values| nodes(values, "eligible leader replica"))
+            .transpose()?,
+        last_known_elr: last_known
+            .map(|values| nodes(values, "last known eligible leader replica"))
+            .transpose()?,
+        ..Default::default()
+    })
+}
+
+fn partition_update_to_kraft(
+    update: &crate::PartitionUpdateRecord,
+    image: &MetadataImage,
+) -> Result<KPartitionChangeRecord, TranslateError> {
+    let current = image
+        .partition(&update.partition.topic, update.partition.partition)
+        .ok_or_else(|| TranslateError::Invalid {
+            field: "partition update",
+            detail: format!(
+                "unknown partition {}-{}",
+                update.partition.topic, update.partition.partition
+            ),
+        })?;
+    let mut change = partition_state_to_kraft(
+        image,
+        &update.partition.topic,
+        update.partition.partition,
+        update.recovery_state.map_or(-1, |state| state as i8),
+        update.eligible_leader_replicas.as_deref(),
+        update.last_known_elr.as_deref(),
+    )?;
+    let cast = |values: &[NodeId], field| {
+        values
+            .iter()
+            .map(|node| {
+                i32::try_from(node.0).map_err(|_| TranslateError::Invalid {
+                    field,
+                    detail: format!("node id {node} exceeds i32"),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    if update.partition.replicas != current.replicas {
+        change.replicas = Some(cast(&update.partition.replicas, "partition replicas")?);
+    }
+    if update.partition.isr != current.isr {
+        change.isr = Some(cast(&update.partition.isr, "partition isr")?);
+    }
+    if update.partition.removing_replicas != current.removing_replicas {
+        change.removing_replicas = Some(cast(
+            &update.partition.removing_replicas,
+            "partition removing replicas",
+        )?);
+    }
+    if update.partition.adding_replicas != current.adding_replicas {
+        change.adding_replicas = Some(cast(
+            &update.partition.adding_replicas,
+            "partition adding replicas",
+        )?);
+    }
+    if update.partition.leader != current.leader {
+        change.leader = partition_leader_to_wire(update.partition.leader, "partition leader")?;
+    }
+    if update.partition.directories != current.directories {
+        change.directories = Some(
+            update
+                .partition
+                .directories
+                .iter()
+                .copied()
+                .map(to_kuuid)
+                .collect(),
+        );
+    }
+    Ok(change)
 }
 
 fn client_quota_to_kraft(q: &ClientQuotaRecord) -> KClientQuotaRecord {
@@ -1132,12 +1263,8 @@ pub fn from_kraft(
         ),
         KraftMetadataRecord::Config(c) => config_from_kraft(c, image),
         KraftMetadataRecord::Topic(t) => Ok(MetadataRecord::V1Topic(topic_from_kraft(t, image))),
-        KraftMetadataRecord::Partition(p) => {
-            Ok(MetadataRecord::V1Partition(partition_from_kraft(p, image)?))
-        }
-        KraftMetadataRecord::PartitionChange(p) => Ok(MetadataRecord::V1Partition(
-            partition_change_from_kraft(p, image)?,
-        )),
+        KraftMetadataRecord::Partition(p) => partition_from_kraft(p, image),
+        KraftMetadataRecord::PartitionChange(p) => partition_change_from_kraft(p, image),
         KraftMetadataRecord::RemoveTopic(t) => {
             let id = from_kuuid(t.topic_id);
             let name = topic_name_for_id(image, id).ok_or(TranslateError::UnknownTopicId(id))?;
@@ -1289,7 +1416,7 @@ fn topic_from_kraft(t: &KTopicRecord, image: &MetadataImage) -> TopicRecord {
 fn partition_from_kraft(
     p: &KPartitionRecord,
     image: &MetadataImage,
-) -> Result<PartitionRecord, TranslateError> {
+) -> Result<MetadataRecord, TranslateError> {
     let id = from_kuuid(p.topic_id);
     let topic = topic_name_for_id(image, id).ok_or(TranslateError::UnknownTopicId(id))?;
     let nodes = |values: &[i32], field| {
@@ -1298,7 +1425,7 @@ fn partition_from_kraft(
             .map(|value| node_id_from_wire(*value, field))
             .collect::<Result<Vec<_>, _>>()
     };
-    Ok(PartitionRecord {
+    let partition = PartitionRecord {
         topic,
         partition: p.partition_id,
         leader: partition_leader_from_wire(p.leader, "partition leader")?,
@@ -1311,16 +1438,71 @@ fn partition_from_kraft(
         removing_replicas: nodes(&p.removing_replicas, "removing replica")?,
         // KIP-858: per-replica log-directory assignment, present at KRaft v1+.
         directories: p.directories.iter().map(|u| from_kuuid(*u)).collect(),
-    })
+    };
+    let recovery_state = match p.leader_recovery_state {
+        0 => LeaderRecoveryState::Recovered,
+        1 => LeaderRecoveryState::Recovering,
+        value => {
+            return Err(TranslateError::Invalid {
+                field: "partition leader recovery state",
+                detail: format!("unknown state {value}"),
+            });
+        }
+    };
+    if p.eligible_leader_replicas.is_some()
+        || p.last_known_elr.is_some()
+        || recovery_state == LeaderRecoveryState::Recovering
+    {
+        Ok(MetadataRecord::V1PartitionUpdate(
+            crate::PartitionUpdateRecord {
+                partition,
+                eligible_leader_replicas: p
+                    .eligible_leader_replicas
+                    .as_deref()
+                    .map(|values| nodes(values, "eligible leader replica"))
+                    .transpose()?,
+                last_known_elr: p
+                    .last_known_elr
+                    .as_deref()
+                    .map(|values| nodes(values, "last known eligible leader replica"))
+                    .transpose()?,
+                recovery_state: Some(recovery_state),
+            },
+        ))
+    } else {
+        Ok(MetadataRecord::V1Partition(partition))
+    }
 }
 
 fn partition_change_from_kraft(
     change: &KPartitionChangeRecord,
     image: &MetadataImage,
-) -> Result<PartitionRecord, TranslateError> {
+) -> Result<MetadataRecord, TranslateError> {
     let topic_id = from_kuuid(change.topic_id);
     let topic =
         topic_name_for_id(image, topic_id).ok_or(TranslateError::UnknownTopicId(topic_id))?;
+    let has_recovery = change.leader_recovery_state != -1;
+    let has_elr = change.eligible_leader_replicas.is_some() || change.last_known_elr.is_some();
+    let nodes = |values: &[i32], field| {
+        values
+            .iter()
+            .map(|value| node_id_from_wire(*value, field))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let recovery_state = if has_recovery {
+        Some(match change.leader_recovery_state {
+            0 => LeaderRecoveryState::Recovered,
+            1 => LeaderRecoveryState::Recovering,
+            value => {
+                return Err(TranslateError::Invalid {
+                    field: "partition change leader recovery state",
+                    detail: format!("unknown state {value}"),
+                });
+            }
+        })
+    } else {
+        None
+    };
     let mut partition = image
         .partition(&topic, change.partition_id)
         .cloned()
@@ -1328,26 +1510,6 @@ fn partition_change_from_kraft(
             field: "partition change",
             detail: format!("unknown partition {topic}-{}", change.partition_id),
         })?;
-
-    if change.leader_recovery_state != -1 {
-        return Err(TranslateError::Invalid {
-            field: "partition change leader recovery state",
-            detail: "Krabka does not yet model unclean-election recovery state".into(),
-        });
-    }
-    if change.eligible_leader_replicas.is_some() || change.last_known_elr.is_some() {
-        return Err(TranslateError::Invalid {
-            field: "partition change eligible leader replicas",
-            detail: "Krabka does not yet model KIP-966 eligible leader replicas".into(),
-        });
-    }
-
-    let nodes = |values: &[i32], field| {
-        values
-            .iter()
-            .map(|value| node_id_from_wire(*value, field))
-            .collect::<Result<Vec<_>, _>>()
-    };
     if let Some(replicas) = &change.replicas {
         partition.replicas = nodes(replicas, "partition change replica")?;
     }
@@ -1391,7 +1553,26 @@ fn partition_change_from_kraft(
                 field: "partition change partition epoch",
                 detail: "partition epoch overflow".into(),
             })?;
-    Ok(partition)
+    if has_recovery || has_elr {
+        Ok(MetadataRecord::V1PartitionUpdate(
+            crate::PartitionUpdateRecord {
+                partition,
+                eligible_leader_replicas: change
+                    .eligible_leader_replicas
+                    .as_deref()
+                    .map(|values| nodes(values, "eligible leader replica"))
+                    .transpose()?,
+                last_known_elr: change
+                    .last_known_elr
+                    .as_deref()
+                    .map(|values| nodes(values, "last known eligible leader replica"))
+                    .transpose()?,
+                recovery_state,
+            },
+        ))
+    } else {
+        Ok(MetadataRecord::V1Partition(partition))
+    }
 }
 
 fn partition_leader_to_wire(leader: NodeId, field: &'static str) -> Result<i32, TranslateError> {
@@ -2027,13 +2208,9 @@ mod tests {
 
     /// KIP-966 eligible-leader-replica state is refused, and either field
     /// alone is enough to refuse it. Read as `&&`, a change carrying only one
-    /// of the two is accepted and its ELR state silently dropped -- the exact
-    /// data the guard exists to refuse to model.
+    /// Kafka may set either ELR field independently in a partition delta.
     #[test]
-    fn either_elr_field_alone_is_refused() {
-        // The guard sits behind a topic lookup, a partition lookup and the
-        // recovery-state check, so the change has to be otherwise valid for the
-        // ELR refusal to be the one that fires.
+    fn either_elr_field_alone_is_preserved() {
         let topic_id = uuid::Uuid::from_u128(1);
         let mut image = img();
         image.apply(&MetadataRecord::V1Topic(TopicRecord {
@@ -2066,24 +2243,43 @@ mod tests {
             })
         };
 
-        // Without either field the same change is accepted, so the refusals
-        // below are the guard firing and not the setup failing.
         check!(from_kraft(&change(None, None), &image).is_ok());
+        check!(matches!(
+            from_kraft(&change(Some(vec![1]), None), &image),
+            Ok(MetadataRecord::V1PartitionUpdate(crate::PartitionUpdateRecord {
+                eligible_leader_replicas: Some(eligible_leader_replicas),
+                last_known_elr: None,
+                ..
+            })) if eligible_leader_replicas == vec![NodeId(1)]
+        ));
+        check!(matches!(
+            from_kraft(&change(None, Some(vec![1])), &image),
+            Ok(MetadataRecord::V1PartitionUpdate(crate::PartitionUpdateRecord {
+                eligible_leader_replicas: None,
+                last_known_elr: Some(last_known_elr),
+                ..
+            })) if last_known_elr == vec![NodeId(1)]
+        ));
 
-        // Assert the *specific* refusal, not merely that something failed: a
-        // change against an empty image fails for other reasons too, which is
-        // what an `is_err()` on its own would have accepted.
-        let refused_for_elr = |elr, last_known| {
-            matches!(
-                from_kraft(&change(elr, last_known), &image),
-                Err(TranslateError::Invalid { field, .. })
-                    if field == "partition change eligible leader replicas"
-            )
+        let combined = KraftMetadataRecord::PartitionChange(KPartitionChangeRecord {
+            topic_id: to_kuuid(topic_id),
+            partition_id: 0,
+            leader: 2,
+            isr: Some(vec![2]),
+            leader_recovery_state: LeaderRecoveryState::Recovering as i8,
+            eligible_leader_replicas: Some(vec![2]),
+            last_known_elr: Some(vec![1]),
+            ..Default::default()
+        });
+        let decoded = from_kraft(&combined, &image).expect("combined partition delta");
+        let MetadataRecord::V1PartitionUpdate(update) = decoded else {
+            panic!("combined delta must stay atomic");
         };
-
-        check!(refused_for_elr(Some(vec![1]), None));
-        check!(refused_for_elr(None, Some(vec![1])));
-        check!(refused_for_elr(Some(vec![1]), Some(vec![2])));
+        check!(update.partition.leader == NodeId(2));
+        check!(update.partition.isr == vec![NodeId(2)]);
+        check!(update.recovery_state == Some(LeaderRecoveryState::Recovering));
+        check!(update.eligible_leader_replicas == Some(vec![NodeId(2)]));
+        check!(update.last_known_elr == Some(vec![NodeId(1)]));
     }
 
     /// The ACL id is a content hash: it is what a later `RemoveAccessControlEntry`
