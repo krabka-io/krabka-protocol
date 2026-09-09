@@ -181,6 +181,22 @@ impl ValidatedBatch<'_> {
     /// exceeds the decompression policy, contains fewer records than declared,
     /// or has trailing bytes after the declared records.
     pub fn validate_records(&self, policy: RecordDecompressionPolicy) -> Result<(), RecordsError> {
+        self.validate_records_with(policy, |_| {})
+    }
+
+    /// Validates the records and calls `visit` for each borrowed record.
+    ///
+    /// This combines structural validation with callers' metadata checks while
+    /// keeping compressed batches on the borrowed path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::validate_records`].
+    pub fn validate_records_with(
+        &self,
+        policy: RecordDecompressionPolicy,
+        mut visit: impl FnMut(&Record<'_>),
+    ) -> Result<(), RecordsError> {
         let count = self.header.records_count.get();
         if count < 0 {
             return Err(RecordsError::RecordParse(format!(
@@ -200,8 +216,9 @@ impl ValidatedBatch<'_> {
         };
         let mut remaining = decompressed.as_deref().unwrap_or(self.raw_body);
         for i in 0..count {
-            parse_one_record(&mut remaining)
+            let record = parse_one_record(&mut remaining)
                 .map_err(|error| RecordsError::RecordParse(format!("record[{i}]: {error}")))?;
+            visit(&record);
         }
         if !remaining.is_empty() {
             return Err(RecordsError::RecordParse(format!(
@@ -739,6 +756,37 @@ mod tests {
             .validate_records(RecordDecompressionPolicy::default())
             .unwrap_err();
         assert2::assert!(matches!(error, RecordsError::RecordParse(_)));
+    }
+
+    #[test]
+    fn validated_batch_visits_records_during_validation() {
+        let owned = super::super::owned::RecordBatch {
+            attributes: Attributes::default().with_compression(CompressionType::Lz4),
+            records: vec![
+                super::super::owned::Record {
+                    timestamp_delta: 3,
+                    value: Some(Bytes::from_static(b"first")),
+                    ..Default::default()
+                },
+                super::super::owned::Record {
+                    timestamp_delta: 8,
+                    value: Some(Bytes::from_static(b"second")),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let encoded = encode_owned_then_borrow(&owned);
+        let validated = validate_one_v2_batch(&encoded).unwrap();
+        let mut timestamps = Vec::new();
+
+        validated
+            .validate_records_with(RecordDecompressionPolicy::default(), |record| {
+                timestamps.push(record.timestamp_delta);
+            })
+            .unwrap();
+
+        assert2::assert!(timestamps == vec![3, 8]);
     }
 
     #[test]

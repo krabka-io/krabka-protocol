@@ -49,7 +49,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 hex = "0.4"
 hmac = "0.13"
 jsonpath-rust = "1.0"
-lz4_flex = { version = "0.14", default-features = false, features = ["frame"] }
+lz4rip = { version = "0.11.5", default-features = false, features = ["frame"] }
 # mutants: `#[cfg_attr(test, mutants::skip)]` attribute for cargo-mutants. Used
 # only where `exclude_re` cannot reliably suppress a mutant (struct-field-deletion
 # mutants on a live-IO adapter). Dev-dependency only; expands to nothing.
