@@ -8,7 +8,7 @@
 use std::io::{Read, Write};
 
 use bytes::Bytes;
-use lz4_flex::frame::{BlockMode, BlockSize, FrameDecoder, FrameEncoder, FrameInfo};
+use lz4rip::frame::{BlockMode, BlockSize, FrameDecoder, FrameEncoder, FrameInfo};
 
 use crate::CompressionError;
 
