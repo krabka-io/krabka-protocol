@@ -85,6 +85,41 @@ pub struct PartitionOffsetAdvanceRecord {
     pub count: i64,
 }
 
+/// KIP-966 eligible-leader state for one partition. Empty vectors clear it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartitionElrRecord {
+    pub topic: String,
+    pub partition: i32,
+    pub eligible_leader_replicas: Vec<NodeId>,
+    pub last_known_elr: Vec<NodeId>,
+}
+
+/// KIP-704 state of an uncleanly elected leader.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i8)]
+pub enum LeaderRecoveryState {
+    #[default]
+    Recovered = 0,
+    Recovering = 1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartitionRecoveryRecord {
+    pub topic: String,
+    pub partition: i32,
+    pub state: LeaderRecoveryState,
+}
+
+/// A Kafka `PartitionChangeRecord` can carry assignment, ELR, and recovery
+/// changes together. This record preserves that atomic update on replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartitionUpdateRecord {
+    pub partition: PartitionRecord,
+    pub eligible_leader_replicas: Option<Vec<NodeId>>,
+    pub last_known_elr: Option<Vec<NodeId>>,
+    pub recovery_state: Option<LeaderRecoveryState>,
+}
+
 /// A single named listener endpoint advertised by a broker. It is stored as a
 /// list on [`BrokerRegistrationRecord::endpoints`], so KRaft-style metadata
 /// can advertise per-listener `host:port` and protocol triples to clients on
@@ -376,6 +411,12 @@ pub enum MetadataRecord {
     /// Tombstone that removes a break-glass proposal by id. The expiry sweep
     /// emits it, in the same shape as `V1DeleteDelegationToken`.
     V1DeleteBreakGlassProposal(Uuid),
+    /// KIP-966 per-partition eligible-leader state.
+    V1PartitionElr(PartitionElrRecord),
+    /// KIP-704 per-partition leader recovery state.
+    V1PartitionRecovery(PartitionRecoveryRecord),
+    /// Atomic standard-KRaft partition update decoded from a combined delta.
+    V1PartitionUpdate(PartitionUpdateRecord),
 }
 
 #[cfg(test)]
