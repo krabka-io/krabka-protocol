@@ -1,0 +1,31 @@
+[package]
+name = "krabka-protocol-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Code generator that emits the krabka-protocol wire codecs from the Apache Kafka JSON schemas."
+
+[lints]
+workspace = true
+
+[lib]
+name = "krabka_protocol_codegen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "krabka-protocol-codegen"
+path = "src/main.rs"
+
+[dependencies]
+prettyplease = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+syn = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+assert2 = { workspace = true }

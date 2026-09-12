@@ -21,6 +21,13 @@ crates/protocol/generated/**           text eol=lf
 crates/protocol-codegen/tests/snapshots/**  text eol=lf
 crates/protocol/tests/corpus/*.hex     text eol=lf
 
+# The snapshots record what the codegen emits, which is rustfmt at
+# `max_width=240` and nothing else. //tools/format runs rustfmt with the
+# repository rustfmt.toml, so it would rewrite them into a shape the snapshot
+# test can never produce. `linguist-generated` is what aspect_rules_lint reads
+# to skip a file.
+crates/protocol-codegen/tests/snapshots/** linguist-generated=true
+
 # PostgreSQL regression expected output uses fixed-width fields.
 crates/gres-conformance/corpus-regress/boolean/boolean.out -whitespace
 crates/gres-conformance/corpus-regress/int4/int4.out       -whitespace

@@ -1,0 +1,43 @@
+load("//bazel:defs.bzl", "crate_binary", "crate_library", "crate_tests")
+
+package(default_visibility = ["//visibility:public"])
+
+# Consumed by `crate.from_cargo` (see //MODULE.bazel).
+exports_files(["Cargo.toml"])
+
+crate_library(name = "protocol-codegen")
+
+crate_binary(
+    name = "protocol-codegen-bin",
+    crate_root = "src/main.rs",
+    lib = ":protocol-codegen",
+)
+
+# `differential_table_emit` builds its specs in memory and runs anywhere. Every
+# other test here is Cargo-shaped, so it is tagged `manual` and the `codegen
+# drift` CI job runs it with `cargo test`.
+#
+# Two reasons, and each one alone is enough:
+#
+#  - They read the Kafka schemas in the sibling //crates/protocol package, and
+#    the snapshots in this one, through `env!("CARGO_MANIFEST_DIR")`. Under
+#    Bazel that is an absolute sandbox path, and rules_rs' process_wrapper
+#    rejects an output that retains one -- so the unit target does not even
+#    compile. The `#[cfg(test)]` modules in `src/emit/mod.rs`, `src/resolve.rs`
+#    and `src/validate.rs` are the ones that do it.
+#  - `src/fmt.rs` shells out to rustfmt, and a sandboxed test has no rustup
+#    shim on PATH.
+#
+# `mutants = False` follows: a `cargo_mutants_test` runs the unit target, which
+# is not runnable here.
+crate_tests(
+    lib = "protocol-codegen",
+    manual = [
+        "parity",
+        "parse_schemas",
+        "snapshot",
+        "snapshot_compiles",
+    ],
+    mutants = False,
+    unit_tags = ["manual"],
+)

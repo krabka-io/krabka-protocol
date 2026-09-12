@@ -21,7 +21,7 @@ MANIFEST_DIR = {"CARGO_MANIFEST_DIR": "$${pwd}/crates/protocol"}
 # build.rs is deliberately not run here. It only checks that `generated/` matches
 # the `schemas/` SHAs and emits no code, so under Bazel — which consumes the
 # generated sources directly as compile_data — it is dead weight. The Cargo build
-# and the codegen-check job still catch drift.
+# and the `codegen drift` CI job still catch drift.
 crate_library(
     name = "protocol",
     compile_data = GENERATED_SOURCES,

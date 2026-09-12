@@ -13,6 +13,7 @@ Nothing in this repository depends on either.
 | Crate | What it is |
 | --- | --- |
 | `krabka-protocol` | Kafka request/response codecs, generated from the upstream JSON schemas. |
+| `krabka-protocol-codegen` | The generator that emits those codecs. Driven by `tools/regenerate.sh`. |
 | `krabka-metadata` | KRaft metadata records and the in-memory metadata image. |
 | `krabka-security` | SASL (SCRAM, OAUTHBEARER, GSSAPI, PLAIN) and TLS configuration. |
 | `krabka-compression` | gzip, snappy, lz4 and zstd record-batch codecs. |
@@ -93,12 +94,18 @@ the full sweep. Two things to know about the results:
 
 ## What does not run under Bazel
 
-Nothing, apart from one recording tool. `bazel test //...` and
-`cargo test --workspace` run the same 2220 tests and the same 11 rustdoc
-examples.
+One recording tool, and the tests of `krabka-protocol-codegen`. Everything else
+is the same set under `bazel test //...` and `cargo test --workspace`.
 
 `capture_corpus` is tagged `manual`: it records new fixtures through the JVM
 oracle rather than reading them, so it is a tool rather than a test.
+
+The codegen tests, apart from `differential_table_emit`, are tagged `manual` as
+well. Each one reads the Kafka schemas in `//crates/protocol`, or the snapshots
+in its own package, through `env!("CARGO_MANIFEST_DIR")`. Cargo resolves that
+to the crate directory. Bazel gives it the absolute path of a sandbox, and
+`rules_rs` refuses to build an output that retains one, so the unit target does
+not even compile. The `codegen drift` CI job runs the whole crate under Cargo.
 
 Suites needing Docker, the JVM oracle or an MIT KDC are `#[ignore]`d
 individually, so they build and skip under both build systems, the same way.
@@ -121,6 +128,12 @@ Getting there took two things worth knowing about:
 Neither of these is Bazel-specific pedantry: a test that resolves
 `CARGO_MANIFEST_DIR` at run time, or reads a path relative to the working
 directory, only works when it is launched the way Cargo happens to launch it.
+
+## Contributing
+
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) covers the style guides, the
+regeneration of the wire codecs, and the procedure for bumping the upstream
+Kafka version.
 
 ## Publishing
 
