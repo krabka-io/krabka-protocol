@@ -59,7 +59,7 @@ impl PartitionChangeRecord {
             crate::primitives::uuid::put_uuid(buf, self.topic_id);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
         if flex {
             let mut tagged = WriteTaggedFields::new();
             if self.isr.is_some() {
@@ -180,7 +180,7 @@ impl PartitionChangeRecord {
                 });
                 tagged.add(5, payload);
             }
-            if self.directories.is_some() {
+            if version >= 1 && self.directories.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.directories).as_ref();
@@ -206,7 +206,7 @@ impl PartitionChangeRecord {
                 );
                 tagged.add(8, payload);
             }
-            if self.eligible_leader_replicas.is_some() {
+            if version >= 2 && self.eligible_leader_replicas.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.eligible_leader_replicas).as_ref();
@@ -232,7 +232,7 @@ impl PartitionChangeRecord {
                 );
                 tagged.add(6, payload);
             }
-            if self.last_known_elr.is_some() {
+            if version >= 2 && self.last_known_elr.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.last_known_elr).as_ref();
@@ -554,7 +554,7 @@ impl Encode for PartitionChangeRecord {
             if self.leader_recovery_state != -1i8 {
                 known_pairs.push((5, 1));
             }
-            if self.directories.is_some() {
+            if version >= 1 && self.directories.is_some() {
                 known_pairs.push((8, {
                     let opt: Option<&Vec<_>> = (self.directories).as_ref();
                     let prefix = crate::primitives::array::nullable_array_len_prefix_len(
@@ -565,7 +565,7 @@ impl Encode for PartitionChangeRecord {
                     prefix + body
                 }));
             }
-            if self.eligible_leader_replicas.is_some() {
+            if version >= 2 && self.eligible_leader_replicas.is_some() {
                 known_pairs.push((6, {
                     let opt: Option<&Vec<_>> = (self.eligible_leader_replicas).as_ref();
                     let prefix = crate::primitives::array::nullable_array_len_prefix_len(
@@ -576,7 +576,7 @@ impl Encode for PartitionChangeRecord {
                     prefix + body
                 }));
             }
-            if self.last_known_elr.is_some() {
+            if version >= 2 && self.last_known_elr.is_some() {
                 known_pairs.push((7, {
                     let opt: Option<&Vec<_>> = (self.last_known_elr).as_ref();
                     let prefix = crate::primitives::array::nullable_array_len_prefix_len(

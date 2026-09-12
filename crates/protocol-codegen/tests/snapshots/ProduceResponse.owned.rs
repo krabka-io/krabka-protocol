@@ -43,7 +43,7 @@ impl Encode for ProduceResponse {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 10 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
                         let prefix = crate::primitives::array::array_len_prefix_len((self.node_endpoints).len(), flex);
@@ -81,7 +81,7 @@ impl Encode for ProduceResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 10 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
                     let prefix = crate::primitives::array::array_len_prefix_len((self.node_endpoints).len(), flex);
                     let body: usize = (self.node_endpoints).iter().map(|it| it.encoded_len(version)).sum();
@@ -332,7 +332,7 @@ impl PartitionProduceResponse {
     fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if version >= 10 && !(crate::codegen_helpers::is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
@@ -458,7 +458,7 @@ impl Encode for PartitionProduceResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if version >= 10 && !(crate::codegen_helpers::is_default(&self.current_leader)) {
                 known_pairs.push((0, self.current_leader.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);

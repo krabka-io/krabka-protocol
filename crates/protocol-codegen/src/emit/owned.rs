@@ -1102,6 +1102,23 @@ pub(crate) fn nullable_split_cond(f: &FieldSpec) -> Option<String> {
     Some(parts.join(" && "))
 }
 
+/// Version predicate that gates a KIP-482 tagged field, or `None` when the
+/// tag is valid across every flexible version of its struct.
+///
+/// A tag belongs to the schema versions that declare it. `FetchRequest` is
+/// flexible from v12, but its `ReplicaState` tag starts at v15, so v12 to v14
+/// must not carry tag 1 even when the field holds a non-default value. Kafka's
+/// own generator wraps the tag in the same version conditional. `flex_minimum`
+/// is the struct's flexible threshold; the tag can never be written below it,
+/// so a range that starts at or before it needs no test.
+pub(crate) fn tagged_version_cond(f: &FieldSpec, flex_minimum: i16) -> Option<String> {
+    let r = f.tagged_versions.unwrap_or(f.versions);
+    if r.min <= flex_minimum && r.max == i16::MAX {
+        return None;
+    }
+    Some(version_cond(r, "version"))
+}
+
 pub(crate) fn version_cond(r: VersionRange, version_var: &str) -> String {
     if r.min == i16::MIN && r.max == i16::MAX {
         "true".to_string()

@@ -30,7 +30,7 @@ use crate::{
         },
         common,
         common::banner,
-        owned::EmitError,
+        owned::{EmitError, tagged_version_cond},
     },
     ir::{FieldSpec, MessageSpec, MessageType},
     name_conv,
@@ -64,6 +64,22 @@ fn tagged_should_encode(f: &FieldSpec) -> TokenStream {
     tagged_should_encode_from_default(f)
 }
 
+/// `tagged_should_encode` with the field's tagged-version range in front of
+/// it. KIP-482 binds a tag to the versions its schema declares, so a message
+/// must not write the tag below that range even when the value is non-default.
+fn gated_tagged_should_encode(f: &FieldSpec, flex_minimum: i16) -> TokenStream {
+    let value = tagged_should_encode(f);
+    match tagged_version_cond(f, flex_minimum) {
+        // Every leaf of `tagged_should_encode` and `version_cond` binds tighter
+        // than `&&`, so neither side needs parentheses.
+        Some(cond) => {
+            let cond = parse_expr(&cond);
+            quote!(#cond && #value)
+        }
+        None => value,
+    }
+}
+
 fn tagged_should_encode_from_default(f: &FieldSpec) -> TokenStream {
     let default = tagged_is_default_cond(f);
     if let Some(option) = default.strip_suffix(".is_none()") {
@@ -90,14 +106,22 @@ struct Ctx<'a> {
 }
 
 enum FlexSource {
-    TopLevel,
+    TopLevel(i16),
     Nested(i16),
 }
 
 impl FlexSource {
+    /// The flexible threshold of the struct. Tagged fields exist only at or
+    /// above it, so a tag whose range starts there needs no version test.
+    fn minimum(&self) -> i16 {
+        match self {
+            FlexSource::TopLevel(fm) | FlexSource::Nested(fm) => *fm,
+        }
+    }
+
     fn tokens(&self) -> TokenStream {
         match self {
-            FlexSource::TopLevel => quote!(is_flexible(version)),
+            FlexSource::TopLevel(_) => quote!(is_flexible(version)),
             FlexSource::Nested(i16::MIN) => quote!(true),
             FlexSource::Nested(i16::MAX) => quote!(version == i16::MAX),
             FlexSource::Nested(fm) => {
@@ -133,7 +157,7 @@ pub fn emit(
         &name_conv::type_name(&spec.name),
         &spec.fields,
         spec_needs_lifetime(spec, &res_map),
-        &FlexSource::TopLevel,
+        &FlexSource::TopLevel(flex_min(spec)),
         Some(version_err(spec)),
         (true, has_any_flex(spec)),
     );
@@ -287,11 +311,12 @@ fn struct_block(
     let guard =
         guard.map(|err| quote!(if !(MIN_VERSION..=MAX_VERSION).contains(&version) { #err }));
     let flex_src = flex.tokens();
-    let encode_body = encode_body(ctx, fields, has_flex);
-    let len_body = len_body(ctx, fields, has_flex);
+    let flex_minimum = flex.minimum();
+    let encode_body = encode_body(ctx, fields, has_flex, flex_minimum);
+    let len_body = len_body(ctx, fields, has_flex, flex_minimum);
     let decode_body = decode_body(ctx, fields, has_flex);
     let (codec_helpers, encode_body, decode_body) = if fields.len() >= 8 {
-        let (encode_helpers, encode_calls) = split_encode_body(ctx, fields, has_flex);
+        let (encode_helpers, encode_calls) = split_encode_body(ctx, fields, has_flex, flex_minimum);
         let (decode_helpers, decode_calls) = split_decode_body(ctx, fields, has_flex, has_lt);
         (
             quote!(#encode_helpers #decode_helpers),
@@ -466,7 +491,7 @@ fn to_owned_expr(ctx: &Ctx, f: &FieldSpec, top_level: bool) -> String {
 
 // --- encode / encoded_len (identical shape to owned, borrowed leaf codecs) ---
 
-fn encode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool) -> TokenStream {
+fn encode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
     let stmts = fields.iter().filter(|f| !is_tagged(f)).map(encode_one);
     let trailer = has_flex.then(|| {
         let mut_kw = if fields.iter().any(is_tagged) {
@@ -477,7 +502,7 @@ fn encode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool) -> TokenStream {
         let adds = fields
             .iter()
             .filter(|f| is_tagged(f))
-            .map(|f| encode_tagged(ctx, f));
+            .map(|f| encode_tagged(ctx, f, flex_minimum));
         quote! {
             if flex {
                 let #mut_kw tagged = WriteTaggedFields::new();
@@ -493,6 +518,7 @@ fn split_encode_body(
     ctx: &Ctx,
     fields: &[FieldSpec],
     has_flex: bool,
+    flex_minimum: i16,
 ) -> (TokenStream, TokenStream) {
     let mut helpers = Vec::new();
     let mut calls = Vec::new();
@@ -533,7 +559,7 @@ fn split_encode_body(
         let adds = fields
             .iter()
             .filter(|field| is_tagged(field))
-            .map(|field| encode_tagged(ctx, field));
+            .map(|field| encode_tagged(ctx, field, flex_minimum));
         let body = quote! {
             if flex {
                 let #mut_kw tagged = WriteTaggedFields::new();
@@ -594,7 +620,7 @@ fn tagged_owned_codec(ctx: &Ctx, f: &FieldSpec) -> bool {
         && matches!(base_type(&f.field_type), "string" | "bytes")
 }
 
-fn encode_tagged(ctx: &Ctx, f: &FieldSpec) -> TokenStream {
+fn encode_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
     let field = name_conv::field_name(&f.name);
     let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
     let nullable = is_nullable(f) || default_is_null(f);
@@ -606,7 +632,7 @@ fn encode_tagged(ctx: &Ctx, f: &FieldSpec) -> TokenStream {
     };
     let body = parse_expr(&body_str.replace("buf", "b"));
     let len = parse_expr(&tagged_len_str(ctx, f, &expr, nullable));
-    let should_encode = tagged_should_encode(f);
+    let should_encode = gated_tagged_should_encode(f, flex_minimum);
     quote! {
         if #should_encode {
             let payload = encode_to_bytes(#len, |b| { #body; Ok(()) });
@@ -623,7 +649,7 @@ fn tagged_len_str(ctx: &Ctx, f: &FieldSpec, expr: &str, nullable: bool) -> Strin
     }
 }
 
-fn len_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool) -> TokenStream {
+fn len_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
     let stmts = fields.iter().filter(|f| !is_tagged(f)).map(len_one);
     let trailer = has_flex.then(|| {
         let mut_kw = if fields.iter().any(is_tagged) {
@@ -634,7 +660,7 @@ fn len_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool) -> TokenStream {
         let pushes = fields
             .iter()
             .filter(|f| is_tagged(f))
-            .map(|f| len_tagged(ctx, f));
+            .map(|f| len_tagged(ctx, f, flex_minimum));
         quote! {
             if flex {
                 let #mut_kw known_pairs: Vec<(u32, usize)> = Vec::new();
@@ -667,12 +693,12 @@ fn len_one(f: &FieldSpec) -> TokenStream {
     quote!(if #cond { n += #inner; })
 }
 
-fn len_tagged(ctx: &Ctx, f: &FieldSpec) -> TokenStream {
+fn len_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
     let field = name_conv::field_name(&f.name);
     let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
     let nullable = is_nullable(f) || default_is_null(f);
     let len = parse_expr(&tagged_len_str(ctx, f, &format!("self.{field}"), nullable));
-    let should_encode = tagged_should_encode(f);
+    let should_encode = gated_tagged_should_encode(f, flex_minimum);
     quote! {
         if #should_encode {
             known_pairs.push((#tag, #len));
