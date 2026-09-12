@@ -70,18 +70,8 @@ fn split_banner(src: &str) -> (&str, &str) {
     src.split_at(idx)
 }
 
-/// The rustfmt to shell out to.
-///
-/// `RUSTFMT` names it when the caller has one to hand; otherwise this is the
-/// `rustfmt` that PATH resolves. Bazel runs a test from a sandbox whose PATH
-/// holds no rustup shims, so //crates/protocol-codegen sets `RUSTFMT` to the
-/// rustfmt of the pinned toolchain.
-fn rustfmt_bin() -> String {
-    std::env::var("RUSTFMT").unwrap_or_else(|_| "rustfmt".to_owned())
-}
-
 fn run_rustfmt(src: &str) -> Result<String, FmtError> {
-    let mut child = Command::new(rustfmt_bin())
+    let mut child = Command::new("rustfmt")
         .args([
             "--edition",
             "2024",

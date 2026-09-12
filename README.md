@@ -94,18 +94,18 @@ the full sweep. Two things to know about the results:
 
 ## What does not run under Bazel
 
-One recording tool, and four codegen suites. Everything else is the same set
-under `bazel test //...` and `cargo test --workspace`.
+One recording tool, and the tests of `krabka-protocol-codegen`. Everything else
+is the same set under `bazel test //...` and `cargo test --workspace`.
 
 `capture_corpus` is tagged `manual`: it records new fixtures through the JVM
 oracle rather than reading them, so it is a tool rather than a test.
 
-`parity`, `parse_schemas`, `snapshot` and `snapshot_compiles` in
-`//crates/protocol-codegen` are tagged `manual` as well. Each reads files at run
-time through `CARGO_MANIFEST_DIR`. It reaches the schemas in `//crates/protocol`
-and the snapshots in its own package. Cargo resolves that variable to the crate
-directory. Bazel resolves it at compile time, to an exec root that is gone by
-the time the test runs. The `codegen drift` CI job runs all four under Cargo.
+The codegen tests, apart from `differential_table_emit`, are tagged `manual` as
+well. Each one reads the Kafka schemas in `//crates/protocol`, or the snapshots
+in its own package, through `env!("CARGO_MANIFEST_DIR")`. Cargo resolves that
+to the crate directory. Bazel gives it the absolute path of a sandbox, and
+`rules_rs` refuses to build an output that retains one, so the unit target does
+not even compile. The `codegen drift` CI job runs the whole crate under Cargo.
 
 Suites needing Docker, the JVM oracle or an MIT KDC are `#[ignore]`d
 individually, so they build and skip under both build systems, the same way.

@@ -13,24 +13,31 @@ crate_binary(
     lib = ":protocol-codegen",
 )
 
+# `differential_table_emit` builds its specs in memory and runs anywhere. Every
+# other test here is Cargo-shaped, so it is tagged `manual` and the `codegen
+# drift` CI job runs it with `cargo test`.
+#
+# Two reasons, and each one alone is enough:
+#
+#  - They read the Kafka schemas in the sibling //crates/protocol package, and
+#    the snapshots in this one, through `env!("CARGO_MANIFEST_DIR")`. Under
+#    Bazel that is an absolute sandbox path, and rules_rs' process_wrapper
+#    rejects an output that retains one -- so the unit target does not even
+#    compile. The `#[cfg(test)]` modules in `src/emit/mod.rs`, `src/resolve.rs`
+#    and `src/validate.rs` are the ones that do it.
+#  - `src/fmt.rs` shells out to rustfmt, and a sandboxed test has no rustup
+#    shim on PATH.
+#
+# `mutants = False` follows: a `cargo_mutants_test` runs the unit target, which
+# is not runnable here.
 crate_tests(
-    # `src/fmt.rs` shells out to rustfmt and its unit tests exercise that path.
-    # A sandboxed test has no rustup shim on PATH, so hand it the rustfmt of
-    # the pinned toolchain and let `RUSTFMT` name it.
-    data = ["@rules_rust//tools/upstream_wrapper:rustfmt"],
-    env = {"RUSTFMT": "$(rootpath @rules_rust//tools/upstream_wrapper:rustfmt)"},
     lib = "protocol-codegen",
-    # These four read files at run time through `CARGO_MANIFEST_DIR`: the
-    # schemas in the sibling //crates/protocol package, and the snapshots in
-    # this one. Cargo sets that variable to the crate directory. Bazel gives it
-    # a compile-time value, and rules_rs' process_wrapper rejects an output that
-    # retains the absolute form of it, so there is no value here that would let
-    # these four find their files. The `codegen drift` CI job runs all four
-    # under Cargo.
     manual = [
         "parity",
         "parse_schemas",
         "snapshot",
         "snapshot_compiles",
     ],
+    mutants = False,
+    unit_tags = ["manual"],
 )
