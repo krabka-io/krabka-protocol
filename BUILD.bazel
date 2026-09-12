@@ -20,6 +20,11 @@ alias(
 )
 
 alias(
+    name = "protocol_codegen",
+    actual = "//crates/protocol-codegen",
+)
+
+alias(
     name = "compression",
     actual = "//crates/compression",
 )

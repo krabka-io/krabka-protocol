@@ -1,0 +1,35 @@
+load("//bazel:defs.bzl", "crate_binary", "crate_library", "crate_tests")
+
+package(default_visibility = ["//visibility:public"])
+
+# Consumed by `crate.from_cargo` (see //MODULE.bazel).
+exports_files(["Cargo.toml"])
+
+crate_library(name = "protocol-codegen")
+
+crate_binary(
+    name = "protocol-codegen-bin",
+    crate_root = "src/main.rs",
+    lib = ":protocol-codegen",
+)
+
+crate_tests(
+    # `src/fmt.rs` shells out to rustfmt and its unit tests exercise that path.
+    # A sandboxed test has no rustup shim on PATH, so hand it the rustfmt of
+    # the pinned toolchain and let `RUSTFMT` name it.
+    data = ["@rules_rust//tools/upstream_wrapper:rustfmt"],
+    env = {"RUSTFMT": "$(rootpath @rules_rust//tools/upstream_wrapper:rustfmt)"},
+    lib = "protocol-codegen",
+    # These four read files at run time through `CARGO_MANIFEST_DIR`: the
+    # schemas in the sibling //crates/protocol package, and the snapshots in
+    # this one. Cargo resolves that to the crate directory; Bazel resolves it
+    # at compile time, to an exec root that is gone by the time the test runs.
+    # The `codegen drift` CI job runs all four under Cargo.
+    manual = [
+        "parity",
+        "parse_schemas",
+        "snapshot",
+        "snapshot_compiles",
+    ],
+    rustc_env = {"CARGO_MANIFEST_DIR": "$${pwd}/crates/protocol-codegen"},
+)

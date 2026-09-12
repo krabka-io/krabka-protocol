@@ -61,6 +61,47 @@ jobs:
       - name: test
         run: aspect test //...
 
+  # The wire codecs under crates/protocol/generated are committed rather than
+  # built, so a schema edit nobody regenerated passes every other job. This one
+  # regenerates and fails when the tree moves.
+  #
+  # Cargo rather than Bazel: the generator shells out to rustfmt, and the
+  # regeneration runs `cargo clippy --fix` over the code it has just emitted.
+  # The same run covers the four codegen suites that read
+  # `crates/protocol/schemas` through `CARGO_MANIFEST_DIR`, which
+  # //crates/protocol-codegen tags `manual`.
+  codegen:
+    name: codegen drift
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # rust-toolchain.toml pins the compiler and rustup installs it on the
+      # first cargo call. rustfmt is a second pin: rustfmt.toml uses three
+      # nightly-gated options, and this is the nightly //MODULE.bazel gives
+      # //tools/format, so both formatters agree on the generated tree.
+      - name: install the pinned rustfmt nightly
+        run: rustup toolchain install nightly-2026-08-14 --profile minimal --component rustfmt
+
+      - name: regenerate
+        env:
+          KRABKA_RUSTFMT_TOOLCHAIN: nightly-2026-08-14
+        run: ./tools/regenerate.sh
+
+      - name: fail on drift
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::crates/protocol/generated is out of sync with crates/protocol/schemas; run tools/regenerate.sh and commit the result"
+            git --no-pager diff
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: codegen tests
+        run: cargo test -p krabka-protocol-codegen
+
   # LCOV over the first-party crates. Separate from `ci` because instrumented
   # binaries are a different build, so sharing that job's cache would only
   # evict it.
