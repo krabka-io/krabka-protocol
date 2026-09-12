@@ -56,7 +56,7 @@ impl Encode for FetchSnapshotResponse {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
                         let prefix = crate::primitives::array::array_len_prefix_len(
@@ -108,7 +108,7 @@ impl Encode for FetchSnapshotResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
                     let prefix = crate::primitives::array::array_len_prefix_len(
                         (self.node_endpoints).len(),

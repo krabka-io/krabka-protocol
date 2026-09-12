@@ -140,7 +140,7 @@ impl FetchRequest {
                 );
                 tagged.add(0, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
                 let payload = encode_to_bytes(self.replica_state.encoded_len(version), |b| {
                     self.replica_state.encode(b, version)?;
                     Ok(())
@@ -327,7 +327,7 @@ impl Encode for FetchRequest {
                     },
                 ));
             }
-            if !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
                 known_pairs.push((1, self.replica_state.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);

@@ -48,14 +48,14 @@ impl Encode for BrokerRegistrationChangeRecord {
                 });
                 tagged.add(0, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_i8(b, self.in_controlled_shutdown);
                     Ok(())
                 });
                 tagged.add(1, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 2 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
                 let payload = encode_to_bytes(
                     {
                         let prefix = crate::primitives::array::array_len_prefix_len(
@@ -77,7 +77,7 @@ impl Encode for BrokerRegistrationChangeRecord {
                 );
                 tagged.add(2, payload);
             }
-            if self.cordoned_log_dirs.is_some() {
+            if version >= 3 && self.cordoned_log_dirs.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
@@ -121,10 +121,10 @@ impl Encode for BrokerRegistrationChangeRecord {
             if !(crate::codegen_helpers::is_default(&self.fenced)) {
                 known_pairs.push((0, 1));
             }
-            if !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
                 known_pairs.push((1, 1));
             }
-            if !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 2 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
                 known_pairs.push((2, {
                     let prefix =
                         crate::primitives::array::array_len_prefix_len((self.log_dirs).len(), flex);
@@ -132,7 +132,7 @@ impl Encode for BrokerRegistrationChangeRecord {
                     prefix + body
                 }));
             }
-            if self.cordoned_log_dirs.is_some() {
+            if version >= 3 && self.cordoned_log_dirs.is_some() {
                 known_pairs.push((3, {
                     let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
                     let prefix = crate::primitives::array::nullable_array_len_prefix_len(

@@ -159,10 +159,10 @@ impl<'a> RegisterBrokerRecord<'a> {
             put_bool(buf, self.in_controlled_shutdown);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 3 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
                 let payload = encode_to_bytes(
                     {
                         let prefix = crate::primitives::array::array_len_prefix_len(
@@ -184,7 +184,7 @@ impl<'a> RegisterBrokerRecord<'a> {
                 );
                 tagged.add(0, payload);
             }
-            if self.cordoned_log_dirs.is_some() {
+            if version >= 4 && self.cordoned_log_dirs.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
@@ -457,7 +457,7 @@ impl Encode for RegisterBrokerRecord<'_> {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 3 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
                 known_pairs.push((0, {
                     let prefix =
                         crate::primitives::array::array_len_prefix_len((self.log_dirs).len(), flex);
@@ -465,7 +465,7 @@ impl Encode for RegisterBrokerRecord<'_> {
                     prefix + body
                 }));
             }
-            if self.cordoned_log_dirs.is_some() {
+            if version >= 4 && self.cordoned_log_dirs.is_some() {
                 known_pairs.push((1, {
                     let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
                     let prefix = crate::primitives::array::nullable_array_len_prefix_len(

@@ -184,7 +184,7 @@ impl<'a> FetchRequest<'a> {
                 );
                 tagged.add(0, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
                 let payload = encode_to_bytes(self.replica_state.encoded_len(version), |b| {
                     self.replica_state.encode(b, version)?;
                     Ok(())
@@ -448,7 +448,7 @@ impl Encode for FetchRequest<'_> {
                     },
                 ));
             }
-            if !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
                 known_pairs.push((1, self.replica_state.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -817,17 +817,17 @@ impl FetchPartition {
             put_i32(buf, self.partition_max_bytes);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 17 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
                 let payload = encode_to_bytes(16, |b| {
                     crate::primitives::uuid::put_uuid(b, self.replica_directory_id);
                     Ok(())
                 });
                 tagged.add(0, payload);
             }
-            if self.high_watermark != 9_223_372_036_854_775_807i64 {
+            if version >= 18 && self.high_watermark != 9_223_372_036_854_775_807i64 {
                 let payload = encode_to_bytes(8, |b| {
                     put_i64(b, self.high_watermark);
                     Ok(())
@@ -974,10 +974,10 @@ impl Encode for FetchPartition {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 17 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
                 known_pairs.push((0, 16));
             }
-            if self.high_watermark != 9_223_372_036_854_775_807i64 {
+            if version >= 18 && self.high_watermark != 9_223_372_036_854_775_807i64 {
                 known_pairs.push((1, 8));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);

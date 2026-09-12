@@ -318,7 +318,7 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
                 let payload = encode_to_bytes(16, |b| {
                     crate::primitives::uuid::put_uuid(b, self.replica_directory_id);
                     Ok(())
@@ -346,7 +346,7 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
                 known_pairs.push((0, 16));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
