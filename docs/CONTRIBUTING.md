@@ -63,4 +63,4 @@ The JVM differential-test oracle is not in this repository. It is in
 `tools/oracle` and its `kafka-clients` dependency. A Kafka version bump is two
 changes, one in each repository. Give both the same Kafka tag. Do the schema
 half here first. Then follow the oracle procedure in that repository's
-`docs/CONTRIBUTING.md`.
+`CONTRIBUTING.md`.
