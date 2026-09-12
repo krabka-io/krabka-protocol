@@ -22,14 +22,15 @@ crate_tests(
     lib = "protocol-codegen",
     # These four read files at run time through `CARGO_MANIFEST_DIR`: the
     # schemas in the sibling //crates/protocol package, and the snapshots in
-    # this one. Cargo resolves that to the crate directory; Bazel resolves it
-    # at compile time, to an exec root that is gone by the time the test runs.
-    # The `codegen drift` CI job runs all four under Cargo.
+    # this one. Cargo sets that variable to the crate directory. Bazel gives it
+    # a compile-time value, and rules_rs' process_wrapper rejects an output that
+    # retains the absolute form of it, so there is no value here that would let
+    # these four find their files. The `codegen drift` CI job runs all four
+    # under Cargo.
     manual = [
         "parity",
         "parse_schemas",
         "snapshot",
         "snapshot_compiles",
     ],
-    rustc_env = {"CARGO_MANIFEST_DIR": "$${pwd}/crates/protocol-codegen"},
 )
