@@ -419,13 +419,14 @@ impl<'de> DecodeBorrow<'de> for PartitionSnapshot {
         if flex {
             let mut tag_replica_directory_id = None;
             out.unknown_tagged_fields = read_tagged_fields(buf, |tag, payload| match tag {
-                0 => {
+                0 if version >= 1 => {
                     tag_replica_directory_id = Some({
                         let b: &mut &[u8] = payload;
                         crate::primitives::uuid::get_uuid(b)?
                     });
                     Ok(true)
                 }
+                0 => Err(ProtocolError::TagNotValidForVersion { tag: 0, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_replica_directory_id {

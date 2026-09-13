@@ -305,14 +305,14 @@ impl RegisterBrokerRecord {
     fn decode_tagged_fields<B: Buf>(
         out: &mut Self,
         buf: &mut B,
-        _version: i16,
+        version: i16,
         flex: bool,
     ) -> Result<(), ProtocolError> {
         if flex {
             let mut tag_log_dirs = None;
             let mut tag_cordoned_log_dirs = None;
             out.unknown_tagged_fields = read_tagged_fields(buf, |tag, payload| match tag {
-                0 => {
+                0 if version >= 3 => {
                     tag_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -326,7 +326,8 @@ impl RegisterBrokerRecord {
                     });
                     Ok(true)
                 }
-                1 => {
+                0 => Err(ProtocolError::TagNotValidForVersion { tag: 0, version }),
+                1 if version >= 4 => {
                     tag_cordoned_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -345,6 +346,7 @@ impl RegisterBrokerRecord {
                     });
                     Ok(true)
                 }
+                1 => Err(ProtocolError::TagNotValidForVersion { tag: 1, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_log_dirs {

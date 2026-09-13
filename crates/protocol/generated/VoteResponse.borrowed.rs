@@ -155,7 +155,7 @@ impl<'de> DecodeBorrow<'de> for VoteResponse<'de> {
         if flex {
             let mut tag_node_endpoints = None;
             out.unknown_tagged_fields = read_tagged_fields(buf, |tag, payload| match tag {
-                0 => {
+                0 if version >= 1 => {
                     tag_node_endpoints = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -171,6 +171,7 @@ impl<'de> DecodeBorrow<'de> for VoteResponse<'de> {
                     });
                     Ok(true)
                 }
+                0 => Err(ProtocolError::TagNotValidForVersion { tag: 0, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_node_endpoints {

@@ -176,14 +176,15 @@ impl Decode<'_> for BrokerRegistrationChangeRecord {
                     });
                     Ok(true)
                 }
-                1 => {
+                1 if version >= 1 => {
                     tag_in_controlled_shutdown = Some({
                         let b: &mut &[u8] = payload;
                         get_i8(b)?
                     });
                     Ok(true)
                 }
-                2 => {
+                1 => Err(ProtocolError::TagNotValidForVersion { tag: 1, version }),
+                2 if version >= 2 => {
                     tag_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -197,7 +198,8 @@ impl Decode<'_> for BrokerRegistrationChangeRecord {
                     });
                     Ok(true)
                 }
-                3 => {
+                2 => Err(ProtocolError::TagNotValidForVersion { tag: 2, version }),
+                3 if version >= 3 => {
                     tag_cordoned_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -216,6 +218,7 @@ impl Decode<'_> for BrokerRegistrationChangeRecord {
                     });
                     Ok(true)
                 }
+                3 => Err(ProtocolError::TagNotValidForVersion { tag: 3, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_fenced {

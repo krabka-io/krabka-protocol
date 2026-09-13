@@ -305,7 +305,7 @@ impl PartitionChangeRecord {
     fn decode_tagged_fields(
         out: &mut Self,
         buf: &mut &[u8],
-        _version: i16,
+        version: i16,
         flex: bool,
     ) -> Result<(), ProtocolError> {
         if flex {
@@ -409,7 +409,7 @@ impl PartitionChangeRecord {
                     });
                     Ok(true)
                 }
-                8 => {
+                8 if version >= 1 => {
                     tag_directories = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -428,7 +428,8 @@ impl PartitionChangeRecord {
                     });
                     Ok(true)
                 }
-                6 => {
+                8 => Err(ProtocolError::TagNotValidForVersion { tag: 8, version }),
+                6 if version >= 2 => {
                     tag_eligible_leader_replicas = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -447,7 +448,8 @@ impl PartitionChangeRecord {
                     });
                     Ok(true)
                 }
-                7 => {
+                6 => Err(ProtocolError::TagNotValidForVersion { tag: 6, version }),
+                7 if version >= 2 => {
                     tag_last_known_elr = Some({
                         let b: &mut &[u8] = payload;
                         {
@@ -466,6 +468,7 @@ impl PartitionChangeRecord {
                     });
                     Ok(true)
                 }
+                7 => Err(ProtocolError::TagNotValidForVersion { tag: 7, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_isr {
