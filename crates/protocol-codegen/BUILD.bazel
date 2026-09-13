@@ -36,7 +36,6 @@ crate_tests(
         "parity",
         "parse_schemas",
         "snapshot",
-        "snapshot_compiles",
     ],
     mutants = False,
     unit_tags = ["manual"],

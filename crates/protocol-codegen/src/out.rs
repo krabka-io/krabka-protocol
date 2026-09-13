@@ -68,9 +68,9 @@ impl Written {
     /// Delete every generated file under `dir` that this run did not write.
     ///
     /// A file counts as generated when it opens with [`BANNER_PREFIX`]. The
-    /// output directories also hold hand-written modules, for example
-    /// `crates/protocol/src/owned/fetch_response_plan.rs`, and the sweep leaves
-    /// those alone.
+    /// sweep leaves every other file alone, so a hand-written file in an
+    /// output directory, or a wrong output path on the command line, does not
+    /// lose data.
     ///
     /// `recursive` descends into subdirectories and removes the ones it leaves
     /// empty. A flat sweep stops at the first level, which is what
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn prune_keeps_a_hand_written_neighbour() {
         let scratch = Scratch::new("handwritten");
-        let hand = scratch.at("fetch_response_plan.rs", "//! Hand-written.\n");
+        let hand = scratch.at("hand_written.rs", "//! Hand-written.\n");
 
         let written = Written::default();
         written.prune(&scratch.0, false).unwrap();
