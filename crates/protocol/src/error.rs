@@ -28,6 +28,12 @@ pub enum ProtocolError {
     /// Schema version requested is not within the message's supported range.
     #[error("schema mismatch: {0}")]
     SchemaMismatch(&'static str),
+
+    /// Decoded a known KIP-482 tag at a version that its schema does not
+    /// declare. The text matches the exception that Kafka's generated
+    /// `read` method throws.
+    #[error("Tag {tag} is not valid for version {version}")]
+    TagNotValidForVersion { tag: u32, version: i16 },
 }
 
 #[cfg(test)]

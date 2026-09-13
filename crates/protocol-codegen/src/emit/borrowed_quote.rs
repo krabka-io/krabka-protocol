@@ -31,6 +31,7 @@ use crate::{
         common,
         common::banner,
         owned::{EmitError, tagged_version_cond},
+        owned_quote::tagged_decode_arm,
     },
     ir::{FieldSpec, MessageSpec, MessageType},
     name_conv,
@@ -314,10 +315,11 @@ fn struct_block(
     let flex_minimum = flex.minimum();
     let encode_body = encode_body(ctx, fields, has_flex, flex_minimum);
     let len_body = len_body(ctx, fields, has_flex, flex_minimum);
-    let decode_body = decode_body(ctx, fields, has_flex);
+    let decode_body = decode_body(ctx, fields, has_flex, flex_minimum);
     let (codec_helpers, encode_body, decode_body) = if fields.len() >= 8 {
         let (encode_helpers, encode_calls) = split_encode_body(ctx, fields, has_flex, flex_minimum);
-        let (decode_helpers, decode_calls) = split_decode_body(ctx, fields, has_flex, has_lt);
+        let (decode_helpers, decode_calls) =
+            split_decode_body(ctx, fields, has_flex, flex_minimum, has_lt);
         (
             quote!(#encode_helpers #decode_helpers),
             encode_calls,
@@ -708,12 +710,12 @@ fn len_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
 
 // --- decode_borrow ----------------------------------------------------------
 
-fn decode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool) -> TokenStream {
+fn decode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
     let stmts = fields
         .iter()
         .filter(|f| !is_tagged(f))
         .map(|f| decode_one(ctx, f));
-    let trailer = has_flex.then(|| decode_tagged_block(ctx, fields));
+    let trailer = has_flex.then(|| decode_tagged_block(ctx, fields, flex_minimum));
     quote!(#(#stmts)* #trailer)
 }
 
@@ -721,6 +723,7 @@ fn split_decode_body(
     ctx: &Ctx,
     fields: &[FieldSpec],
     has_flex: bool,
+    flex_minimum: i16,
     has_lt: bool,
 ) -> (TokenStream, TokenStream) {
     let mut helpers = Vec::new();
@@ -753,7 +756,7 @@ fn split_decode_body(
     }
     if has_flex {
         let helper = format_ident!("decode_tagged_fields");
-        let body = decode_tagged_block(ctx, fields);
+        let body = decode_tagged_block(ctx, fields, flex_minimum);
         let version = if body.to_string().contains("version") {
             quote!(version)
         } else {
@@ -796,7 +799,7 @@ fn decode_one(ctx: &Ctx, f: &FieldSpec) -> TokenStream {
     quote!(if #cond { out.#field = #inner; })
 }
 
-fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec]) -> TokenStream {
+fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec], flex_minimum: i16) -> TokenStream {
     if !fields.iter().any(is_tagged) {
         return quote! {
             if flex {
@@ -810,7 +813,6 @@ fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec]) -> TokenStream {
     });
     let arms = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
-        let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
         let nullable = is_nullable(f) || default_is_null(f);
         let call = if tagged_field_needs_owned(f, ctx.res_map) {
             decode_owned_call(&f.field_type, nullable, ctx.parent_module, ctx.res_map)
@@ -819,7 +821,8 @@ fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec]) -> TokenStream {
             decode_borrow_call(&f.field_type, nullable, ctx.res_map).replace("buf", "b")
         };
         let call = parse_expr(&call);
-        quote!(#tag => { #slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true) })
+        let read = quote!(#slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true));
+        tagged_decode_arm(f, flex_minimum, &read)
     });
     let writebacks = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let field = format_ident!("{}", name_conv::field_name(&f.name));

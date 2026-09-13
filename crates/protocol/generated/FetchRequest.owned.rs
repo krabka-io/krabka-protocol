@@ -320,13 +320,14 @@ impl FetchRequest {
                     });
                     Ok(true)
                 }
-                1 => {
+                1 if version >= 15 => {
                     tag_replica_state = Some({
                         let b: &mut &[u8] = payload;
                         ReplicaState::decode(b, version)?
                     });
                     Ok(true)
                 }
+                1 => Err(ProtocolError::TagNotValidForVersion { tag: 1, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_cluster_id {
@@ -836,27 +837,29 @@ impl FetchPartition {
     fn decode_tagged_fields<B: Buf>(
         out: &mut Self,
         buf: &mut B,
-        _version: i16,
+        version: i16,
         flex: bool,
     ) -> Result<(), ProtocolError> {
         if flex {
             let mut tag_replica_directory_id = None;
             let mut tag_high_watermark = None;
             out.unknown_tagged_fields = read_tagged_fields(buf, |tag, payload| match tag {
-                0 => {
+                0 if version >= 17 => {
                     tag_replica_directory_id = Some({
                         let b: &mut &[u8] = payload;
                         crate::primitives::uuid::get_uuid(b)?
                     });
                     Ok(true)
                 }
-                1 => {
+                0 => Err(ProtocolError::TagNotValidForVersion { tag: 0, version }),
+                1 if version >= 18 => {
                     tag_high_watermark = Some({
                         let b: &mut &[u8] = payload;
                         get_i64(b)?
                     });
                     Ok(true)
                 }
+                1 => Err(ProtocolError::TagNotValidForVersion { tag: 1, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_replica_directory_id {

@@ -86,6 +86,31 @@ fn gated_tagged_should_encode(f: &FieldSpec, flex_minimum: i16) -> TokenStream {
     }
 }
 
+/// The `read_tagged_fields` match arm for one tagged field. `read` stores the
+/// decoded value and evaluates to `Ok(true)`.
+///
+/// KIP-482 binds a tag to the versions its schema declares. Kafka's generated
+/// `read` method throws `Tag N is not valid for version V` when a known tag
+/// arrives at any other flexible version, and does not keep the tag as an
+/// unknown field. A guarded arm plus a fallback arm for the same tag does the
+/// same here. A tag that covers every flexible version of its struct needs no
+/// guard.
+pub(crate) fn tagged_decode_arm(
+    f: &FieldSpec,
+    flex_minimum: i16,
+    read: &TokenStream,
+) -> TokenStream {
+    let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
+    let Some(cond) = tagged_version_cond(f, flex_minimum) else {
+        return quote!(#tag => { #read });
+    };
+    let cond = parse_expr(&cond);
+    quote! {
+        #tag if #cond => { #read }
+        #tag => Err(ProtocolError::TagNotValidForVersion { tag: #tag, version }),
+    }
+}
+
 fn tagged_should_encode_from_default(f: &FieldSpec) -> TokenStream {
     let default = tagged_is_default_cond(f);
     if let Some(option) = default.strip_suffix(".is_none()") {
@@ -326,10 +351,11 @@ fn struct_block(
     let flex_minimum = flex.minimum();
     let encode_body = encode_body(fields, has_flex, flex_minimum);
     let len_body = len_body(fields, has_flex, flex_minimum);
-    let decode_body = decode_body(fields, res_map, has_flex, lenient);
+    let decode_body = decode_body(fields, res_map, has_flex, flex_minimum, lenient);
     let (codec_helpers, encode_body, decode_body) = if fields.len() >= 8 {
         let (encode_helpers, encode_calls) = split_encode_body(fields, has_flex, flex_minimum);
-        let (decode_helpers, decode_calls) = split_decode_body(fields, res_map, has_flex, lenient);
+        let (decode_helpers, decode_calls) =
+            split_decode_body(fields, res_map, has_flex, flex_minimum, lenient);
         (
             quote!(impl #ty { #encode_helpers #decode_helpers }),
             encode_calls,
@@ -602,13 +628,14 @@ fn decode_body(
     fields: &[FieldSpec],
     res_map: &ResMap,
     has_flex: bool,
+    flex_minimum: i16,
     lenient: bool,
 ) -> TokenStream {
     let stmts = fields
         .iter()
         .filter(|f| !is_tagged(f))
         .map(|f| decode_one(f, res_map, lenient));
-    let trailer = has_flex.then(|| decode_tagged_block(fields, res_map, lenient));
+    let trailer = has_flex.then(|| decode_tagged_block(fields, res_map, flex_minimum, lenient));
     quote!(#(#stmts)* #trailer)
 }
 
@@ -616,6 +643,7 @@ fn split_decode_body(
     fields: &[FieldSpec],
     res_map: &ResMap,
     has_flex: bool,
+    flex_minimum: i16,
     lenient: bool,
 ) -> (TokenStream, TokenStream) {
     let mut helpers = Vec::new();
@@ -643,7 +671,7 @@ fn split_decode_body(
     }
     if has_flex {
         let helper = format_ident!("decode_tagged_fields");
-        let body = decode_tagged_block(fields, res_map, lenient);
+        let body = decode_tagged_block(fields, res_map, flex_minimum, lenient);
         let version = if body.to_string().contains("version") {
             quote!(version)
         } else {
@@ -690,7 +718,12 @@ fn decode_one(f: &FieldSpec, res_map: &ResMap, lenient: bool) -> TokenStream {
     quote!(if #cond { out.#field = #inner; })
 }
 
-fn decode_tagged_block(fields: &[FieldSpec], res_map: &ResMap, lenient: bool) -> TokenStream {
+fn decode_tagged_block(
+    fields: &[FieldSpec],
+    res_map: &ResMap,
+    flex_minimum: i16,
+    lenient: bool,
+) -> TokenStream {
     let has_tagged = fields.iter().any(is_tagged);
     if !has_tagged {
         return quote! {
@@ -705,7 +738,6 @@ fn decode_tagged_block(fields: &[FieldSpec], res_map: &ResMap, lenient: bool) ->
     });
     let arms = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
-        let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
         let nullable = is_nullable(f) || default_is_null(f);
         let call = parse_expr(&decode_call_with_buf(
             &f.field_type,
@@ -714,7 +746,8 @@ fn decode_tagged_block(fields: &[FieldSpec], res_map: &ResMap, lenient: bool) ->
             "b",
             lenient,
         ));
-        quote!(#tag => { #slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true) })
+        let read = quote!(#slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true));
+        tagged_decode_arm(f, flex_minimum, &read)
     });
     let writebacks = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let field = format_ident!("{}", name_conv::field_name(&f.name));

@@ -320,13 +320,14 @@ impl FetchRequest {
                     });
                     Ok(true)
                 }
-                1 => {
+                1 if version >= 15 => {
                     tag_replica_state = Some({
                         let b: &mut &[u8] = payload;
                         ReplicaState::decode(b, version)?
                     });
                     Ok(true)
                 }
+                1 => Err(ProtocolError::TagNotValidForVersion { tag: 1, version }),
                 _ => Ok(false),
             })?;
             if let Some(v) = tag_cluster_id {
