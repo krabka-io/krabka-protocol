@@ -37,6 +37,12 @@ pub fn validate(specs: &[MessageSpec]) -> Result<(), ValidateError> {
                 context: ctx,
             });
         }
+        if let Some(message) = latest_version_unstable_error(spec) {
+            return Err(ValidateError::Unsupported {
+                message,
+                context: ctx,
+            });
+        }
         validate_fields(&spec.fields, spec.flexible_versions, &ctx)?;
         for cs in &spec.common_structs {
             validate_fields(
@@ -47,6 +53,26 @@ pub fn validate(specs: &[MessageSpec]) -> Result<(), ValidateError> {
         }
     }
     Ok(())
+}
+
+/// Kafka's `MessageSpec` accepts `latestVersionUnstable` only on a request.
+/// The flag marks the highest version in `validVersions`, so this function
+/// also requires a range that has a highest version. An empty range has no
+/// version to mark. An open-ended range has no fixed highest version.
+fn latest_version_unstable_error(spec: &MessageSpec) -> Option<&'static str> {
+    if !spec.latest_version_unstable {
+        return None;
+    }
+    if spec.message_type != MessageType::Request {
+        return Some("latestVersionUnstable on a message that is not a request");
+    }
+    if spec.valid_versions.is_empty() {
+        return Some("latestVersionUnstable with empty validVersions");
+    }
+    if spec.valid_versions.max == i16::MAX {
+        return Some("latestVersionUnstable with open-ended validVersions");
+    }
+    None
 }
 
 fn validate_fields(

@@ -73,6 +73,7 @@ mod tests {
             message_type: ty,
             api_key: None,
             valid_versions: VersionRange { min, max },
+            latest_version_unstable: false,
             flexible_versions: crate::ir::FlexibleVersions::None,
             fields: vec![],
             common_structs: vec![],

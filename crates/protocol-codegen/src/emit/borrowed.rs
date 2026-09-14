@@ -658,10 +658,20 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
         // No API_KEY const for framing/data types.
         MessageType::Header | MessageType::Data => quote!(),
     };
+    // Only a request can mark its latest version unstable. See
+    // `MessageSpec::latest_stable_version`.
+    let latest_stable_const = match spec.message_type {
+        MessageType::Request => {
+            let latest_stable = proc_macro2::Literal::i16_unsuffixed(spec.latest_stable_version());
+            quote!(pub const LATEST_STABLE_VERSION: i16 = #latest_stable;)
+        }
+        MessageType::Response | MessageType::Header | MessageType::Data => quote!(),
+    };
     quote! {
         #api_key_const
         pub const MIN_VERSION: i16 = #min_version;
         pub const MAX_VERSION: i16 = #max_version;
+        #latest_stable_const
         pub const FLEXIBLE_MIN: i16 = #flex;
 
         #[inline]
