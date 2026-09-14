@@ -158,10 +158,7 @@ jobs:
       # and the other ignored suites (Docker, the MIT KDC) are not selected.
       - name: differential suites
         run: >-
-          cargo test --no-fail-fast
-          -p krabka-protocol -p krabka-compression
-          --test 'differential*' --test oracle_smoke
-          -- --ignored
+          cargo test --no-fail-fast -p krabka-protocol -p krabka-compression --test 'differential*' --test oracle_smoke -- --ignored
 
   # LCOV over the first-party crates. Separate from `ci` because instrumented
   # binaries are a different build, so sharing that job's cache would only
