@@ -76,6 +76,25 @@ fn validate_fields(
             });
         }
 
+        // Kafka's generator enforces both rules in `FieldSpec`. The JVM
+        // differential sweep depends on them too: it builds the borrowed
+        // tagged fixture at the highest version, where every tag is in range.
+        if f.tag.is_some() {
+            let tagged = f.tagged_versions.unwrap_or(f.versions);
+            if tagged.max != i16::MAX {
+                return Err(ValidateError::Unsupported {
+                    message: "taggedVersions is not open-ended",
+                    context,
+                });
+            }
+            if tagged.min < f.versions.min || f.versions.max != i16::MAX {
+                return Err(ValidateError::Unsupported {
+                    message: "taggedVersions is not a subset of versions",
+                    context,
+                });
+            }
+        }
+
         if !f.fields.is_empty() {
             validate_fields(&f.fields, flexible, &context)?; // flexible is Copy
         }
@@ -100,8 +119,59 @@ fn is_struct_type(t: &str) -> bool {
 mod tests {
     use std::path::PathBuf;
 
+    use assert2::assert;
+
     use super::*;
     use crate::ir;
+
+    fn tagged_message(versions: &str, tagged_versions: &str) -> MessageSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "TaggedRequest",
+            "type": "request",
+            "apiKey": 0,
+            "validVersions": "0-5",
+            "flexibleVersions": "0+",
+            "fields": [{
+                "name": "Value",
+                "type": "int32",
+                "versions": versions,
+                "taggedVersions": tagged_versions,
+                "tag": 0,
+            }],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn tagged_versions_follow_kafka_rules() {
+        let cases = [
+            ("2+", "2+", None),
+            ("0+", "3+", None),
+            ("2+", "2-4", Some("taggedVersions is not open-ended")),
+            (
+                "2+",
+                "1+",
+                Some("taggedVersions is not a subset of versions"),
+            ),
+            (
+                "2-4",
+                "2+",
+                Some("taggedVersions is not a subset of versions"),
+            ),
+        ];
+        for (versions, tagged_versions, expected) in cases {
+            let got = validate(&[tagged_message(versions, tagged_versions)])
+                .err()
+                .map(|e| {
+                    let ValidateError::Unsupported { message, .. } = e;
+                    message
+                });
+            assert!(
+                got == expected,
+                "versions {versions}, taggedVersions {tagged_versions}"
+            );
+        }
+    }
 
     #[test]
     fn vendored_schemas_validate() {
