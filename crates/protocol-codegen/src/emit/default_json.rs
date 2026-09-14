@@ -114,7 +114,7 @@ fn version_cond(vr: VersionRange) -> Option<String> {
 /// - Non-nullable array fields: always `[]`.
 /// - Fields with an explicit null default: emit `null`, and stay version-aware
 ///   for split nullability ranges.
-fn json_value_expr_versioned(f: &FieldSpec) -> String {
+pub(crate) fn json_value_expr_versioned(f: &FieldSpec) -> String {
     let is_array = f.field_type.starts_with("[]");
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");

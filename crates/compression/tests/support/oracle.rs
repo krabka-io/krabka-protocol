@@ -20,9 +20,10 @@ impl Oracle {
         // a binary outright, and under Cargo it only works when the test is
         // launched from the directory it was compiled in.
         //
-        // `tools/oracle` is the Gradle JVM oracle, which stayed in
-        // robot-head/crabka. Every test that reaches this is `#[ignore]`d; the
-        // assertion below is what reports its absence.
+        // `tools/oracle` at the repository root is the Gradle JVM oracle. Build
+        // it with `(cd tools/oracle && ./gradlew installDist)`. Every test that
+        // reaches this is `#[ignore]`d, and the `jvm differential` CI job runs
+        // them with `--ignored`. The assertion below reports a missing build.
         let base = PathBuf::from(
             std::env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
         )
@@ -40,10 +41,10 @@ impl Oracle {
         } else {
             base.join("bin/krabka-oracle")
         };
-        assert2::assert!(bin.exists());
-        let java_home = std::env::var("JAVA_HOME").unwrap_or_else(|_| {
-            r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot".to_string()
-        });
+        assert2::assert!(
+            bin.exists(),
+            "build the JVM oracle first: (cd tools/oracle && ./gradlew installDist)"
+        );
         let mut cmd = if cfg!(windows) {
             Command::new(&bin)
         } else {
@@ -51,11 +52,12 @@ impl Oracle {
             c.arg(&bin);
             c
         };
+        // The start script uses `JAVA_HOME` when it is set, and `java` on the
+        // `PATH` when it is not. The child inherits both.
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .env("JAVA_HOME", java_home)
             .spawn()
             .expect("spawn oracle");
         let stdin = child.stdin.take().unwrap();

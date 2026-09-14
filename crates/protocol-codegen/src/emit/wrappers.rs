@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    emit::common::banner,
+    emit::{common::banner, tagged_fixture},
     ir::{MessageSpec, MessageType},
     name_conv,
 };
@@ -61,7 +61,7 @@ pub fn emit(
 
     // 3. #[cfg(test)] mod tests { ... } built with quote!.
     let tests_tokens = match flavor {
-        Flavor::Owned => owned_tests_tokens(&type_name),
+        Flavor::Owned => owned_tests_tokens(&type_name, tagged_fixture::has_tagged_field(spec)),
         Flavor::Borrowed => borrowed_tests_tokens(&type_name),
     };
     out.push_str(&tests_tokens.to_string());
@@ -70,8 +70,29 @@ pub fn emit(
 }
 
 /// Build `#[cfg(test)] mod tests { ... }` for the Owned flavor as a `TokenStream`.
-fn owned_tests_tokens(type_name: &str) -> TokenStream {
+fn owned_tests_tokens(type_name: &str, has_tagged_field: bool) -> TokenStream {
     let ty = format_ident!("{type_name}");
+    // `tagged_fixture()` holds a non-default value in every tagged field. It
+    // must round-trip at every version, including the versions where a tag is
+    // out of range and the encoder drops it. At the highest version every tag
+    // is in range, so the bytes must differ from the default message.
+    let tagged_test = has_tagged_field.then(|| {
+        quote! {
+            #[test]
+            fn tagged_fixture_roundtrips_all_versions() {
+                for v in MIN_VERSION..=MAX_VERSION {
+                    roundtrip(&tagged_fixture(), v);
+                    assert!(tagged_fixture_json(v).is_object());
+                }
+                let encode = |msg: &#ty| {
+                    let mut buf = BytesMut::new();
+                    msg.encode(&mut buf, MAX_VERSION).unwrap();
+                    buf
+                };
+                assert!(encode(&tagged_fixture()) != encode(&#ty::default()));
+            }
+        }
+    });
     let tokens = quote! {
         #[cfg(test)]
         mod tests {
@@ -107,6 +128,8 @@ fn owned_tests_tokens(type_name: &str) -> TokenStream {
                     roundtrip(&#ty::populated(v), v);
                 }
             }
+
+            #tagged_test
         }
     };
     let _validate: syn::ItemMod =

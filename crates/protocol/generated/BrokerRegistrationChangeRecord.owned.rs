@@ -283,3 +283,44 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> BrokerRegistrationChangeRecord {
+    BrokerRegistrationChangeRecord {
+        fenced: 1i8,
+        in_controlled_shutdown: 1i8,
+        log_dirs: vec![crate::primitives::uuid::Uuid([1u8; 16])],
+        cordoned_log_dirs: Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]),
+        ..BrokerRegistrationChangeRecord::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("brokerId".to_string(), ::serde_json::json!(0));
+    m.insert("brokerEpoch".to_string(), ::serde_json::json!(0));
+    m.insert("fenced".to_string(), ::serde_json::json!(1));
+    if version >= 1 {
+        m.insert("inControlledShutdown".to_string(), ::serde_json::json!(1));
+    }
+    if version >= 2 {
+        m.insert(
+            "logDirs".to_string(),
+            ::serde_json::Value::Array(vec![::serde_json::Value::String(
+                "AQEBAQEBAQEBAQEBAQEBAQ".to_string(),
+            )]),
+        );
+    }
+    if version == 3 {
+        m.insert(
+            "cordonedLogDirs".to_string(),
+            ::serde_json::Value::Array(vec![::serde_json::Value::String(
+                "AQEBAQEBAQEBAQEBAQEBAQ".to_string(),
+            )]),
+        );
+    }
+    ::serde_json::Value::Object(m)
+}

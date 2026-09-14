@@ -35,4 +35,17 @@ mod tests {
             roundtrip(&VoteResponse::populated(v), v);
         }
     }
+    #[test]
+    fn tagged_fixture_roundtrips_all_versions() {
+        for v in MIN_VERSION..=MAX_VERSION {
+            roundtrip(&tagged_fixture(), v);
+            assert!(tagged_fixture_json(v).is_object());
+        }
+        let encode = |msg: &VoteResponse| {
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, MAX_VERSION).unwrap();
+            buf
+        };
+        assert!(encode(&tagged_fixture()) != encode(&VoteResponse::default()));
+    }
 }

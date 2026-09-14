@@ -21,3 +21,8 @@ mutants.out.old
 
 # Python bytecode from local runs of scripts
 __pycache__/
+
+# Gradle output from `tools/oracle`. The patterns have no trailing slash, so
+# they also match a symlink to a build directory on another disk.
+/tools/oracle/build
+/tools/oracle/.gradle

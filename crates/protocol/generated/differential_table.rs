@@ -5471,6 +5471,709 @@ pub fn default_json_for(name: &str, version: i16) -> ::serde_json::Value {
     result = result.or_else(|| default_json_for_2(name, version));
     result.unwrap_or_else(|| panic!("unknown message in default_json_for: {name}"))
 }
+#[derive(Debug, Clone, Copy)]
+pub struct TaggedCase {
+    pub name: &'static str,
+    pub version: i16,
+}
+pub const TAGGED_CASES: &[TaggedCase] = &[
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 1,
+    },
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 2,
+    },
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 3,
+    },
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 4,
+    },
+    TaggedCase {
+        name: "ApiVersionsResponse",
+        version: 5,
+    },
+    TaggedCase {
+        name: "BeginQuorumEpochResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "BeginQuorumEpochResponse",
+        version: 1,
+    },
+    TaggedCase {
+        name: "BeginTransactionRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "BrokerHeartbeatRequest",
+        version: 0,
+    },
+    TaggedCase {
+        name: "BrokerHeartbeatRequest",
+        version: 1,
+    },
+    TaggedCase {
+        name: "BrokerHeartbeatRequest",
+        version: 2,
+    },
+    TaggedCase {
+        name: "BrokerRegistrationChangeRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "BrokerRegistrationChangeRecord",
+        version: 1,
+    },
+    TaggedCase {
+        name: "BrokerRegistrationChangeRecord",
+        version: 2,
+    },
+    TaggedCase {
+        name: "BrokerRegistrationChangeRecord",
+        version: 3,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 2,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 3,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 4,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 5,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 6,
+    },
+    TaggedCase {
+        name: "CreateTopicsResponse",
+        version: 7,
+    },
+    TaggedCase {
+        name: "EndQuorumEpochResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "EndQuorumEpochResponse",
+        version: 1,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 4,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 5,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 6,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 7,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 8,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 9,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 10,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 11,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 12,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 13,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 14,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 15,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 16,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 17,
+    },
+    TaggedCase {
+        name: "FetchRequest",
+        version: 18,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 4,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 5,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 6,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 7,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 8,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 9,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 10,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 11,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 12,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 13,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 14,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 15,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 16,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 17,
+    },
+    TaggedCase {
+        name: "FetchResponse",
+        version: 18,
+    },
+    TaggedCase {
+        name: "FetchSnapshotRequest",
+        version: 0,
+    },
+    TaggedCase {
+        name: "FetchSnapshotRequest",
+        version: 1,
+    },
+    TaggedCase {
+        name: "FetchSnapshotResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "FetchSnapshotResponse",
+        version: 1,
+    },
+    TaggedCase {
+        name: "PartitionChangeRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "PartitionChangeRecord",
+        version: 1,
+    },
+    TaggedCase {
+        name: "PartitionChangeRecord",
+        version: 2,
+    },
+    TaggedCase {
+        name: "PartitionRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "PartitionRecord",
+        version: 1,
+    },
+    TaggedCase {
+        name: "PartitionRecord",
+        version: 2,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 3,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 4,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 5,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 6,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 7,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 8,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 9,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 10,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 11,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 12,
+    },
+    TaggedCase {
+        name: "ProduceResponse",
+        version: 13,
+    },
+    TaggedCase {
+        name: "RegisterBrokerRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "RegisterBrokerRecord",
+        version: 1,
+    },
+    TaggedCase {
+        name: "RegisterBrokerRecord",
+        version: 2,
+    },
+    TaggedCase {
+        name: "RegisterBrokerRecord",
+        version: 3,
+    },
+    TaggedCase {
+        name: "RegisterBrokerRecord",
+        version: 4,
+    },
+    TaggedCase {
+        name: "RemoteLogSegmentMetadataRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "RemoteLogSegmentMetadataSnapshotRecord",
+        version: 0,
+    },
+    TaggedCase {
+        name: "UpdateRaftVoterResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "VoteResponse",
+        version: 0,
+    },
+    TaggedCase {
+        name: "VoteResponse",
+        version: 1,
+    },
+    TaggedCase {
+        name: "VoteResponse",
+        version: 2,
+    },
+];
+fn encode_with<T: Encode>(message: &T, version: i16) -> Vec<u8> {
+    let mut buf = BytesMut::new();
+    message.encode(&mut buf, version).unwrap();
+    buf.to_vec()
+}
+fn encode_tagged_fixture_0(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+    use krabka_protocol::DecodeBorrow;
+    Some(match name {
+        "ApiVersionsResponse" => {
+            let owned = krabka_protocol::owned::api_versions_response::tagged_fixture();
+            let max = krabka_protocol::owned::api_versions_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::api_versions_response::ApiVersionsResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "BeginQuorumEpochResponse" => {
+            let owned = krabka_protocol::owned::begin_quorum_epoch_response::tagged_fixture();
+            let max = krabka_protocol::owned::begin_quorum_epoch_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::begin_quorum_epoch_response::BeginQuorumEpochResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "BeginTransactionRecord" => {
+            let owned = krabka_protocol::owned::begin_transaction_record::tagged_fixture();
+            let max = krabka_protocol::owned::begin_transaction_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::begin_transaction_record::BeginTransactionRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "BrokerHeartbeatRequest" => {
+            let owned = krabka_protocol::owned::broker_heartbeat_request::tagged_fixture();
+            let max = krabka_protocol::owned::broker_heartbeat_request::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::broker_heartbeat_request::BrokerHeartbeatRequest::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "BrokerRegistrationChangeRecord" => {
+            let owned = krabka_protocol::owned::broker_registration_change_record::tagged_fixture();
+            let max = krabka_protocol::owned::broker_registration_change_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::broker_registration_change_record::BrokerRegistrationChangeRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "CreateTopicsResponse" => {
+            let owned = krabka_protocol::owned::create_topics_response::tagged_fixture();
+            let max = krabka_protocol::owned::create_topics_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::create_topics_response::CreateTopicsResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        _ => return None,
+    })
+}
+fn encode_tagged_fixture_1(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+    use krabka_protocol::DecodeBorrow;
+    Some(match name {
+        "EndQuorumEpochResponse" => {
+            let owned = krabka_protocol::owned::end_quorum_epoch_response::tagged_fixture();
+            let max = krabka_protocol::owned::end_quorum_epoch_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::end_quorum_epoch_response::EndQuorumEpochResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "FetchRequest" => {
+            let owned = krabka_protocol::owned::fetch_request::tagged_fixture();
+            let max = krabka_protocol::owned::fetch_request::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::fetch_request::FetchRequest::decode_borrow(
+                &mut cur, max,
+            )
+            .unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "FetchResponse" => {
+            let owned = krabka_protocol::owned::fetch_response::tagged_fixture();
+            let max = krabka_protocol::owned::fetch_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::fetch_response::FetchResponse::decode_borrow(
+                &mut cur, max,
+            )
+            .unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "FetchSnapshotRequest" => {
+            let owned = krabka_protocol::owned::fetch_snapshot_request::tagged_fixture();
+            let max = krabka_protocol::owned::fetch_snapshot_request::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::fetch_snapshot_request::FetchSnapshotRequest::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "FetchSnapshotResponse" => {
+            let owned = krabka_protocol::owned::fetch_snapshot_response::tagged_fixture();
+            let max = krabka_protocol::owned::fetch_snapshot_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::fetch_snapshot_response::FetchSnapshotResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "PartitionChangeRecord" => {
+            let owned = krabka_protocol::owned::partition_change_record::tagged_fixture();
+            let max = krabka_protocol::owned::partition_change_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::partition_change_record::PartitionChangeRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        _ => return None,
+    })
+}
+fn encode_tagged_fixture_2(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+    use krabka_protocol::DecodeBorrow;
+    Some(match name {
+        "PartitionRecord" => {
+            let owned = krabka_protocol::owned::partition_record::tagged_fixture();
+            let max = krabka_protocol::owned::partition_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed =
+                krabka_protocol::borrowed::partition_record::PartitionRecord::decode_borrow(
+                    &mut cur, max,
+                )
+                .unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "ProduceResponse" => {
+            let owned = krabka_protocol::owned::produce_response::tagged_fixture();
+            let max = krabka_protocol::owned::produce_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed =
+                krabka_protocol::borrowed::produce_response::ProduceResponse::decode_borrow(
+                    &mut cur, max,
+                )
+                .unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "RegisterBrokerRecord" => {
+            let owned = krabka_protocol::owned::register_broker_record::tagged_fixture();
+            let max = krabka_protocol::owned::register_broker_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::register_broker_record::RegisterBrokerRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "RemoteLogSegmentMetadataRecord" => {
+            let owned =
+                krabka_protocol::owned::remote_log_segment_metadata_record::tagged_fixture();
+            let max = krabka_protocol::owned::remote_log_segment_metadata_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::remote_log_segment_metadata_record::RemoteLogSegmentMetadataRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "RemoteLogSegmentMetadataSnapshotRecord" => {
+            let owned =
+                krabka_protocol::owned::remote_log_segment_metadata_snapshot_record::tagged_fixture(
+                );
+            let max =
+                krabka_protocol::owned::remote_log_segment_metadata_snapshot_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::remote_log_segment_metadata_snapshot_record::RemoteLogSegmentMetadataSnapshotRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        "UpdateRaftVoterResponse" => {
+            let owned = krabka_protocol::owned::update_raft_voter_response::tagged_fixture();
+            let max = krabka_protocol::owned::update_raft_voter_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::update_raft_voter_response::UpdateRaftVoterResponse::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        _ => return None,
+    })
+}
+fn encode_tagged_fixture_3(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+    use krabka_protocol::DecodeBorrow;
+    Some(match name {
+        "VoteResponse" => {
+            let owned = krabka_protocol::owned::vote_response::tagged_fixture();
+            let max = krabka_protocol::owned::vote_response::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::vote_response::VoteResponse::decode_borrow(
+                &mut cur, max,
+            )
+            .unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
+        _ => return None,
+    })
+}
+/// The owned `tagged_fixture()` encoded at `version`, and the borrowed flavor of
+/// the same message encoded at `version`. The borrowed message is decoded from
+/// the owned bytes at the highest version, where every tag is in range.
+///
+/// # Panics
+///
+/// Panics when `name` does not identify a message with a tagged field.
+#[must_use]
+pub fn encode_tagged_fixture(name: &str, version: i16) -> (Vec<u8>, Vec<u8>) {
+    let mut result = None;
+    result = result.or_else(|| encode_tagged_fixture_0(name, version));
+    result = result.or_else(|| encode_tagged_fixture_1(name, version));
+    result = result.or_else(|| encode_tagged_fixture_2(name, version));
+    result = result.or_else(|| encode_tagged_fixture_3(name, version));
+    result.unwrap_or_else(|| panic!("unknown message in encode_tagged_fixture: {name}"))
+}
+/// # Panics
+///
+/// Panics when `name` does not identify a message with a tagged field.
+#[must_use]
+pub fn tagged_fixture_json_for(name: &str, version: i16) -> ::serde_json::Value {
+    match name {
+        "ApiVersionsResponse" => {
+            krabka_protocol::owned::api_versions_response::tagged_fixture_json(version)
+        }
+        "BeginQuorumEpochResponse" => {
+            krabka_protocol::owned::begin_quorum_epoch_response::tagged_fixture_json(version)
+        }
+        "BeginTransactionRecord" => {
+            krabka_protocol::owned::begin_transaction_record::tagged_fixture_json(version)
+        }
+        "BrokerHeartbeatRequest" => {
+            krabka_protocol::owned::broker_heartbeat_request::tagged_fixture_json(version)
+        }
+        "BrokerRegistrationChangeRecord" => {
+            krabka_protocol::owned::broker_registration_change_record::tagged_fixture_json(version)
+        }
+        "CreateTopicsResponse" => {
+            krabka_protocol::owned::create_topics_response::tagged_fixture_json(version)
+        }
+        "EndQuorumEpochResponse" => {
+            krabka_protocol::owned::end_quorum_epoch_response::tagged_fixture_json(version)
+        }
+        "FetchRequest" => krabka_protocol::owned::fetch_request::tagged_fixture_json(version),
+        "FetchResponse" => krabka_protocol::owned::fetch_response::tagged_fixture_json(version),
+        "FetchSnapshotRequest" => {
+            krabka_protocol::owned::fetch_snapshot_request::tagged_fixture_json(version)
+        }
+        "FetchSnapshotResponse" => {
+            krabka_protocol::owned::fetch_snapshot_response::tagged_fixture_json(version)
+        }
+        "PartitionChangeRecord" => {
+            krabka_protocol::owned::partition_change_record::tagged_fixture_json(version)
+        }
+        "PartitionRecord" => krabka_protocol::owned::partition_record::tagged_fixture_json(version),
+        "ProduceResponse" => krabka_protocol::owned::produce_response::tagged_fixture_json(version),
+        "RegisterBrokerRecord" => {
+            krabka_protocol::owned::register_broker_record::tagged_fixture_json(version)
+        }
+        "RemoteLogSegmentMetadataRecord" => {
+            krabka_protocol::owned::remote_log_segment_metadata_record::tagged_fixture_json(version)
+        }
+        "RemoteLogSegmentMetadataSnapshotRecord" => {
+            krabka_protocol::owned::remote_log_segment_metadata_snapshot_record::tagged_fixture_json(
+                version,
+            )
+        }
+        "UpdateRaftVoterResponse" => {
+            krabka_protocol::owned::update_raft_voter_response::tagged_fixture_json(version)
+        }
+        "VoteResponse" => krabka_protocol::owned::vote_response::tagged_fixture_json(version),
+        _ => panic!("unknown message in tagged_fixture_json_for: {name}"),
+    }
+}
 fn roundtrip_0(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
     use krabka_protocol::Decode;
     Some(match name {

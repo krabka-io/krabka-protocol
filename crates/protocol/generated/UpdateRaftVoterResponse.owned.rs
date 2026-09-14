@@ -265,3 +265,38 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     });
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> UpdateRaftVoterResponse {
+    UpdateRaftVoterResponse {
+        current_leader: CurrentLeader {
+            leader_id: 1i32,
+            leader_epoch: 1i32,
+            host: "x".to_string(),
+            port: 1i32,
+            ..CurrentLeader::default()
+        },
+        ..UpdateRaftVoterResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+    m.insert("currentLeader".to_string(), {
+        let mut m = ::serde_json::Map::new();
+        m.insert("leaderId".to_string(), ::serde_json::json!(1));
+        m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+        m.insert(
+            "host".to_string(),
+            ::serde_json::Value::String("x".to_string()),
+        );
+        m.insert("port".to_string(), ::serde_json::json!(1));
+        ::serde_json::Value::Object(m)
+    });
+    ::serde_json::Value::Object(m)
+}

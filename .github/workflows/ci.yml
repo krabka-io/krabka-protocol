@@ -102,6 +102,64 @@ jobs:
       - name: codegen tests
         run: cargo test -p krabka-protocol-codegen
 
+  # The byte-level check against Apache Kafka's own client code.
+  #
+  # `tools/oracle` wraps `kafka-clients` in a line-oriented JSON process. The
+  # differential suites send it a message as JSON, and compare its bytes with
+  # the Rust encoders. The suites are `#[ignore]`d because they need a JDK, so
+  # `bazel test //...` and a plain `cargo test` skip them. This job is the only
+  # place they run.
+  #
+  # `every_tagged_field_byte_equal` gives every KIP-482 tagged field a
+  # non-default value at every version. The default-value sweep cannot see a
+  # tag written outside its declared versions, because the encoders skip a tag
+  # at its default.
+  #
+  # Cargo rather than Bazel: the suites find the oracle through
+  # `CARGO_MANIFEST_DIR`, the same way the codegen suites find the schemas.
+  differential:
+    name: jvm differential
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+          # A warm run downloads neither the Gradle distribution nor the
+          # oracle's Maven dependencies. `cache-dependency-path` scopes the key
+          # to `tools/oracle`, so an unrelated change does not rotate it.
+          cache: gradle
+          cache-dependency-path: |
+            tools/oracle/**/*.gradle*
+            tools/oracle/gradle/wrapper/gradle-wrapper.properties
+
+      # The test binaries and their dev-dependencies are a separate build from
+      # every other job, so they get their own cache.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: jvm-differential
+
+      - name: build the JVM oracle
+        # Maven Central rate-limits cold resolves (HTTP 429). Retry with
+        # backoff; Gradle keeps what it already downloaded.
+        run: |
+          for attempt in 1 2 3; do
+            if (cd tools/oracle && ./gradlew installDist --no-daemon); then exit 0; fi
+            if [ "$attempt" = 3 ]; then echo "::error::gradle installDist failed after 3 attempts"; exit 1; fi
+            echo "gradle attempt $attempt failed; backing off"; sleep $((attempt * 45))
+          done
+
+      # `--test` selects the suites by name, so a new `differential_*` suite
+      # joins without an edit here. `--ignored` runs only the ignored tests,
+      # and the other ignored suites (Docker, the MIT KDC) are not selected.
+      - name: differential suites
+        run: >-
+          cargo test --no-fail-fast -p krabka-protocol -p krabka-compression --test 'differential*' --test oracle_smoke -- --ignored
+
   # LCOV over the first-party crates. Separate from `ci` because instrumented
   # binaries are a different build, so sharing that job's cache would only
   # evict it.

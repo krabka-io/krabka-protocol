@@ -50,17 +50,34 @@ changes. So `crates/protocol/generated` cannot go out of sync with
 
 ### Bump the upstream Kafka version
 
+The schemas and the JVM oracle move together. Give both the same Kafka tag, in
+one pull request.
+
 1. `./tools/sync-schemas.sh <new-kafka-tag>`
-2. `./tools/regenerate.sh`
-3. Commit `crates/protocol/schemas/VERSION` and the regenerated files together.
+2. Review `git status crates/protocol/schemas`. Restore the schemas that the
+   script deleted or overwrote. See the note below.
+3. `./tools/regenerate.sh`
+4. Set `kafkaVersion` in `tools/oracle/build.gradle.kts` to the same tag.
+5. Build the oracle and run the differential suites:
+
+   ```
+   (cd tools/oracle && ./gradlew installDist)
+   cargo test --no-fail-fast -p krabka-protocol -p krabka-compression \
+       --test 'differential*' --test oracle_smoke -- --ignored
+   ```
+
+6. Commit `crates/protocol/schemas/VERSION`, the regenerated files and
+   `tools/oracle/build.gradle.kts` together.
 
 `sync-schemas.sh` replaces only the top-level schema set. The pinned legacy
 namespaces under `crates/protocol/schemas/versions/` keep their own `VERSION`
 and their own upstream tag, so bump each one on its own.
 
-The JVM differential-test oracle is not in this repository. It is in
-[krabka-broker](https://github.com/krabka-io/krabka-broker), which holds
-`tools/oracle` and its `kafka-clients` dependency. A Kafka version bump is two
-changes, one in each repository. Give both the same Kafka tag. Do the schema
-half here first. Then follow the oracle procedure in that repository's
-`CONTRIBUTING.md`.
+`sync-schemas.sh` copies only `clients/src/main/resources/common/message`. The
+top-level set also holds the metadata records from Kafka's `metadata` module
+and the remote log metadata records from its `storage` module, and some
+schemas carry local edits. The script deletes or overwrites them.
+
+The `jvm differential` CI job runs step 5 on every pull request. A mismatch
+there after a bump is a real difference between the generated codecs and the
+new `kafka-clients` release.

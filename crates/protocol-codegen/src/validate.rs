@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::ir::{FieldSpec, FlexibleVersions, MessageSpec, MessageType};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum ValidateError {
     #[error("{message}: in {context}")]
     Unsupported {
@@ -74,6 +74,25 @@ fn validate_fields(
                 message: "tagged field on non-flexible message",
                 context,
             });
+        }
+
+        // Kafka's generator enforces both rules in `FieldSpec`. The JVM
+        // differential sweep depends on them too: it builds the borrowed
+        // tagged fixture at the highest version, where every tag is in range.
+        if f.tag.is_some() {
+            let tagged = f.tagged_versions.unwrap_or(f.versions);
+            if tagged.max != i16::MAX {
+                return Err(ValidateError::Unsupported {
+                    message: "taggedVersions is not open-ended",
+                    context,
+                });
+            }
+            if tagged.min < f.versions.min || f.versions.max != i16::MAX {
+                return Err(ValidateError::Unsupported {
+                    message: "taggedVersions is not a subset of versions",
+                    context,
+                });
+            }
         }
 
         if !f.fields.is_empty() {
