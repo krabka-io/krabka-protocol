@@ -109,6 +109,8 @@ not even compile. The `codegen drift` CI job runs the whole crate under Cargo.
 
 Suites needing Docker, the JVM oracle or an MIT KDC are `#[ignore]`d
 individually, so they build and skip under both build systems, the same way.
+The `jvm differential` CI job builds [`tools/oracle`](tools/oracle/README.md)
+and runs the JVM oracle suites under Cargo with `--ignored`.
 
 Getting there took two things worth knowing about:
 
