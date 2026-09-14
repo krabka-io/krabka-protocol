@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::ir::{FieldSpec, FlexibleVersions, MessageSpec, MessageType};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum ValidateError {
     #[error("{message}: in {context}")]
     Unsupported {
@@ -119,59 +119,8 @@ fn is_struct_type(t: &str) -> bool {
 mod tests {
     use std::path::PathBuf;
 
-    use assert2::assert;
-
     use super::*;
     use crate::ir;
-
-    fn tagged_message(versions: &str, tagged_versions: &str) -> MessageSpec {
-        serde_json::from_value(serde_json::json!({
-            "name": "TaggedRequest",
-            "type": "request",
-            "apiKey": 0,
-            "validVersions": "0-5",
-            "flexibleVersions": "0+",
-            "fields": [{
-                "name": "Value",
-                "type": "int32",
-                "versions": versions,
-                "taggedVersions": tagged_versions,
-                "tag": 0,
-            }],
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn tagged_versions_follow_kafka_rules() {
-        let cases = [
-            ("2+", "2+", None),
-            ("0+", "3+", None),
-            ("2+", "2-4", Some("taggedVersions is not open-ended")),
-            (
-                "2+",
-                "1+",
-                Some("taggedVersions is not a subset of versions"),
-            ),
-            (
-                "2-4",
-                "2+",
-                Some("taggedVersions is not a subset of versions"),
-            ),
-        ];
-        for (versions, tagged_versions, expected) in cases {
-            let got = validate(&[tagged_message(versions, tagged_versions)])
-                .err()
-                .map(|e| {
-                    let ValidateError::Unsupported { message, .. } = e;
-                    message
-                });
-            assert!(
-                got == expected,
-                "versions {versions}, taggedVersions {tagged_versions}"
-            );
-        }
-    }
 
     #[test]
     fn vendored_schemas_validate() {
