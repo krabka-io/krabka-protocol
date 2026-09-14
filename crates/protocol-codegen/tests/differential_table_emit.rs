@@ -11,6 +11,7 @@ fn req(name: &str, api_key: i16, min: i16, max: i16, flex_min: i16) -> MessageSp
         message_type: MessageType::Request,
         api_key: Some(api_key),
         valid_versions: VersionRange { min, max },
+        latest_version_unstable: false,
         flexible_versions: FlexibleVersions::Range(VersionRange {
             min: flex_min,
             max: i16::MAX,

@@ -16,6 +16,7 @@ use crate::{
 pub const API_KEY: i16 = 24;
 pub const MIN_VERSION: i16 = 0;
 pub const MAX_VERSION: i16 = 5;
+pub const LATEST_STABLE_VERSION: i16 = 5;
 pub const FLEXIBLE_MIN: i16 = 3;
 #[inline]
 #[must_use]
@@ -372,6 +373,7 @@ impl crate::ProtocolRequest for AddPartitionsToTxnRequest {
     const API_KEY: i16 = API_KEY;
     const MIN_VERSION: i16 = MIN_VERSION;
     const MAX_VERSION: i16 = MAX_VERSION;
+    const LATEST_STABLE_VERSION: i16 = LATEST_STABLE_VERSION;
     const FLEXIBLE_MIN: i16 = FLEXIBLE_MIN;
     type Response = super::add_partitions_to_txn_response::AddPartitionsToTxnResponse;
 }

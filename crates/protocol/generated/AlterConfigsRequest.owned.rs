@@ -18,6 +18,7 @@ use crate::{
 pub const API_KEY: i16 = 33;
 pub const MIN_VERSION: i16 = 0;
 pub const MAX_VERSION: i16 = 2;
+pub const LATEST_STABLE_VERSION: i16 = 2;
 pub const FLEXIBLE_MIN: i16 = 2;
 #[inline]
 #[must_use]
@@ -340,6 +341,7 @@ impl crate::ProtocolRequest for AlterConfigsRequest {
     const API_KEY: i16 = API_KEY;
     const MIN_VERSION: i16 = MIN_VERSION;
     const MAX_VERSION: i16 = MAX_VERSION;
+    const LATEST_STABLE_VERSION: i16 = LATEST_STABLE_VERSION;
     const FLEXIBLE_MIN: i16 = FLEXIBLE_MIN;
     type Response = super::alter_configs_response::AlterConfigsResponse;
 }

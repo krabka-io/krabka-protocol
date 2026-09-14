@@ -22,6 +22,9 @@ const CURATED: &[&str] = &[
     // Exercises a field nullable only within a sub-range (Topics: versions "0-7",
     // nullableVersions "2-7") — the lower-bound side of the split.
     "OffsetFetchRequest",
+    // Sets `latestVersionUnstable`, so LATEST_STABLE_VERSION is one below
+    // MAX_VERSION. The other requests here are stable.
+    "InitProducerIdRequest",
 ];
 
 fn schemas_dir() -> PathBuf {

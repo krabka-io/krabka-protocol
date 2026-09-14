@@ -8,6 +8,7 @@ use bytes::BufMut;
 pub const API_KEY: i16 = 1;
 pub const MIN_VERSION: i16 = 0;
 pub const MAX_VERSION: i16 = 15;
+pub const LATEST_STABLE_VERSION: i16 = 15;
 pub const FLEXIBLE_MIN: i16 = 12;
 #[inline]
 #[must_use]

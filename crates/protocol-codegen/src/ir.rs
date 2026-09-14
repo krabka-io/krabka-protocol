@@ -13,6 +13,13 @@ pub struct MessageSpec {
     #[serde(default)]
     pub api_key: Option<i16>,
     pub valid_versions: VersionRange,
+    /// Kafka's `latestVersionUnstable`. When it is true, the highest version in
+    /// `valid_versions` is still in development. A Kafka broker advertises that
+    /// version only with `unstable.api.versions.enable`, and a Kafka client
+    /// never picks it. The key is optional in the schema, and Kafka reads a
+    /// missing key as false.
+    #[serde(default)]
+    pub latest_version_unstable: bool,
     #[serde(default)]
     pub flexible_versions: FlexibleVersions,
     #[serde(default)]
@@ -76,6 +83,23 @@ pub struct CommonStruct {
     pub name: String,
     pub versions: VersionRange,
     pub fields: Vec<FieldSpec>,
+}
+
+impl MessageSpec {
+    /// The highest version that a client can send, which is Kafka's
+    /// `ApiMessageType.highestSupportedVersion(false)`.
+    ///
+    /// It is one less than `valid_versions.max` when the latest version is
+    /// unstable. The result is less than `valid_versions.min` when the only
+    /// version is unstable. Kafka reads that as "no enabled version".
+    #[must_use]
+    pub fn latest_stable_version(&self) -> i16 {
+        if self.latest_version_unstable {
+            self.valid_versions.max.saturating_sub(1)
+        } else {
+            self.valid_versions.max
+        }
+    }
 }
 
 /// `"0+"`, `"3+"`, `"0-2"`, `"none"`, `"4"` etc.
@@ -256,6 +280,29 @@ mod tests {
             assert!(parse_version_range(input).unwrap() == want);
         }
         assert!(parse_version_range("none").is_err()); // handled at call site
+    }
+
+    #[test]
+    fn latest_stable_version() {
+        for (valid_versions, unstable, want) in [
+            ("0-6", true, 5),
+            ("0-6", false, 6),
+            ("3", true, 2),
+            ("3", false, 3),
+        ] {
+            let spec: MessageSpec = serde_json::from_value(serde_json::json!({
+                "name": "TestRequest",
+                "type": "request",
+                "apiKey": 22,
+                "validVersions": valid_versions,
+                "latestVersionUnstable": unstable,
+            }))
+            .unwrap();
+            assert!(
+                spec.latest_stable_version() == want,
+                "validVersions {valid_versions}, unstable {unstable}"
+            );
+        }
     }
 
     #[test]

@@ -20,6 +20,7 @@ use crate::{
 pub const API_KEY: i16 = 19;
 pub const MIN_VERSION: i16 = 2;
 pub const MAX_VERSION: i16 = 7;
+pub const LATEST_STABLE_VERSION: i16 = 7;
 pub const FLEXIBLE_MIN: i16 = 5;
 #[inline]
 #[must_use]

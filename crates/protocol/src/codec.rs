@@ -49,8 +49,20 @@ pub trait ProtocolRequest: Encode {
     const API_KEY: i16;
     /// Minimum protocol version this Rust type supports.
     const MIN_VERSION: i16;
-    /// Maximum protocol version this Rust type supports.
+    /// Maximum protocol version this Rust type can encode and decode.
+    ///
+    /// This includes a version that the schema marks
+    /// `latestVersionUnstable`, so a broker can still decode that version
+    /// when it enables unstable versions. A client picks its version with
+    /// [`Self::LATEST_STABLE_VERSION`].
     const MAX_VERSION: i16;
+    /// Highest protocol version that a client can send.
+    ///
+    /// This is Kafka's `ApiKeys.latestVersion(false)`. It is
+    /// `MAX_VERSION - 1` when the schema sets `latestVersionUnstable`, and
+    /// `MAX_VERSION` otherwise. A value below `MIN_VERSION` means that the
+    /// request has no stable version.
+    const LATEST_STABLE_VERSION: i16;
     /// First version that uses flexible framing from KIP-482.
     /// This is `i16::MAX` for never-flexible messages.
     const FLEXIBLE_MIN: i16;

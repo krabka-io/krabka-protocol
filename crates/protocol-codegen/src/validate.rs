@@ -37,6 +37,12 @@ pub fn validate(specs: &[MessageSpec]) -> Result<(), ValidateError> {
                 context: ctx,
             });
         }
+        if let Some(message) = latest_version_unstable_error(spec) {
+            return Err(ValidateError::Unsupported {
+                message,
+                context: ctx,
+            });
+        }
         validate_fields(&spec.fields, spec.flexible_versions, &ctx)?;
         for cs in &spec.common_structs {
             validate_fields(
@@ -47,6 +53,26 @@ pub fn validate(specs: &[MessageSpec]) -> Result<(), ValidateError> {
         }
     }
     Ok(())
+}
+
+/// Kafka's `MessageSpec` accepts `latestVersionUnstable` only on a request.
+/// The flag marks the highest version in `validVersions`, so this function
+/// also requires a range that has a highest version. An empty range has no
+/// version to mark. An open-ended range has no fixed highest version.
+fn latest_version_unstable_error(spec: &MessageSpec) -> Option<&'static str> {
+    if !spec.latest_version_unstable {
+        return None;
+    }
+    if spec.message_type != MessageType::Request {
+        return Some("latestVersionUnstable on a message that is not a request");
+    }
+    if spec.valid_versions.is_empty() {
+        return Some("latestVersionUnstable with empty validVersions");
+    }
+    if spec.valid_versions.max == i16::MAX {
+        return Some("latestVersionUnstable with open-ended validVersions");
+    }
+    None
 }
 
 fn validate_fields(
@@ -119,8 +145,78 @@ fn is_struct_type(t: &str) -> bool {
 mod tests {
     use std::path::PathBuf;
 
+    use assert2::assert;
+    use serde_json::json;
+
     use super::*;
     use crate::ir;
+
+    fn unsupported(message: &'static str) -> Result<(), ValidateError> {
+        Err(ValidateError::Unsupported {
+            message,
+            context: "TestMessage".to_owned(),
+        })
+    }
+
+    #[test]
+    fn latest_version_unstable_rules() {
+        let cases = [
+            ("request", "0-6", true, Ok(())),
+            ("request", "0-6", false, Ok(())),
+            ("request", "0+", false, Ok(())),
+            // Kafka accepts a request whose only version is unstable. The
+            // API then has no enabled version.
+            ("request", "0", true, Ok(())),
+            ("request", "none", false, Ok(())),
+            (
+                "request",
+                "none",
+                true,
+                unsupported("latestVersionUnstable with empty validVersions"),
+            ),
+            (
+                "request",
+                "0+",
+                true,
+                unsupported("latestVersionUnstable with open-ended validVersions"),
+            ),
+            (
+                "response",
+                "0-6",
+                true,
+                unsupported("latestVersionUnstable on a message that is not a request"),
+            ),
+            (
+                "header",
+                "0-2",
+                true,
+                unsupported("latestVersionUnstable on a message that is not a request"),
+            ),
+            (
+                "data",
+                "0",
+                true,
+                unsupported("latestVersionUnstable on a message that is not a request"),
+            ),
+            ("response", "0-6", false, Ok(())),
+        ];
+        for (message_type, valid_versions, unstable, want) in cases {
+            let spec: MessageSpec = serde_json::from_value(json!({
+                "name": "TestMessage",
+                "type": message_type,
+                "apiKey": 22,
+                "validVersions": valid_versions,
+                "flexibleVersions": "0+",
+                "latestVersionUnstable": unstable,
+            }))
+            .unwrap();
+            let got = validate(&[spec]);
+            assert!(
+                got == want,
+                "type {message_type}, validVersions {valid_versions}, unstable {unstable}"
+            );
+        }
+    }
 
     #[test]
     fn vendored_schemas_validate() {
