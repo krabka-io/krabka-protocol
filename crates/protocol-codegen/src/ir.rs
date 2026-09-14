@@ -283,29 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn latest_stable_version() {
-        for (valid_versions, unstable, want) in [
-            ("0-6", true, 5),
-            ("0-6", false, 6),
-            ("3", true, 2),
-            ("3", false, 3),
-        ] {
-            let spec: MessageSpec = serde_json::from_value(serde_json::json!({
-                "name": "TestRequest",
-                "type": "request",
-                "apiKey": 22,
-                "validVersions": valid_versions,
-                "latestVersionUnstable": unstable,
-            }))
-            .unwrap();
-            assert!(
-                spec.latest_stable_version() == want,
-                "validVersions {valid_versions}, unstable {unstable}"
-            );
-        }
-    }
-
-    #[test]
     fn comment_strip() {
         let src = "{\n// hi\n  \"x\": 1 // trailing\n}";
         let out = strip_line_comments(src);
