@@ -1017,3 +1017,114 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     obj.insert("responses".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> FetchResponse {
+    FetchResponse {
+        responses: vec![FetchableTopicResponse {
+            partitions: vec![PartitionData {
+                diverging_epoch: EpochEndOffset {
+                    epoch: 1i32,
+                    end_offset: 1i64,
+                    ..EpochEndOffset::default()
+                },
+                current_leader: LeaderIdAndEpoch {
+                    leader_id: 1i32,
+                    leader_epoch: 1i32,
+                    ..LeaderIdAndEpoch::default()
+                },
+                snapshot_id: SnapshotId {
+                    end_offset: 1i64,
+                    epoch: 1i32,
+                    ..SnapshotId::default()
+                },
+                ..PartitionData::default()
+            }],
+            ..FetchableTopicResponse::default()
+        }],
+        ..FetchResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    if version >= 1 {
+        m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 7 {
+        m.insert("errorCode".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 7 {
+        m.insert("sessionId".to_string(), ::serde_json::json!(0));
+    }
+    m.insert(
+        "responses".to_string(),
+        ::serde_json::Value::Array(vec![{
+            let mut m = ::serde_json::Map::new();
+            if version <= 12 {
+                m.insert(
+                    "topic".to_string(),
+                    ::serde_json::Value::String(String::new()),
+                );
+            }
+            if version >= 13 {
+                m.insert(
+                    "topicId".to_string(),
+                    ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                );
+            }
+            m.insert(
+                "partitions".to_string(),
+                ::serde_json::Value::Array(vec![{
+                    let mut m = ::serde_json::Map::new();
+                    m.insert("partitionIndex".to_string(), ::serde_json::json!(0));
+                    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+                    m.insert("highWatermark".to_string(), ::serde_json::json!(0));
+                    if version >= 4 {
+                        m.insert("lastStableOffset".to_string(), ::serde_json::json!(-1));
+                    }
+                    if version >= 5 {
+                        m.insert("logStartOffset".to_string(), ::serde_json::json!(-1));
+                    }
+                    if version >= 12 {
+                        m.insert("divergingEpoch".to_string(), {
+                            let mut m = ::serde_json::Map::new();
+                            m.insert("epoch".to_string(), ::serde_json::json!(1));
+                            m.insert("endOffset".to_string(), ::serde_json::json!(1));
+                            ::serde_json::Value::Object(m)
+                        });
+                    }
+                    if version >= 12 {
+                        m.insert("currentLeader".to_string(), {
+                            let mut m = ::serde_json::Map::new();
+                            m.insert("leaderId".to_string(), ::serde_json::json!(1));
+                            m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+                            ::serde_json::Value::Object(m)
+                        });
+                    }
+                    if version >= 12 {
+                        m.insert("snapshotId".to_string(), {
+                            let mut m = ::serde_json::Map::new();
+                            m.insert("endOffset".to_string(), ::serde_json::json!(1));
+                            m.insert("epoch".to_string(), ::serde_json::json!(1));
+                            ::serde_json::Value::Object(m)
+                        });
+                    }
+                    if version >= 4 {
+                        m.insert("abortedTransactions".to_string(), ::serde_json::Value::Null);
+                    }
+                    if version >= 11 {
+                        m.insert("preferredReadReplica".to_string(), ::serde_json::json!(-1));
+                    }
+                    m.insert("records".to_string(), ::serde_json::Value::Null);
+                    ::serde_json::Value::Object(m)
+                }]),
+            );
+            ::serde_json::Value::Object(m)
+        }]),
+    );
+    ::serde_json::Value::Object(m)
+}

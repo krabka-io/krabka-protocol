@@ -1122,6 +1122,121 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> FetchRequest {
+    FetchRequest {
+        cluster_id: Some("x".to_string()),
+        replica_state: ReplicaState {
+            replica_id: 1i32,
+            replica_epoch: 1i64,
+            ..ReplicaState::default()
+        },
+        topics: vec![FetchTopic {
+            partitions: vec![FetchPartition {
+                replica_directory_id: crate::primitives::uuid::Uuid([1u8; 16]),
+                high_watermark: 1i64,
+                ..FetchPartition::default()
+            }],
+            ..FetchTopic::default()
+        }],
+        ..FetchRequest::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    if version >= 12 {
+        m.insert(
+            "clusterId".to_string(),
+            ::serde_json::Value::String("x".to_string()),
+        );
+    }
+    if version <= 14 {
+        m.insert("replicaId".to_string(), ::serde_json::json!(-1));
+    }
+    if version >= 15 {
+        m.insert("replicaState".to_string(), {
+            let mut m = ::serde_json::Map::new();
+            m.insert("replicaId".to_string(), ::serde_json::json!(1));
+            m.insert("replicaEpoch".to_string(), ::serde_json::json!(1));
+            ::serde_json::Value::Object(m)
+        });
+    }
+    m.insert("maxWaitMs".to_string(), ::serde_json::json!(0));
+    m.insert("minBytes".to_string(), ::serde_json::json!(0));
+    m.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
+    m.insert("isolationLevel".to_string(), ::serde_json::json!(0));
+    if version >= 7 {
+        m.insert("sessionId".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 7 {
+        m.insert("sessionEpoch".to_string(), ::serde_json::json!(-1));
+    }
+    m.insert(
+        "topics".to_string(),
+        ::serde_json::Value::Array(vec![{
+            let mut m = ::serde_json::Map::new();
+            if version <= 12 {
+                m.insert(
+                    "topic".to_string(),
+                    ::serde_json::Value::String(String::new()),
+                );
+            }
+            if version >= 13 {
+                m.insert(
+                    "topicId".to_string(),
+                    ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                );
+            }
+            m.insert(
+                "partitions".to_string(),
+                ::serde_json::Value::Array(vec![{
+                    let mut m = ::serde_json::Map::new();
+                    m.insert("partition".to_string(), ::serde_json::json!(0));
+                    if version >= 9 {
+                        m.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(-1));
+                    }
+                    m.insert("fetchOffset".to_string(), ::serde_json::json!(0));
+                    if version >= 12 {
+                        m.insert("lastFetchedEpoch".to_string(), ::serde_json::json!(-1));
+                    }
+                    if version >= 5 {
+                        m.insert("logStartOffset".to_string(), ::serde_json::json!(-1));
+                    }
+                    m.insert("partitionMaxBytes".to_string(), ::serde_json::json!(0));
+                    if version >= 17 {
+                        m.insert(
+                            "replicaDirectoryId".to_string(),
+                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string()),
+                        );
+                    }
+                    if version == 18 {
+                        m.insert("highWatermark".to_string(), ::serde_json::json!(1));
+                    }
+                    ::serde_json::Value::Object(m)
+                }]),
+            );
+            ::serde_json::Value::Object(m)
+        }]),
+    );
+    if version >= 7 {
+        m.insert(
+            "forgottenTopicsData".to_string(),
+            ::serde_json::Value::Array(vec![]),
+        );
+    }
+    if version >= 11 {
+        m.insert(
+            "rackId".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
+    }
+    ::serde_json::Value::Object(m)
+}
 impl crate::ProtocolRequest for FetchRequest {
     const API_KEY: i16 = API_KEY;
     const MIN_VERSION: i16 = MIN_VERSION;

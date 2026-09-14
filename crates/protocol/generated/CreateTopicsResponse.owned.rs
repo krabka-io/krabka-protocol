@@ -605,3 +605,54 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> CreateTopicsResponse {
+    CreateTopicsResponse {
+        topics: vec![CreatableTopicResult {
+            topic_config_error_code: 1i16,
+            ..CreatableTopicResult::default()
+        }],
+        ..CreateTopicsResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    m.insert(
+        "topics".to_string(),
+        ::serde_json::Value::Array(vec![{
+            let mut m = ::serde_json::Map::new();
+            m.insert(
+                "name".to_string(),
+                ::serde_json::Value::String(String::new()),
+            );
+            if version == 7 {
+                m.insert(
+                    "topicId".to_string(),
+                    ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                );
+            }
+            m.insert("errorCode".to_string(), ::serde_json::json!(0));
+            m.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+            if version >= 5 {
+                m.insert("topicConfigErrorCode".to_string(), ::serde_json::json!(1));
+            }
+            if version >= 5 {
+                m.insert("numPartitions".to_string(), ::serde_json::json!(-1));
+            }
+            if version >= 5 {
+                m.insert("replicationFactor".to_string(), ::serde_json::json!(-1));
+            }
+            if version >= 5 {
+                m.insert("configs".to_string(), ::serde_json::Value::Null);
+            }
+            ::serde_json::Value::Object(m)
+        }]),
+    );
+    ::serde_json::Value::Object(m)
+}

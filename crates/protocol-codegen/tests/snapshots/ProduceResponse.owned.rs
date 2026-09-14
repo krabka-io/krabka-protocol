@@ -782,3 +782,91 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> ProduceResponse {
+    ProduceResponse {
+        responses: vec![TopicProduceResponse {
+            partition_responses: vec![PartitionProduceResponse {
+                current_leader: LeaderIdAndEpoch {
+                    leader_id: 1i32,
+                    leader_epoch: 1i32,
+                    ..LeaderIdAndEpoch::default()
+                },
+                ..PartitionProduceResponse::default()
+            }],
+            ..TopicProduceResponse::default()
+        }],
+        node_endpoints: vec![NodeEndpoint {
+            node_id: 1i32,
+            host: "x".to_string(),
+            port: 1i32,
+            rack: Some("x".to_string()),
+            ..NodeEndpoint::default()
+        }],
+        ..ProduceResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert(
+        "responses".to_string(),
+        ::serde_json::Value::Array(vec![{
+            let mut m = ::serde_json::Map::new();
+            if version <= 12 {
+                m.insert("name".to_string(), ::serde_json::Value::String(String::new()));
+            }
+            if version == 13 {
+                m.insert("topicId".to_string(), ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()));
+            }
+            m.insert(
+                "partitionResponses".to_string(),
+                ::serde_json::Value::Array(vec![{
+                    let mut m = ::serde_json::Map::new();
+                    m.insert("index".to_string(), ::serde_json::json!(0));
+                    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+                    m.insert("baseOffset".to_string(), ::serde_json::json!(0));
+                    m.insert("logAppendTimeMs".to_string(), ::serde_json::json!(-1));
+                    if version >= 5 {
+                        m.insert("logStartOffset".to_string(), ::serde_json::json!(-1));
+                    }
+                    if version >= 8 {
+                        m.insert("recordErrors".to_string(), ::serde_json::Value::Array(vec![]));
+                    }
+                    if version >= 8 {
+                        m.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+                    }
+                    if version >= 10 {
+                        m.insert("currentLeader".to_string(), {
+                            let mut m = ::serde_json::Map::new();
+                            m.insert("leaderId".to_string(), ::serde_json::json!(1));
+                            m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+                            ::serde_json::Value::Object(m)
+                        });
+                    }
+                    ::serde_json::Value::Object(m)
+                }]),
+            );
+            ::serde_json::Value::Object(m)
+        }]),
+    );
+    m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    if version >= 10 {
+        m.insert(
+            "nodeEndpoints".to_string(),
+            ::serde_json::Value::Array(vec![{
+                let mut m = ::serde_json::Map::new();
+                m.insert("nodeId".to_string(), ::serde_json::json!(1));
+                m.insert("host".to_string(), ::serde_json::Value::String("x".to_string()));
+                m.insert("port".to_string(), ::serde_json::json!(1));
+                m.insert("rack".to_string(), ::serde_json::Value::String("x".to_string()));
+                ::serde_json::Value::Object(m)
+            }]),
+        );
+    }
+    ::serde_json::Value::Object(m)
+}

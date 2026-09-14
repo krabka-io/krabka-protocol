@@ -2,6 +2,9 @@
 //!   - `CASES: &[Case]` — a static table of `(message, api_key, version, kind)` cases
 //!   - `default_json_for(name)` — JSON the oracle should accept for default fixture
 //!   - `encode_default(name, version)` — Rust-encoded bytes from `Default::default()`
+//!   - `TAGGED_CASES`, `encode_tagged_fixture(name, version)` and
+//!     `tagged_fixture_json_for(name, version)` — the same sweep over every
+//!     message that has a tagged field, with each tagged field set
 //!
 //! `crates/protocol/tests/differential_all.rs` consumes the file with
 //! `include!`.
@@ -13,6 +16,7 @@ use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use crate::{
+    emit::tagged_fixture,
     ir::{MessageSpec, MessageType},
     name_conv,
 };
@@ -47,6 +51,7 @@ fn build_body(specs: &[MessageSpec]) -> TokenStream {
     ts.extend(build_cases_table(specs));
     ts.extend(build_encode_default(specs));
     ts.extend(build_default_json_for(specs));
+    ts.extend(build_tagged_fixture(specs));
     ts.extend(build_roundtrip(specs));
     ts.extend(build_header_versions(specs));
     ts.extend(build_strip_frame_header());
@@ -219,6 +224,121 @@ fn build_default_json_for(specs: &[MessageSpec]) -> TokenStream {
             let mut result = None;
             #(#calls)*
             result.unwrap_or_else(|| panic!("unknown message in default_json_for: {name}"))
+        }
+    }
+}
+
+/// The tagged-field sweep. It covers requests, responses and data records,
+/// because the metadata records carry tagged fields too.
+fn build_tagged_fixture(specs: &[MessageSpec]) -> TokenStream {
+    let tagged: Vec<&MessageSpec> = specs
+        .iter()
+        .filter(|s| {
+            !s.valid_versions.is_empty() && !s.internal && tagged_fixture::has_tagged_field(s)
+        })
+        .collect();
+
+    let rows = tagged.iter().flat_map(|s| {
+        let name_lit = Literal::string(&s.name);
+        let max_v = s.valid_versions.max.min(MAX_VERSION_CAP);
+        (s.valid_versions.min..=max_v).map(move |v| {
+            let v_lit = Literal::i16_unsuffixed(v);
+            quote! { TaggedCase { name: #name_lit, version: #v_lit }, }
+        })
+    });
+
+    let encode_arms: Vec<TokenStream> = tagged
+        .iter()
+        .map(|s| {
+            let snake_ident = format_ident!("{}", name_conv::module_name(&s.name));
+            let type_ident = format_ident!("{}", name_conv::type_name(&s.name));
+            let name_lit = Literal::string(&s.name);
+            quote! {
+                #name_lit => {
+                    let owned = krabka_protocol::owned::#snake_ident::tagged_fixture();
+                    let max = krabka_protocol::owned::#snake_ident::MAX_VERSION;
+                    let full = encode_with(&owned, max);
+                    let mut cur = full.as_slice();
+                    let borrowed =
+                        krabka_protocol::borrowed::#snake_ident::#type_ident::decode_borrow(&mut cur, max)
+                            .unwrap();
+                    assert2::assert!(cur.is_empty());
+                    (encode_with(&owned, version), encode_with(&borrowed, version))
+                }
+            }
+        })
+        .collect();
+    let encode_helpers: Vec<TokenStream> = encode_arms
+        .chunks(6)
+        .enumerate()
+        .map(|(index, chunk)| {
+            let helper = format_ident!("encode_tagged_fixture_{index}");
+            quote! {
+                fn #helper(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+                    use krabka_protocol::DecodeBorrow;
+                    Some(match name {
+                        #(#chunk)*
+                        _ => return None,
+                    })
+                }
+            }
+        })
+        .collect();
+    let encode_calls = (0..encode_helpers.len()).map(|index| {
+        let helper = format_ident!("encode_tagged_fixture_{index}");
+        quote!(result = result.or_else(|| #helper(name, version));)
+    });
+
+    let json_arms = tagged.iter().map(|s| {
+        let snake_ident = format_ident!("{}", name_conv::module_name(&s.name));
+        let name_lit = Literal::string(&s.name);
+        quote! {
+            #name_lit => krabka_protocol::owned::#snake_ident::tagged_fixture_json(version),
+        }
+    });
+
+    quote! {
+        #[derive(Debug, Clone, Copy)]
+        pub struct TaggedCase {
+            pub name: &'static str,
+            pub version: i16,
+        }
+
+        pub const TAGGED_CASES: &[TaggedCase] = &[
+            #(#rows)*
+        ];
+
+        fn encode_with<T: Encode>(message: &T, version: i16) -> Vec<u8> {
+            let mut buf = BytesMut::new();
+            message.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
+
+        #(#encode_helpers)*
+
+        #[doc = " The owned `tagged_fixture()` encoded at `version`, and the borrowed flavor of"]
+        #[doc = " the same message encoded at `version`. The borrowed message is decoded from"]
+        #[doc = " the owned bytes at the highest version, where every tag is in range."]
+        ///
+        /// # Panics
+        ///
+        /// Panics when `name` does not identify a message with a tagged field.
+        #[must_use]
+        pub fn encode_tagged_fixture(name: &str, version: i16) -> (Vec<u8>, Vec<u8>) {
+            let mut result = None;
+            #(#encode_calls)*
+            result.unwrap_or_else(|| panic!("unknown message in encode_tagged_fixture: {name}"))
+        }
+
+        /// # Panics
+        ///
+        /// Panics when `name` does not identify a message with a tagged field.
+        #[must_use]
+        pub fn tagged_fixture_json_for(name: &str, version: i16) -> ::serde_json::Value {
+            match name {
+                #(#json_arms)*
+                _ => panic!("unknown message in tagged_fixture_json_for: {name}"),
+            }
         }
     }
 }

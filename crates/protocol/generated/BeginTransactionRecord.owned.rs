@@ -127,3 +127,23 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     obj.insert("name".to_string(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> BeginTransactionRecord {
+    BeginTransactionRecord {
+        name: Some("x".to_string()),
+        ..BeginTransactionRecord::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert(
+        "name".to_string(),
+        ::serde_json::Value::String("x".to_string()),
+    );
+    ::serde_json::Value::Object(m)
+}

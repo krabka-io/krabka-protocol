@@ -682,3 +682,70 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> PartitionChangeRecord {
+    PartitionChangeRecord {
+        isr: Some(vec![1i32]),
+        leader: 1i32,
+        replicas: Some(vec![1i32]),
+        removing_replicas: Some(vec![1i32]),
+        adding_replicas: Some(vec![1i32]),
+        leader_recovery_state: 1i8,
+        directories: Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]),
+        eligible_leader_replicas: Some(vec![1i32]),
+        last_known_elr: Some(vec![1i32]),
+        ..PartitionChangeRecord::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("partitionId".to_string(), ::serde_json::json!(-1));
+    m.insert(
+        "topicId".to_string(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+    );
+    m.insert(
+        "isr".to_string(),
+        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+    );
+    m.insert("leader".to_string(), ::serde_json::json!(1));
+    m.insert(
+        "replicas".to_string(),
+        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+    );
+    m.insert(
+        "removingReplicas".to_string(),
+        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+    );
+    m.insert(
+        "addingReplicas".to_string(),
+        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+    );
+    m.insert("leaderRecoveryState".to_string(), ::serde_json::json!(1));
+    if version >= 1 {
+        m.insert(
+            "directories".to_string(),
+            ::serde_json::Value::Array(vec![::serde_json::Value::String(
+                "AQEBAQEBAQEBAQEBAQEBAQ".to_string(),
+            )]),
+        );
+    }
+    if version == 2 {
+        m.insert(
+            "eligibleLeaderReplicas".to_string(),
+            ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+        );
+    }
+    if version == 2 {
+        m.insert(
+            "lastKnownElr".to_string(),
+            ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+        );
+    }
+    ::serde_json::Value::Object(m)
+}

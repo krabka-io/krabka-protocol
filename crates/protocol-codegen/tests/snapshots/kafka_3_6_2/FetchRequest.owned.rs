@@ -852,6 +852,62 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> FetchRequest {
+    FetchRequest {
+        cluster_id: Some("x".to_string()),
+        replica_state: ReplicaState {
+            replica_id: 1i32,
+            replica_epoch: 1i64,
+            ..ReplicaState::default()
+        },
+        ..FetchRequest::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    if version >= 12 {
+        m.insert("clusterId".to_string(), ::serde_json::Value::String("x".to_string()));
+    }
+    if version <= 14 {
+        m.insert("replicaId".to_string(), ::serde_json::json!(-1));
+    }
+    if version == 15 {
+        m.insert("replicaState".to_string(), {
+            let mut m = ::serde_json::Map::new();
+            m.insert("replicaId".to_string(), ::serde_json::json!(1));
+            m.insert("replicaEpoch".to_string(), ::serde_json::json!(1));
+            ::serde_json::Value::Object(m)
+        });
+    }
+    m.insert("maxWaitMs".to_string(), ::serde_json::json!(0));
+    m.insert("minBytes".to_string(), ::serde_json::json!(0));
+    if version >= 3 {
+        m.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
+    }
+    if version >= 4 {
+        m.insert("isolationLevel".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 7 {
+        m.insert("sessionId".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 7 {
+        m.insert("sessionEpoch".to_string(), ::serde_json::json!(-1));
+    }
+    m.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    if version >= 7 {
+        m.insert("forgottenTopicsData".to_string(), ::serde_json::Value::Array(vec![]));
+    }
+    if version >= 11 {
+        m.insert("rackId".to_string(), ::serde_json::Value::String("".to_string()));
+    }
+    ::serde_json::Value::Object(m)
+}
 impl crate::ProtocolRequest for FetchRequest {
     const API_KEY: i16 = API_KEY;
     const MIN_VERSION: i16 = MIN_VERSION;

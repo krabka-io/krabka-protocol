@@ -8,6 +8,7 @@ pub mod mod_rs;
 pub mod owned;
 pub mod owned_quote;
 pub mod protocol_request;
+pub mod tagged_fixture;
 pub mod wrappers;
 pub use crate::emit::owned::EmitError;
 

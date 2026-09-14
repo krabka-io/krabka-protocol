@@ -492,6 +492,68 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> FetchSnapshotRequest {
+    FetchSnapshotRequest {
+        cluster_id: Some("x".to_string()),
+        topics: vec![TopicSnapshot {
+            partitions: vec![PartitionSnapshot {
+                replica_directory_id: crate::primitives::uuid::Uuid([1u8; 16]),
+                ..PartitionSnapshot::default()
+            }],
+            ..TopicSnapshot::default()
+        }],
+        ..FetchSnapshotRequest::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert(
+        "clusterId".to_string(),
+        ::serde_json::Value::String("x".to_string()),
+    );
+    m.insert("replicaId".to_string(), ::serde_json::json!(-1));
+    m.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
+    m.insert(
+        "topics".to_string(),
+        ::serde_json::Value::Array(vec![{
+            let mut m = ::serde_json::Map::new();
+            m.insert(
+                "name".to_string(),
+                ::serde_json::Value::String(String::new()),
+            );
+            m.insert(
+                "partitions".to_string(),
+                ::serde_json::Value::Array(vec![{
+                    let mut m = ::serde_json::Map::new();
+                    m.insert("partition".to_string(), ::serde_json::json!(0));
+                    m.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(0));
+                    m.insert("snapshotId".to_string(), {
+                        let mut m = ::serde_json::Map::new();
+                        m.insert("endOffset".to_string(), ::serde_json::json!(0));
+                        m.insert("epoch".to_string(), ::serde_json::json!(0));
+                        ::serde_json::Value::Object(m)
+                    });
+                    m.insert("position".to_string(), ::serde_json::json!(0));
+                    if version == 1 {
+                        m.insert(
+                            "replicaDirectoryId".to_string(),
+                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string()),
+                        );
+                    }
+                    ::serde_json::Value::Object(m)
+                }]),
+            );
+            ::serde_json::Value::Object(m)
+        }]),
+    );
+    ::serde_json::Value::Object(m)
+}
 impl crate::ProtocolRequest for FetchSnapshotRequest {
     const API_KEY: i16 = API_KEY;
     const MIN_VERSION: i16 = MIN_VERSION;

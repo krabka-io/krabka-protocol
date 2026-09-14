@@ -502,3 +502,36 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     );
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> RemoteLogSegmentMetadataSnapshotRecord {
+    RemoteLogSegmentMetadataSnapshotRecord {
+        txn_index_empty: true,
+        ..RemoteLogSegmentMetadataSnapshotRecord::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert(
+        "segmentId".to_string(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+    );
+    m.insert("startOffset".to_string(), ::serde_json::json!(0));
+    m.insert("endOffset".to_string(), ::serde_json::json!(0));
+    m.insert("brokerId".to_string(), ::serde_json::json!(0));
+    m.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
+    m.insert("eventTimestampMs".to_string(), ::serde_json::json!(0));
+    m.insert(
+        "segmentLeaderEpochs".to_string(),
+        ::serde_json::Value::Array(vec![]),
+    );
+    m.insert("segmentSizeInBytes".to_string(), ::serde_json::json!(0));
+    m.insert("customMetadata".to_string(), ::serde_json::Value::Null);
+    m.insert("remoteLogSegmentState".to_string(), ::serde_json::json!(0));
+    m.insert("txnIndexEmpty".to_string(), ::serde_json::Value::Bool(true));
+    ::serde_json::Value::Object(m)
+}

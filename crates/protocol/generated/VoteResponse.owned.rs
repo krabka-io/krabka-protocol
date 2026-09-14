@@ -498,3 +498,41 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> VoteResponse {
+    VoteResponse {
+        node_endpoints: vec![NodeEndpoint {
+            node_id: 1i32,
+            host: "x".to_string(),
+            port: 1u16,
+            ..NodeEndpoint::default()
+        }],
+        ..VoteResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+    m.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    if version >= 1 {
+        m.insert(
+            "nodeEndpoints".to_string(),
+            ::serde_json::Value::Array(vec![{
+                let mut m = ::serde_json::Map::new();
+                m.insert("nodeId".to_string(), ::serde_json::json!(1));
+                m.insert(
+                    "host".to_string(),
+                    ::serde_json::Value::String("x".to_string()),
+                );
+                m.insert("port".to_string(), ::serde_json::json!(1));
+                ::serde_json::Value::Object(m)
+            }]),
+        );
+    }
+    ::serde_json::Value::Object(m)
+}

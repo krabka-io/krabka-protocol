@@ -551,3 +551,67 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     ::serde_json::Value::Object(obj)
 }
+/// A message with a non-default value in every tagged field, at every depth, for
+/// the JVM oracle differential sweep. The value is the same at every version.
+#[must_use]
+pub fn tagged_fixture() -> ApiVersionsResponse {
+    ApiVersionsResponse {
+        supported_features: vec![SupportedFeatureKey {
+            name: "x".to_string(),
+            min_version: 1i16,
+            max_version: 1i16,
+            ..SupportedFeatureKey::default()
+        }],
+        finalized_features_epoch: 1i64,
+        finalized_features: vec![FinalizedFeatureKey {
+            name: "x".to_string(),
+            max_version_level: 1i16,
+            min_version_level: 1i16,
+            ..FinalizedFeatureKey::default()
+        }],
+        zk_migration_ready: true,
+        ..ApiVersionsResponse::default()
+    }
+}
+/// The JSON form of `tagged_fixture()` that Kafka's JSON converter reads at
+/// `version`. It holds only the fields that the schema declares at that version.
+#[must_use]
+pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
+    let mut m = ::serde_json::Map::new();
+    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+    m.insert("apiKeys".to_string(), ::serde_json::Value::Array(vec![]));
+    if version >= 1 {
+        m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    }
+    if version >= 3 {
+        m.insert(
+            "supportedFeatures".to_string(),
+            ::serde_json::Value::Array(vec![{
+                let mut m = ::serde_json::Map::new();
+                m.insert("name".to_string(), ::serde_json::Value::String("x".to_string()));
+                m.insert("minVersion".to_string(), ::serde_json::json!(1));
+                m.insert("maxVersion".to_string(), ::serde_json::json!(1));
+                ::serde_json::Value::Object(m)
+            }]),
+        );
+    }
+    if version >= 3 {
+        m.insert("finalizedFeaturesEpoch".to_string(), ::serde_json::json!(1));
+    }
+    if version >= 3 {
+        m.insert(
+            "finalizedFeatures".to_string(),
+            ::serde_json::Value::Array(vec![{
+                let mut m = ::serde_json::Map::new();
+                m.insert("name".to_string(), ::serde_json::Value::String("x".to_string()));
+                m.insert("maxVersionLevel".to_string(), ::serde_json::json!(1));
+                m.insert("minVersionLevel".to_string(), ::serde_json::json!(1));
+                ::serde_json::Value::Object(m)
+            }]),
+        );
+    }
+    if version >= 3 {
+        m.insert("zkMigrationReady".to_string(), ::serde_json::Value::Bool(true));
+    }
+    ::serde_json::Value::Object(m)
+}
