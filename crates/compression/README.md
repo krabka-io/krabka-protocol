@@ -49,6 +49,12 @@ assert_eq!(plain.as_ref(), b"hello kafka");
 # Ok::<(), krabka_compression::CompressionError>(())
 ```
 
+`compress_with_level` compresses at a Kafka compression level (KIP-390).
+`CompressionType::check_level` checks a level as Kafka's
+`CompressionType.levelValidator` does: gzip 1 to 9 or -1, lz4 1 to 17, and zstd
+-131072 to 22. The lz4 codec has only the fast compressor, so it writes the
+same frame at every level.
+
 `decompress` needs a `max_output` limit from the caller. The limit guards
 against decompression bombs.
 
