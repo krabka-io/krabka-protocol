@@ -8,7 +8,18 @@ use flate2::{Compression as GzipLevel, read::GzDecoder, write::GzEncoder};
 use crate::CompressionError;
 
 pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
-    let mut encoder = GzEncoder::new(Vec::with_capacity(data.len()), GzipLevel::default());
+    compress_at(data, GzipLevel::default())
+}
+
+/// Compress at `level`, which the caller has checked. -1 is the zlib default
+/// level, as Java's `Deflater.DEFAULT_COMPRESSION`.
+pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, CompressionError> {
+    let level = u32::try_from(level).map_or_else(|_| GzipLevel::default(), GzipLevel::new);
+    compress_at(data, level)
+}
+
+fn compress_at(data: &[u8], level: GzipLevel) -> Result<Bytes, CompressionError> {
+    let mut encoder = GzEncoder::new(Vec::with_capacity(data.len()), level);
     encoder.write_all(data)?;
     let out = encoder.finish()?;
     Ok(Bytes::from(out))

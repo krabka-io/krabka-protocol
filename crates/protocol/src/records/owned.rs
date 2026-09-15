@@ -609,6 +609,27 @@ impl RecordBatch {
     ///
     /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
     pub fn encode<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
+        self.encode_with_compression_level(buf, None)
+    }
+
+    /// Encode this batch into `buf`, and compress the records at `level`.
+    ///
+    /// `None` uses the default level of the codec, as [`Self::encode`] does.
+    /// A producer passes its `compression.<codec>.level` setting (KIP-390).
+    /// See [`krabka_compression::compress_with_level`] for how each codec
+    /// applies the level.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordsError::Compression`] when `level` is not a level that
+    /// Kafka accepts for the codec of the batch attributes, including any
+    /// level for a batch with no compression. Returns the other errors of
+    /// [`Self::encode`].
+    pub fn encode_with_compression_level<B: BufMut>(
+        &self,
+        buf: &mut B,
+        level: Option<i32>,
+    ) -> Result<(), RecordsError> {
         const HEADER_TAIL_LEN: i32 = 49;
 
         // 1. Encode records into a temporary buffer.
@@ -621,10 +642,10 @@ impl RecordBatch {
 
         // 2. Compress if needed.
         let codec = self.attributes.compression();
-        let body: Bytes = if codec == krabka_compression::CompressionType::None {
-            raw_body
-        } else {
-            krabka_compression::compress(codec, &raw_body)?
+        let body: Bytes = match level {
+            Some(level) => krabka_compression::compress_with_level(codec, &raw_body, level)?,
+            None if codec == krabka_compression::CompressionType::None => raw_body,
+            None => krabka_compression::compress(codec, &raw_body)?,
         };
 
         // 3. batch_length = HEADER_TAIL_LEN + body_len
@@ -753,6 +774,51 @@ mod batch_tests {
             let decoded = RecordBatch::decode(&mut cur).unwrap();
             assert2::assert!((decoded, cur.is_empty()) == (batch, true));
         }
+    }
+
+    /// The level reaches the codec. A gzip batch at level 1 and at level 9
+    /// has different bytes, both decode to the batch, and the default level
+    /// gives the bytes of `encode`. A level that Kafka rejects fails the
+    /// encode.
+    #[test]
+    fn encode_with_compression_level_compresses_at_the_level() {
+        let value: Vec<u8> = (0..16 * 1024u32)
+            .map(|i| u8::try_from((i * 7 + i / 13) % 251).unwrap_or(0))
+            .collect();
+        let mut batch = RecordBatch {
+            records: vec![Record {
+                value: Some(Bytes::from(value)),
+                ..Default::default()
+            }],
+            ..RecordBatch::default()
+        };
+        batch.attributes = batch.attributes.with_compression(CompressionType::Gzip);
+        let encoded = |level: Option<i32>| {
+            let mut buf = BytesMut::new();
+            batch
+                .encode_with_compression_level(&mut buf, level)
+                .map(|()| buf.freeze())
+        };
+        let default = encoded(None).unwrap();
+        let fastest = encoded(Some(1)).unwrap();
+        let best = encoded(Some(9)).unwrap();
+        let decoded =
+            [&fastest, &best].map(|bytes| RecordBatch::decode(&mut &bytes[..]).unwrap() == batch);
+
+        assert2::assert!(
+            (
+                encoded(Some(-1)).unwrap() == default,
+                fastest != best,
+                decoded,
+            ) == (true, true, [true, true])
+        );
+        assert2::assert!(matches!(
+            encoded(Some(10)),
+            Err(RecordsError::Compression(CompressionError::InvalidLevel {
+                level: 10,
+                ..
+            }))
+        ));
     }
 
     #[test]

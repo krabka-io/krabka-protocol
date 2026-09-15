@@ -22,6 +22,19 @@ pub enum CompressionError {
     #[error("decompressed output exceeds limit of {limit} bytes")]
     TooLarge { limit: usize },
 
+    /// The compression level is outside the range that Kafka accepts for the
+    /// codec, or the codec has no levels. `reason` is the message of Kafka's
+    /// level validator (`CompressionType.levelValidator`).
+    #[error("invalid {codec} compression level {level}: {reason}")]
+    InvalidLevel {
+        /// The codec name: `"none"`, `"gzip"`, `"snappy"`, `"lz4"` or `"zstd"`.
+        codec: &'static str,
+        /// The level that the caller gave.
+        level: i32,
+        /// Kafka's message for the level.
+        reason: String,
+    },
+
     /// I/O error from one of the codec libraries.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

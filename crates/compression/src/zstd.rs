@@ -8,7 +8,12 @@ use crate::CompressionError;
 const DEFAULT_LEVEL: i32 = 3;
 
 pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
-    let out = zstd::bulk::compress(data, DEFAULT_LEVEL)?;
+    compress_with_level(data, DEFAULT_LEVEL)
+}
+
+/// Compress at `level`, which the caller has checked.
+pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, CompressionError> {
+    let out = zstd::bulk::compress(data, level)?;
     Ok(Bytes::from(out))
 }
 

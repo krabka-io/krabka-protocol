@@ -163,6 +163,42 @@ pub fn compress(ct: CompressionType, data: &[u8]) -> Result<Bytes, CompressionEr
     }
 }
 
+/// Compress `data` using the codec identified by `ct` at compression `level`
+/// (KIP-390).
+///
+/// The level must pass [`CompressionType::check_level`], which follows Kafka's
+/// `CompressionType.levelValidator`. `compress(ct, data)` gives the same bytes
+/// as this function with [`CompressionType::default_level`].
+///
+/// - gzip: the deflate level. -1 is the zlib default, which is level 6.
+/// - zstd: the zstd level.
+/// - lz4: Kafka's `Lz4BlockOutputStream` uses the fast compressor at the
+///   default level 9, and LZ4 HC for every other level. This crate has only
+///   the fast compressor, so it checks the level and then writes the same
+///   frame at every level. A Kafka broker or consumer reads the frame at any
+///   level.
+///
+/// # Errors
+///
+/// Returns [`CompressionError::InvalidLevel`] when the level is out of range,
+/// or when the codec (`none`, `snappy`) has no levels. Returns
+/// [`CompressionError::FeatureDisabled`] when the codec's Cargo feature is not
+/// enabled.
+pub fn compress_with_level(
+    ct: CompressionType,
+    data: &[u8],
+    level: i32,
+) -> Result<Bytes, CompressionError> {
+    ct.check_level(level)?;
+    match ct {
+        CompressionType::Gzip => gzip_compress_with_level(data, level),
+        CompressionType::Lz4 => lz4_compress(data),
+        CompressionType::Zstd => zstd_compress_with_level(data, level),
+        // `check_level` rejects the codecs without levels.
+        CompressionType::None | CompressionType::Snappy => compress(ct, data),
+    }
+}
+
 /// Decompress `data` using the codec identified by `ct`. See `compress`.
 ///
 /// `max_output` bounds the size of the decompressed output. If decompression
@@ -202,9 +238,16 @@ pub fn decompress(
 #[cfg(feature = "gzip")]
 mod gzip;
 #[cfg(feature = "gzip")]
-use crate::gzip::{compress as gzip_compress, decompress as gzip_decompress};
+use crate::gzip::{
+    compress as gzip_compress, compress_with_level as gzip_compress_with_level,
+    decompress as gzip_decompress,
+};
 #[cfg(not(feature = "gzip"))]
 fn gzip_compress(_: &[u8]) -> Result<Bytes, CompressionError> {
+    Err(CompressionError::FeatureDisabled("gzip"))
+}
+#[cfg(not(feature = "gzip"))]
+fn gzip_compress_with_level(_: &[u8], _: i32) -> Result<Bytes, CompressionError> {
     Err(CompressionError::FeatureDisabled("gzip"))
 }
 #[cfg(not(feature = "gzip"))]
@@ -241,9 +284,16 @@ fn lz4_decompress(_: &[u8], _: usize) -> Result<Bytes, CompressionError> {
 #[cfg(feature = "zstd")]
 mod zstd;
 #[cfg(feature = "zstd")]
-use crate::zstd::{compress as zstd_compress, decompress as zstd_decompress};
+use crate::zstd::{
+    compress as zstd_compress, compress_with_level as zstd_compress_with_level,
+    decompress as zstd_decompress,
+};
 #[cfg(not(feature = "zstd"))]
 fn zstd_compress(_: &[u8]) -> Result<Bytes, CompressionError> {
+    Err(CompressionError::FeatureDisabled("zstd"))
+}
+#[cfg(not(feature = "zstd"))]
+fn zstd_compress_with_level(_: &[u8], _: i32) -> Result<Bytes, CompressionError> {
     Err(CompressionError::FeatureDisabled("zstd"))
 }
 #[cfg(not(feature = "zstd"))]
@@ -286,6 +336,65 @@ mod tests {
         // check is `len > max_output`, not `>=`).
         let out = decompress(CompressionType::None, b"abcdef", bytes(6)).unwrap();
         assert2::assert!(out.as_ref() == b"abcdef");
+    }
+
+    /// The level reaches the codec: a payload that the codec compresses
+    /// better at a higher level gives different bytes at the lowest and the
+    /// highest level, every output decompresses to the input, and the default
+    /// level gives the bytes of `compress`. Lz4 has only the fast compressor,
+    /// so every level gives the bytes of `compress`.
+    #[test]
+    fn compress_with_level_applies_the_level() {
+        let payload: Vec<u8> = (0..64 * 1024u32)
+            .map(|i| u8::try_from((i * 7 + i / 13) % 251).unwrap_or(0))
+            .collect();
+        let mut actual = Vec::new();
+        let mut expected = Vec::new();
+        for (codec, low, high, levels_differ) in [
+            (CompressionType::Gzip, 1, 9, true),
+            (CompressionType::Zstd, 1, 19, true),
+            (CompressionType::Lz4, 1, 17, false),
+        ] {
+            let default = compress(codec, &payload).unwrap();
+            let at_default =
+                compress_with_level(codec, &payload, codec.default_level().unwrap()).unwrap();
+            let at_low = compress_with_level(codec, &payload, low).unwrap();
+            let at_high = compress_with_level(codec, &payload, high).unwrap();
+            let round_trips = [&at_default, &at_low, &at_high].iter().all(|out| {
+                decompress(codec, out, mebibytes(1)).unwrap().as_ref() == payload.as_slice()
+            });
+            actual.push((codec, at_default == default, at_low != at_high, round_trips));
+            expected.push((codec, true, levels_differ, true));
+        }
+        assert2::assert!(actual == expected);
+    }
+
+    #[test]
+    fn compress_with_level_rejects_a_level_kafka_rejects() {
+        for (codec, level, reason) in [
+            (
+                CompressionType::Gzip,
+                0,
+                "Value must be between 1 and 9 or equal to -1",
+            ),
+            (CompressionType::Lz4, 18, "Value must be no more than 17"),
+            (CompressionType::Zstd, 23, "Value must be no more than 22"),
+            (
+                CompressionType::Snappy,
+                1,
+                "Compression levels are not defined for this compression type: snappy",
+            ),
+        ] {
+            let error = compress_with_level(codec, b"payload", level).unwrap_err();
+            assert2::assert!(
+                matches!(
+                    &error,
+                    CompressionError::InvalidLevel { codec: name, level: got, reason: text }
+                        if *name == codec.name() && *got == level && text == reason
+                ),
+                "{error:?}"
+            );
+        }
     }
 
     #[test]
