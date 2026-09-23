@@ -50,6 +50,10 @@ hex = "0.4"
 hmac = "0.13"
 jsonpath-rust = "1.0"
 lz4rip = { version = "0.11.5", default-features = false, features = ["frame"] }
+# `lz4rip` has only the fast LZ4 block compressor. `lzzzz` binds the reference
+# `liblz4` C library, which is where the LZ4 HC compressor comes from, for
+# `krabka-compression`'s `compress_with_level(Lz4, ..)` at a non-default level.
+lzzzz = "2.0"
 # mutants: `#[cfg_attr(test, mutants::skip)]` attribute for cargo-mutants. Used
 # only where `exclude_re` cannot reliably suppress a mutant (struct-field-deletion
 # mutants on a live-IO adapter). Dev-dependency only; expands to nothing.

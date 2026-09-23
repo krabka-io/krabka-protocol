@@ -173,10 +173,8 @@ pub fn compress(ct: CompressionType, data: &[u8]) -> Result<Bytes, CompressionEr
 /// - gzip: the deflate level. -1 is the zlib default, which is level 6.
 /// - zstd: the zstd level.
 /// - lz4: Kafka's `Lz4BlockOutputStream` uses the fast compressor at the
-///   default level 9, and LZ4 HC for every other level. This crate has only
-///   the fast compressor, so it checks the level and then writes the same
-///   frame at every level. A Kafka broker or consumer reads the frame at any
-///   level.
+///   default level 9, and LZ4 HC for every other level in `1..=17`. This
+///   function matches that split.
 ///
 /// # Errors
 ///
@@ -192,7 +190,7 @@ pub fn compress_with_level(
     ct.check_level(level)?;
     match ct {
         CompressionType::Gzip => gzip_compress_with_level(data, level),
-        CompressionType::Lz4 => lz4_compress(data),
+        CompressionType::Lz4 => lz4_compress_with_level(data, level),
         CompressionType::Zstd => zstd_compress_with_level(data, level),
         // `check_level` rejects the codecs without levels.
         CompressionType::None | CompressionType::Snappy => compress(ct, data),
@@ -271,9 +269,16 @@ fn snappy_decompress(_: &[u8], _: usize) -> Result<Bytes, CompressionError> {
 #[cfg(feature = "lz4")]
 mod lz4;
 #[cfg(feature = "lz4")]
-use crate::lz4::{compress as lz4_compress, decompress as lz4_decompress};
+use crate::lz4::{
+    compress as lz4_compress, compress_with_level as lz4_compress_with_level,
+    decompress as lz4_decompress,
+};
 #[cfg(not(feature = "lz4"))]
 fn lz4_compress(_: &[u8]) -> Result<Bytes, CompressionError> {
+    Err(CompressionError::FeatureDisabled("lz4"))
+}
+#[cfg(not(feature = "lz4"))]
+fn lz4_compress_with_level(_: &[u8], _: i32) -> Result<Bytes, CompressionError> {
     Err(CompressionError::FeatureDisabled("lz4"))
 }
 #[cfg(not(feature = "lz4"))]
@@ -341,8 +346,9 @@ mod tests {
     /// The level reaches the codec: a payload that the codec compresses
     /// better at a higher level gives different bytes at the lowest and the
     /// highest level, every output decompresses to the input, and the default
-    /// level gives the bytes of `compress`. Lz4 has only the fast compressor,
-    /// so every level gives the bytes of `compress`.
+    /// level gives the bytes of `compress`. Lz4's default level (9) also gives
+    /// the bytes of `compress`, but its other levels use HC, which differs
+    /// from the fast compressor at the low and high ends of its range.
     #[test]
     fn compress_with_level_applies_the_level() {
         let payload: Vec<u8> = (0..64 * 1024u32)
@@ -353,7 +359,7 @@ mod tests {
         for (codec, low, high, levels_differ) in [
             (CompressionType::Gzip, 1, 9, true),
             (CompressionType::Zstd, 1, 19, true),
-            (CompressionType::Lz4, 1, 17, false),
+            (CompressionType::Lz4, 1, 17, true),
         ] {
             let default = compress(codec, &payload).unwrap();
             let at_default =

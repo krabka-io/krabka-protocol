@@ -31,7 +31,7 @@ workspace = true
 default = ["gzip", "snappy", "lz4", "zstd"]
 gzip   = ["dep:flate2"]
 snappy = ["dep:snap"]
-lz4    = ["dep:lz4rip"]
+lz4    = ["dep:lz4rip", "dep:lzzzz"]
 zstd   = ["dep:zstd"]
 
 [dependencies]
@@ -43,6 +43,7 @@ thiserror = { workspace = true }
 flate2   = { workspace = true, optional = true }
 snap     = { workspace = true, optional = true }
 lz4rip = { workspace = true, optional = true }
+lzzzz = { workspace = true, optional = true }
 zstd     = { workspace = true, optional = true }
 
 [dev-dependencies]
