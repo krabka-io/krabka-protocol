@@ -13,6 +13,16 @@
 //! using `lzzzz`'s binding to the reference `liblz4` HC compressor for the
 //! block bytes. The frame header and end mark are identical either way: they
 //! depend only on [`frame_info`], not on which compressor filled the blocks.
+//!
+//! Kafka's level range is `1..=17`, but reference `liblz4`'s HC compressor
+//! caps out at `LZ4HC_CLEVEL_MAX` (12): `lz4hc.h` documents that "values
+//! greater than `LZ4HC_CLEVEL_MAX` behave the same as `LZ4HC_CLEVEL_MAX`",
+//! and `LZ4_compress_HC` clamps internally to the same effect. A level above
+//! 12 therefore compresses exactly as hard as level 12 -- this binding has no
+//! access to a distinct, more exhaustive parse for 13 through 17 the way
+//! `lz4-java`'s own implementation might. [`write_hc_block`] clamps
+//! explicitly rather than relying on `liblz4`'s internal clamp, so that fact
+//! is visible at the call site instead of buried in the C library.
 
 use std::{
     io::{Read, Write},
@@ -89,10 +99,16 @@ pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, Compression
     Ok(Bytes::from(out))
 }
 
+/// `liblz4`'s `LZ4HC_CLEVEL_MAX`: the highest level its HC compressor
+/// actually distinguishes. See the module doc for why levels above this
+/// (Kafka goes up to 17) get no more effort than this level does.
+const LIBLZ4_HC_CLEVEL_MAX: i32 = 12;
+
 /// Append one LZ4F block (4-byte size, then the block bytes) compressed with
 /// HC at `level`. Falls back to storing the block uncompressed, exactly as
 /// the LZ4 frame format allows, when HC does not shrink it.
 fn write_hc_block(out: &mut Vec<u8>, block: &[u8], level: i32) -> Result<(), CompressionError> {
+    let level = level.min(LIBLZ4_HC_CLEVEL_MAX);
     let mut buf = vec![0u8; lzzzz::lz4::max_compressed_size(block.len())];
     let comp_len = lzzzz::lz4_hc::compress(block, &mut buf, level)
         .map_err(|e| CompressionError::InvalidData(format!("lz4 hc compress: {e}")))?;
@@ -244,6 +260,41 @@ mod tests {
             let back = decompress(&out, BIG_CAP).unwrap();
             assert2::assert!(back.as_ref() == payload.as_slice(), "level {level}");
         }
+    }
+
+    /// Every level above `liblz4`'s `LZ4HC_CLEVEL_MAX` (12) compresses
+    /// exactly as hard as 12: `write_hc_block` clamps explicitly, matching
+    /// what `liblz4` documents doing internally for a caller that skips the
+    /// clamp. Kafka's own range goes to 17, so a level in `13..=17` must
+    /// still produce Kafka-decodable output -- it just cannot beat what 12
+    /// already achieves.
+    #[test]
+    fn levels_above_liblz4_max_clamp_to_liblz4_max() {
+        let payload = compressible_payload();
+        let at_max = compress_with_level(&payload, LIBLZ4_HC_CLEVEL_MAX).unwrap();
+        for level in [13, 17] {
+            let out = compress_with_level(&payload, level).unwrap();
+            assert2::assert!(out.as_ref() == at_max.as_ref(), "level {level}");
+            let back = decompress(&out, BIG_CAP).unwrap();
+            assert2::assert!(back.as_ref() == payload.as_slice(), "level {level}");
+        }
+    }
+
+    /// `write_hc_block` stores a block uncompressed, with the LZ4F
+    /// uncompressed-block high bit set, when HC does not shrink it -- the
+    /// fallback the frame format allows for incompressible input.
+    #[test]
+    fn incompressible_block_falls_back_to_stored() {
+        // High-entropy input HC cannot shrink: every byte value once, so
+        // there is no repeated byte or short pattern to exploit within a
+        // single block.
+        let incompressible: Vec<u8> = (0..=255u8).collect();
+        let out = compress_with_level(&incompressible, 1).unwrap();
+        let block_size = u32::from_le_bytes(out[frame_header().len()..][..4].try_into().unwrap());
+        assert2::assert!(block_size & BLOCK_UNCOMPRESSED_BIT != 0);
+        assert2::assert!((block_size & !BLOCK_UNCOMPRESSED_BIT) as usize == incompressible.len());
+        let back = decompress(&out, BIG_CAP).unwrap();
+        assert2::assert!(back.as_ref() == incompressible.as_slice());
     }
 
     #[test]
