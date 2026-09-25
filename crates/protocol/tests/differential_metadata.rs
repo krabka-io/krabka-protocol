@@ -22,26 +22,35 @@ fn rust_decode<T: for<'a> Decode<'a>>(bytes: &[u8], version: i16) -> T {
 
 /// Assemble the oracle JSON value for a default `MetadataRequest` at the given version.
 ///
+/// `Topics` has no explicit `"default"` key in `MetadataRequest.json` — only
+/// `nullableVersions: "1+"`. Kafka's message generator
+/// (`FieldSpec.fieldDefault`) only emits a `null` default when the schema
+/// explicitly says `"default": "null"`; `nullableVersions` alone controls
+/// what the *wire* accepts, not the *default* value. Absent an explicit
+/// `"default"`, an array field's generated default is always the empty
+/// array, at every version, matching `MetadataRequestData`'s real
+/// `this.topics = new ArrayList<>(0)`. So `MetadataRequest::default()`
+/// carries `topics: Some(vec![])` for every version, not `None`.
+///
 /// The version-specific rules:
-/// - v0: topics must be an empty array, not null. The default means "all topics".
-/// - v1-3: topics=null, which means all topics. There are no other variable fields.
+/// - v0-13: topics is the empty array at every version (no explicit schema
+///   default, so never null by default).
 /// - v4-7: allowAutoTopicCreation is present, with schema default true.
 /// - v8-10: includeClusterAuthorizedOperations + includeTopicAuthorizedOperations.
 /// - v9-10: the same fields, but flexible encoding.
 /// - v11-13: includeClusterAuthorizedOperations is removed. includeTopicAuthorizedOperations stays.
 fn request_oracle_value(version: i16) -> serde_json::Value {
     match version {
-        0 => json!({"topics": []}),
-        1..=3 => json!({"topics": null}),
-        4..=7 => json!({"topics": null, "allowAutoTopicCreation": true}),
+        0..=3 => json!({"topics": []}),
+        4..=7 => json!({"topics": [], "allowAutoTopicCreation": true}),
         8..=10 => json!({
-            "topics": null,
+            "topics": [],
             "allowAutoTopicCreation": true,
             "includeClusterAuthorizedOperations": false,
             "includeTopicAuthorizedOperations": false
         }),
         11..=i16::MAX => json!({
-            "topics": null,
+            "topics": [],
             "allowAutoTopicCreation": true,
             "includeTopicAuthorizedOperations": false
         }),

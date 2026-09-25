@@ -671,13 +671,27 @@ pub(crate) fn wrap_non_nullable_for_option(
 pub(crate) fn tagged_is_default_cond(f: &FieldSpec) -> String {
     let field = name_conv::field_name(&f.name);
     let base = base_type(&f.field_type);
+    let is_array = f.field_type.starts_with("[]");
     let nullable = is_nullable(f) || matches!(&f.default, Some(serde_json::Value::Null));
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
 
-    if nullable && (default_is_null || f.default.is_none()) {
-        // Default is None; the field is an Option<T>.
+    if nullable && default_is_null {
+        // Explicit `"default": "null"`: the field's default is `None`.
         return format!("self.{field}.is_none()");
+    }
+    if nullable && f.default.is_none() {
+        // No explicit default: Kafka's implicit default for a nullable
+        // array/string/bytes/struct field is the *empty* value wrapped in
+        // `Some` (see `owned_default_expr`), not `None`. `None` (the wire
+        // null) is a distinct, non-default value here and must still be
+        // tag-encoded.
+        let inner = if is_array {
+            "Vec::new()".to_string()
+        } else {
+            owned_zero(base)
+        };
+        return format!("self.{field} == Some({inner})");
     }
     if let Some(v) = &f.default {
         // Compare against the explicit schema default.
@@ -1159,5 +1173,46 @@ pub(crate) fn version_cond(r: VersionRange, version_var: &str) -> String {
         format!("{version_var} >= {}", r.min)
     } else {
         format!("({}..={}).contains(&{version_var})", r.min, r.max)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// A nullable, tagged array field with no explicit `"default"` in its
+    /// schema — the shape of `MetadataRequest.Topics`, but tagged. Kafka never
+    /// happens to combine `taggedVersions` with a no-default nullable field in
+    /// its own schemas today, but the generator must still get it right: it is
+    /// a plain consequence of KIP-482 tagged fields and the ordinary
+    /// nullable-array default rule, not a special case either omits.
+    fn tagged_nullable_no_default_array_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Owners", "type": "[]string", "versions": "1+",
+            "nullableVersions": "1+", "taggedVersions": "1+", "tag": 5
+        }))
+        .unwrap()
+    }
+
+    /// The bug `chatgpt-codex-connector` flagged on PR #31: a nullable tagged
+    /// field with no explicit default gets `Some(Vec::new())` as its actual
+    /// `Default::default()` value (see `owned_default_expr`), matching
+    /// Kafka's `FieldSpec.fieldDefault` (empty, not null, absent an explicit
+    /// `"default": "null"`). `tagged_is_default_cond` must therefore treat
+    /// `Some(empty)` as the default, not `None` — otherwise a
+    /// default-constructed message needlessly writes the empty-valued tag
+    /// (wasting bytes and diverging from Kafka's own generator, which
+    /// suppresses it), while an explicit `None` (a real wire null, a value
+    /// the schema's own comment gives separate meaning to) would be wrongly
+    /// suppressed instead.
+    #[test]
+    fn tagged_nullable_no_default_field_defaults_to_some_empty_not_none() {
+        let field = tagged_nullable_no_default_array_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(owned_default_expr(&field, &res_map) == "Some(Vec::new())");
+        assert!(tagged_is_default_cond(&field) == "self.owners == Some(Vec::new())");
     }
 }

@@ -922,12 +922,27 @@ pub(crate) fn encoded_len_expr_option_as_non_nullable(schema_type: &str, expr: &
 pub(crate) fn tagged_is_default_cond(f: &FieldSpec) -> String {
     let field = name_conv::field_name(&f.name);
     let base = base_type(&f.field_type);
+    let is_array = f.field_type.starts_with("[]");
     let nullable = is_nullable(f) || matches!(&f.default, Some(serde_json::Value::Null));
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
 
-    if nullable && (default_is_null || f.default.is_none()) {
+    if nullable && default_is_null {
+        // Explicit `"default": "null"`: the field's default is `None`.
         return format!("self.{field}.is_none()");
+    }
+    if nullable && f.default.is_none() {
+        // No explicit default: Kafka's implicit default for a nullable
+        // array/string/bytes/struct field is the *empty* value wrapped in
+        // `Some` (see `borrowed_default_expr`), not `None`. `None` (the wire
+        // null) is a distinct, non-default value here and must still be
+        // tag-encoded.
+        let inner = if is_array {
+            "Vec::new()".to_string()
+        } else {
+            borrowed_zero(base)
+        };
+        return format!("self.{field} == Some({inner})");
     }
     if let Some(v) = &f.default {
         let cmp_val = scalar_borrowed_default(base, v);
@@ -1393,5 +1408,35 @@ pub(crate) fn decode_owned_call(
                 .into()
         }
         (t, _) => format!("compile_error!(\"unhandled type in decode_owned_call: {t}\")"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// See `owned::tests::tagged_nullable_no_default_array_field` — the same
+    /// field shape, mirrored here because `borrowed::tagged_is_default_cond`
+    /// is a separate implementation from `owned::tagged_is_default_cond`.
+    fn tagged_nullable_no_default_array_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Owners", "type": "[]string", "versions": "1+",
+            "nullableVersions": "1+", "taggedVersions": "1+", "tag": 5
+        }))
+        .unwrap()
+    }
+
+    /// The borrowed-emitter half of the bug `chatgpt-codex-connector` flagged
+    /// on PR #31. See `owned::tests::tagged_nullable_no_default_field_defaults_to_some_empty_not_none`
+    /// for the full rationale.
+    #[test]
+    fn tagged_nullable_no_default_field_defaults_to_some_empty_not_none() {
+        let field = tagged_nullable_no_default_array_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(borrowed_default_expr(&field, &res_map) == "Some(Vec::new())");
+        assert!(tagged_is_default_cond(&field) == "self.owners == Some(Vec::new())");
     }
 }
