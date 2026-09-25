@@ -912,3 +912,49 @@ fn nested_structs(ctx: &Ctx, fields: &[FieldSpec], flex_min_val: i16) -> TokenSt
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+    use crate::resolve::StructKind;
+
+    /// `struct_members`' `default_assigns` has a special case for a
+    /// no-default struct-typed field: it emits a bare `<Ty>::default()`
+    /// instead of routing through `borrowed_default_expr`, because a
+    /// non-nullable struct field's `Default::default()` already agrees with
+    /// `borrowed_default_expr`'s own resolution-based answer. A *nullable*
+    /// struct field must not take that shortcut, since its default is
+    /// `Some(<Ty>::default())`, not a bare `<Ty>::default()` — so the
+    /// special case is guarded with `!is_nullable(field)` and falls through
+    /// to `borrowed_default_expr` here.
+    #[test]
+    fn nullable_struct_field_with_no_default_routes_through_borrowed_default_expr() {
+        let field: FieldSpec = serde_json::from_value(serde_json::json!({
+            "name": "Owner", "type": "OwnerStruct", "versions": "1+",
+            "nullableVersions": "1+"
+        }))
+        .unwrap();
+        let mut res_map: ResMap = std::collections::HashMap::new();
+        res_map.insert(
+            "OwnerStruct".to_string(),
+            Resolution {
+                kind: StructKind::Nested,
+                rust_path: "OwnerStruct".to_string(),
+                needs_lifetime: false,
+            },
+        );
+        let ctx = Ctx {
+            res_map: &res_map,
+            parent_module: "test",
+            owned_root: "crate::owned",
+        };
+
+        let (_, default_assigns, _, _) =
+            struct_members(&ctx, "Test", std::slice::from_ref(&field), true);
+
+        let expected = quote!(owner: Some(OwnerStruct::default()),);
+        assert!(default_assigns.to_string() == expected.to_string());
+    }
+}

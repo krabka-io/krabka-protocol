@@ -1439,4 +1439,50 @@ mod tests {
         assert!(borrowed_default_expr(&field, &res_map) == "Some(Vec::new())");
         assert!(tagged_is_default_cond(&field) == "self.owners == Some(Vec::new())");
     }
+
+    /// A nullable, tagged, non-array scalar field with no explicit default.
+    /// This is the `borrowed_zero(base)` half of the no-default branch that
+    /// `tagged_nullable_no_default_field_defaults_to_some_empty_not_none`
+    /// does not reach, since that test's field is an array and takes the
+    /// `is_array` arm instead.
+    fn tagged_nullable_no_default_scalar_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Owner", "type": "string", "versions": "1+",
+            "nullableVersions": "1+", "taggedVersions": "1+", "tag": 6
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn tagged_nullable_no_default_scalar_field_defaults_to_some_empty_not_none() {
+        let field = tagged_nullable_no_default_scalar_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(borrowed_default_expr(&field, &res_map) == "Some(\"\")");
+        assert!(tagged_is_default_cond(&field) == "self.owner == Some(\"\")");
+    }
+
+    /// A nullable struct-typed field with no explicit default. Unlike the
+    /// scalar and array cases, its "empty" value comes from the resolved
+    /// struct type's own `Default` impl, via the `res_map` lookup in
+    /// `borrowed_default_expr` — not from `borrowed_zero`.
+    #[test]
+    fn nullable_struct_field_with_no_default_wraps_resolved_default_in_some() {
+        let field: FieldSpec = serde_json::from_value(serde_json::json!({
+            "name": "Owner", "type": "OwnerStruct", "versions": "1+",
+            "nullableVersions": "1+"
+        }))
+        .unwrap();
+        let mut res_map: HashMap<String, Resolution> = HashMap::new();
+        res_map.insert(
+            "OwnerStruct".to_string(),
+            Resolution {
+                kind: StructKind::Nested,
+                rust_path: "OwnerStruct".to_string(),
+                needs_lifetime: false,
+            },
+        );
+
+        assert!(borrowed_default_expr(&field, &res_map) == "Some(OwnerStruct::default())");
+    }
 }
