@@ -25,7 +25,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRaftVoterRequest {
     pub cluster_id: Option<String>,
     pub current_leader_epoch: i32,
@@ -34,6 +34,19 @@ pub struct UpdateRaftVoterRequest {
     pub listeners: Vec<Listener>,
     pub k_raft_version_feature: KRaftVersionFeature,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for UpdateRaftVoterRequest {
+    fn default() -> Self {
+        Self {
+            cluster_id: Some(String::new()),
+            current_leader_epoch: 0i32,
+            voter_id: 0i32,
+            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            listeners: Vec::new(),
+            k_raft_version_feature: KRaftVersionFeature::default(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for UpdateRaftVoterRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -365,7 +378,10 @@ impl KRaftVersionFeature {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "clusterId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(0));
     obj.insert("voterId".to_string(), ::serde_json::json!(0));
     obj.insert(

@@ -41,7 +41,7 @@ impl Default for AlterPartitionReassignmentsResponse<'_> {
             throttle_time_ms: 0i32,
             allow_replication_factor_change: true,
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(""),
             responses: Vec::new(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -327,12 +327,22 @@ impl ReassignableTopicResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReassignablePartitionResponse<'a> {
     pub partition_index: i32,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ReassignablePartitionResponse<'_> {
+    fn default() -> Self {
+        Self {
+            partition_index: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl ReassignablePartitionResponse<'_> {
     /// # Panics

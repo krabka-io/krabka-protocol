@@ -106,11 +106,20 @@ impl DescribeShareGroupOffsetsRequest {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeShareGroupOffsetsRequestGroup {
     pub group_id: String,
     pub topics: Option<Vec<DescribeShareGroupOffsetsRequestTopic>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeShareGroupOffsetsRequestGroup {
+    fn default() -> Self {
+        Self {
+            group_id: String::new(),
+            topics: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeShareGroupOffsetsRequestGroup {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

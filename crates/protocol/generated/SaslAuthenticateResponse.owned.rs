@@ -24,13 +24,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaslAuthenticateResponse {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub auth_bytes: ::bytes::Bytes,
     pub session_lifetime_ms: i64,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for SaslAuthenticateResponse {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            auth_bytes: bytes::Bytes::new(),
+            session_lifetime_ms: 0i64,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for SaslAuthenticateResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -160,7 +171,10 @@ impl SaslAuthenticateResponse {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "errorMessage".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert(
         "authBytes".to_string(),
         ::serde_json::Value::String(String::new()),

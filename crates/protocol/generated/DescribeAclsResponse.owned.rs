@@ -24,13 +24,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeAclsResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub resources: Vec<DescribeAclsResource>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeAclsResponse {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            resources: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeAclsResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -419,7 +430,10 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "errorMessage".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("resources".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

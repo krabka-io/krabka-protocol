@@ -155,11 +155,20 @@ impl ClientQuotaRecord {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityData {
     pub entity_type: String,
     pub entity_name: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EntityData {
+    fn default() -> Self {
+        Self {
+            entity_type: String::new(),
+            entity_name: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for EntityData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

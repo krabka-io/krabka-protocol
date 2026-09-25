@@ -681,6 +681,12 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
 }
 
 /// Returns a Rust expression for the default value of a borrowed field.
+///
+/// A nullable field with no explicit `"default"` in its schema gets the
+/// *empty* value of its type wrapped in `Some`, matching Kafka's Java message
+/// generator (`FieldSpec.fieldDefaultToJava`): an empty array, an empty
+/// string, or a default-constructed nested struct. Only a field whose schema
+/// explicitly says `"default": "null"` defaults to `None`.
 pub(crate) fn borrowed_default_expr(
     f: &FieldSpec,
     res_map: &HashMap<String, Resolution>,
@@ -691,27 +697,28 @@ pub(crate) fn borrowed_default_expr(
     // Kafka schemas use "null" (string) to mean the default is null for nullable fields.
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
-    if nullable {
-        if default_is_null || f.default.is_none() {
-            return "None".into();
-        }
-        if let Some(v) = &f.default {
-            return format!("Some({})", scalar_borrowed_default(base, v));
-        }
+
+    if nullable && default_is_null {
+        return "None".into();
     }
-    // Arrays always default to empty Vec.
-    if is_array {
-        return "Vec::new()".into();
-    }
-    if f.default.is_none()
+
+    let inner = if is_array {
+        "Vec::new()".into()
+    } else if f.default.is_none()
         && let Some(resolution) = res_map.get(base)
     {
-        return format!("{}::default()", resolution.rust_path);
-    }
-    // Non-nullable scalar
-    match &f.default {
-        Some(v) => scalar_borrowed_default(base, v),
-        None => borrowed_zero(base),
+        format!("{}::default()", resolution.rust_path)
+    } else {
+        match &f.default {
+            Some(v) => scalar_borrowed_default(base, v),
+            None => borrowed_zero(base),
+        }
+    };
+
+    if nullable {
+        format!("Some({inner})")
+    } else {
+        inner
     }
 }
 
@@ -752,6 +759,7 @@ fn borrowed_zero(base: &str) -> String {
         "uint32" => "0u32".into(),
         "float64" => "0.0f64".into(),
         "uuid" => "crate::primitives::uuid::Uuid::default()".into(),
+        "records" => "crate::records::RecordsPayloadBorrowed::default()".into(),
         _ => "Default::default()".into(),
     }
 }

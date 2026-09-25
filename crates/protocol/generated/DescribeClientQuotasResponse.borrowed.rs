@@ -26,13 +26,24 @@ pub const FLEXIBLE_MIN: i16 = 1;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DescribeClientQuotasResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub entries: Option<Vec<EntryData<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeClientQuotasResponse<'_> {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            entries: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeClientQuotasResponse<'_> {
     /// # Panics
@@ -305,11 +316,20 @@ impl EntryData<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityData<'a> {
     pub entity_type: &'a str,
     pub entity_name: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EntityData<'_> {
+    fn default() -> Self {
+        Self {
+            entity_type: "",
+            entity_name: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl EntityData<'_> {
     /// # Panics

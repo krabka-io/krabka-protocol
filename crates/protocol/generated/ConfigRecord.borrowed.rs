@@ -25,13 +25,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigRecord<'a> {
     pub resource_type: i8,
     pub resource_name: &'a str,
     pub name: &'a str,
     pub value: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ConfigRecord<'_> {
+    fn default() -> Self {
+        Self {
+            resource_type: 0i8,
+            resource_name: "",
+            name: "",
+            value: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl ConfigRecord<'_> {
     /// # Panics

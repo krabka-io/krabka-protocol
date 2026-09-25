@@ -27,7 +27,7 @@ impl<'a> Default for OffsetFetchRequest<'a> {
     fn default() -> Self {
         Self {
             group_id: "",
-            topics: None,
+            topics: Some(Vec::new()),
             groups: Vec::new(),
             require_stable: false,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -338,7 +338,7 @@ impl<'a> Default for OffsetFetchRequestGroup<'a> {
             group_id: "",
             member_id: None,
             member_epoch: -1i32,
-            topics: None,
+            topics: Some(Vec::new()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

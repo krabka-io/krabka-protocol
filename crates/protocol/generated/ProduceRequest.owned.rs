@@ -277,11 +277,20 @@ impl TopicProduceData {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionProduceData {
     pub index: i32,
     pub records: Option<crate::records::RecordsPayload>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for PartitionProduceData {
+    fn default() -> Self {
+        Self {
+            index: 0i32,
+            records: Some(crate::records::RecordsPayload::default()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for PartitionProduceData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

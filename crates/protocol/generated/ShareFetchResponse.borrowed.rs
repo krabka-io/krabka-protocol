@@ -338,7 +338,7 @@ impl ShareFetchableTopicResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionData<'a> {
     pub partition_index: i32,
     pub error_code: i16,
@@ -349,6 +349,21 @@ pub struct PartitionData<'a> {
     pub records: Option<crate::records::RecordsPayloadBorrowed<'a>>,
     pub acquired_records: Vec<AcquiredRecords>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for PartitionData<'_> {
+    fn default() -> Self {
+        Self {
+            partition_index: 0i32,
+            error_code: 0i16,
+            error_message: None,
+            acknowledge_error_code: 0i16,
+            acknowledge_error_message: None,
+            current_leader: <LeaderIdAndEpoch>::default(),
+            records: Some(crate::records::RecordsPayloadBorrowed::default()),
+            acquired_records: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl<'a> PartitionData<'a> {
     /// # Panics

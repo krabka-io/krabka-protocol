@@ -26,13 +26,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeQuorumResponse<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub topics: Vec<TopicData<'a>>,
     pub nodes: Vec<Node<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeQuorumResponse<'_> {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(""),
+            topics: Vec::new(),
+            nodes: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeQuorumResponse<'_> {
     /// # Panics
@@ -307,7 +318,7 @@ impl TopicData<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionData<'a> {
     pub partition_index: i32,
     pub error_code: i16,
@@ -318,6 +329,21 @@ pub struct PartitionData<'a> {
     pub current_voters: Vec<super::common::describe_quorum_response::replica_state::ReplicaState>,
     pub observers: Vec<super::common::describe_quorum_response::replica_state::ReplicaState>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for PartitionData<'_> {
+    fn default() -> Self {
+        Self {
+            partition_index: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            leader_id: 0i32,
+            leader_epoch: 0i32,
+            high_watermark: 0i64,
+            current_voters: Vec::new(),
+            observers: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl<'a> PartitionData<'a> {
     /// # Panics

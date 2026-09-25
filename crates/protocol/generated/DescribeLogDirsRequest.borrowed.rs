@@ -20,10 +20,18 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeLogDirsRequest<'a> {
     pub topics: Option<Vec<DescribableLogDirTopic<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeLogDirsRequest<'_> {
+    fn default() -> Self {
+        Self {
+            topics: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeLogDirsRequest<'_> {
     /// # Panics

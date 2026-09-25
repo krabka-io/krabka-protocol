@@ -38,7 +38,7 @@ pub struct InitProducerIdRequest<'a> {
 impl Default for InitProducerIdRequest<'_> {
     fn default() -> Self {
         Self {
-            transactional_id: None,
+            transactional_id: Some(""),
             transaction_timeout_ms: 0i32,
             producer_id: -1i64,
             producer_epoch: -1i16,

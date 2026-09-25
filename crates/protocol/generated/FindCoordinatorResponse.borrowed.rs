@@ -26,7 +26,7 @@ pub const FLEXIBLE_MIN: i16 = 3;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindCoordinatorResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
@@ -36,6 +36,20 @@ pub struct FindCoordinatorResponse<'a> {
     pub port: i32,
     pub coordinators: Vec<Coordinator<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for FindCoordinatorResponse<'_> {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            node_id: 0i32,
+            host: "",
+            port: 0i32,
+            coordinators: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl FindCoordinatorResponse<'_> {
     /// # Panics
@@ -235,7 +249,7 @@ impl FindCoordinatorResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Coordinator<'a> {
     pub key: &'a str,
     pub node_id: i32,
@@ -244,6 +258,19 @@ pub struct Coordinator<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for Coordinator<'_> {
+    fn default() -> Self {
+        Self {
+            key: "",
+            node_id: 0i32,
+            host: "",
+            port: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Coordinator<'_> {
     /// # Panics

@@ -141,13 +141,24 @@ impl AlterConfigsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterConfigsResourceResponse<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub resource_type: i8,
     pub resource_name: &'a str,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AlterConfigsResourceResponse<'_> {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(""),
+            resource_type: 0i8,
+            resource_name: "",
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl AlterConfigsResourceResponse<'_> {
     /// # Panics

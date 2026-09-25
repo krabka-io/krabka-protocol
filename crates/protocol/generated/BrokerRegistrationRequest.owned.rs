@@ -49,7 +49,7 @@ impl Default for BrokerRegistrationRequest {
             incarnation_id: crate::primitives::uuid::Uuid::default(),
             listeners: Vec::new(),
             features: Vec::new(),
-            rack: None,
+            rack: Some(String::new()),
             is_migrating_zk_broker: false,
             log_dirs: Vec::new(),
             previous_broker_epoch: -1i64,
@@ -655,7 +655,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     );
     obj.insert("listeners".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert("features".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("rack".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "rack".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     if version >= 1 {
         obj.insert(
             "isMigratingZkBroker".to_string(),

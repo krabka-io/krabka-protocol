@@ -185,7 +185,7 @@ impl Default for DescribeTopicPartitionsResponseTopic<'_> {
     fn default() -> Self {
         Self {
             error_code: 0i16,
-            name: None,
+            name: Some(""),
             topic_id: crate::primitives::uuid::Uuid::default(),
             is_internal: false,
             partitions: Vec::new(),

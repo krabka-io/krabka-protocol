@@ -105,28 +105,23 @@ fn version_cond(vr: VersionRange) -> Option<String> {
 /// The goal is to match what `MessageName::default()` encodes so that the
 /// oracle produces the same bytes as the Rust implementation.
 ///
-/// Key rules:
-/// - Nullable non-array fields with no default: Rust `Default` produces
-///   `None`, which encodes as null, so emit `null` for nullable versions.
-/// - Nullable array fields with no default: Rust `Default` produces `None`,
-///   which encodes as a null array of -1, so emit `null` for nullable
-///   versions. For non-nullable versions, emit the empty array `[]`.
+/// Key rules, matching Kafka's Java message generator
+/// (`FieldSpec.fieldDefaultToJava`):
+/// - Fields with an explicit `"default": "null"`: Rust `Default` produces
+///   `None`, so emit `null`, staying version-aware for split nullability
+///   ranges (null only where the field is actually nullable, the type's zero
+///   value otherwise).
+/// - Nullable fields with NO explicit default (array, string, or struct):
+///   Rust `Default` now produces the *empty* value (`Some(<empty>)`), not
+///   `None`, so emit the type's zero value for every version, not just the
+///   non-nullable ones.
 /// - Non-nullable array fields: always `[]`.
-/// - Fields with an explicit null default: emit `null`, and stay version-aware
-///   for split nullability ranges.
 pub(crate) fn json_value_expr_versioned(f: &FieldSpec) -> String {
     let is_array = f.field_type.starts_with("[]");
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
 
-    // Fields where Rust Default produces None:
-    // - explicit null default
-    // - nullable non-array fields with no default (None is the zero)
-    // - nullable array fields with no default (None is the zero)
-    let rust_default_is_none =
-        default_is_null || (f.nullable_versions.is_some() && f.default.is_none());
-
-    if rust_default_is_none {
+    if default_is_null {
         if let Some(nv) = f.nullable_versions {
             // Check if nullable for ALL valid versions (trivial case: no branching needed).
             let always_nullable =

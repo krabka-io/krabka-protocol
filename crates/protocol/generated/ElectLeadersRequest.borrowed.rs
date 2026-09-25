@@ -31,7 +31,7 @@ impl Default for ElectLeadersRequest<'_> {
     fn default() -> Self {
         Self {
             election_type: 0i8,
-            topic_partitions: None,
+            topic_partitions: Some(Vec::new()),
             timeout_ms: 60_000i32,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }

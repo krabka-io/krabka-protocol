@@ -24,7 +24,7 @@ pub const FLEXIBLE_MIN: i16 = 3;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FindCoordinatorResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
@@ -34,6 +34,20 @@ pub struct FindCoordinatorResponse {
     pub port: i32,
     pub coordinators: Vec<Coordinator>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for FindCoordinatorResponse {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            node_id: 0i32,
+            host: String::new(),
+            port: 0i32,
+            coordinators: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for FindCoordinatorResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -212,7 +226,7 @@ impl FindCoordinatorResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Coordinator {
     pub key: String,
     pub node_id: i32,
@@ -221,6 +235,19 @@ pub struct Coordinator {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for Coordinator {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            node_id: 0i32,
+            host: String::new(),
+            port: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for Coordinator {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -380,7 +407,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
         obj.insert("errorCode".to_string(), ::serde_json::json!(0));
     }
     if (1..=3).contains(&version) {
-        obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+        obj.insert(
+            "errorMessage".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
     }
     if version <= 3 {
         obj.insert("nodeId".to_string(), ::serde_json::json!(0));

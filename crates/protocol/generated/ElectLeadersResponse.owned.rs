@@ -243,12 +243,22 @@ impl ReplicaElectionResult {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionResult {
     pub partition_id: i32,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for PartitionResult {
+    fn default() -> Self {
+        Self {
+            partition_id: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for PartitionResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

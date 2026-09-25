@@ -281,7 +281,7 @@ impl<'a> Default for PartitionProduceData<'a> {
     fn default() -> Self {
         Self {
             index: 0i32,
-            records: None,
+            records: Some(crate::records::RecordsPayloadBorrowed::default()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

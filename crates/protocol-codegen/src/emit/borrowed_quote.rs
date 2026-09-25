@@ -414,6 +414,7 @@ fn struct_members(
         let expr = if is_struct_type(base_type(&field.field_type))
             && !field.field_type.starts_with("[]")
             && field.default.is_none()
+            && !is_nullable(field)
         {
             let ty = parse_expr(&field_type(ctx, field, top_level));
             quote!(<#ty>::default())

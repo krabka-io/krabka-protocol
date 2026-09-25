@@ -136,12 +136,22 @@ impl LeaveGroupResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberResponse {
     pub member_id: String,
     pub group_instance_id: Option<String>,
     pub error_code: i16,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for MemberResponse {
+    fn default() -> Self {
+        Self {
+            member_id: String::new(),
+            group_instance_id: Some(String::new()),
+            error_code: 0i16,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for MemberResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

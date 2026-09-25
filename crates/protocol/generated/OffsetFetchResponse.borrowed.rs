@@ -316,7 +316,7 @@ impl Default for OffsetFetchResponsePartition<'_> {
             partition_index: 0i32,
             committed_offset: 0i64,
             committed_leader_epoch: -1i32,
-            metadata: None,
+            metadata: Some(""),
             error_code: 0i16,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -717,7 +717,7 @@ impl Default for OffsetFetchResponsePartitions<'_> {
             partition_index: 0i32,
             committed_offset: 0i64,
             committed_leader_epoch: -1i32,
-            metadata: None,
+            metadata: Some(""),
             error_code: 0i16,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }

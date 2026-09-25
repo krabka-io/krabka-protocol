@@ -458,6 +458,12 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
 /// Returns a Rust expression for the default value of an owned field. It
 /// respects the schema-level `default` attribute, for example `"-1"` for
 /// `ControllerId`.
+///
+/// A nullable field with no explicit `"default"` in its schema gets the
+/// *empty* value of its type wrapped in `Some`, matching Kafka's Java message
+/// generator (`FieldSpec.fieldDefaultToJava`): an empty array, an empty
+/// string, or a default-constructed nested struct. Only a field whose schema
+/// explicitly says `"default": "null"` defaults to `None`.
 pub(crate) fn owned_default_expr(f: &FieldSpec, res_map: &HashMap<String, Resolution>) -> String {
     let base = base_type(&f.field_type);
     let is_array = f.field_type.starts_with("[]");
@@ -465,25 +471,28 @@ pub(crate) fn owned_default_expr(f: &FieldSpec, res_map: &HashMap<String, Resolu
     // Kafka schemas use "null" (string) to mean the default is null for nullable fields.
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
-    if nullable {
-        if default_is_null || f.default.is_none() {
-            return "None".into();
-        }
-        if let Some(v) = &f.default {
-            return format!("Some({})", scalar_owned_default(base, v));
-        }
+
+    if nullable && default_is_null {
+        return "None".into();
     }
-    if is_array {
-        return "Vec::new()".into();
-    }
-    if f.default.is_none()
+
+    let inner = if is_array {
+        "Vec::new()".into()
+    } else if f.default.is_none()
         && let Some(resolution) = res_map.get(base)
     {
-        return format!("{}::default()", resolution.rust_path);
-    }
-    match &f.default {
-        Some(v) => scalar_owned_default(base, v),
-        None => owned_zero(base),
+        format!("{}::default()", resolution.rust_path)
+    } else {
+        match &f.default {
+            Some(v) => scalar_owned_default(base, v),
+            None => owned_zero(base),
+        }
+    };
+
+    if nullable {
+        format!("Some({inner})")
+    } else {
+        inner
     }
 }
 
@@ -523,6 +532,7 @@ fn owned_zero(base: &str) -> String {
         "uint32" => "0u32".into(),
         "float64" => "0.0f64".into(),
         "uuid" => "crate::primitives::uuid::Uuid::default()".into(),
+        "records" => "crate::records::RecordsPayload::default()".into(),
         _ => "Default::default()".into(),
     }
 }
@@ -534,19 +544,28 @@ fn parse_string_default_as_i64(s: &str) -> Option<i64> {
 
 /// Returns true if any field in `fields` has a non-trivial schema default,
 /// which is one that differs from the Rust type's natural Default.
+///
+/// A nullable field's derived `Default` is always `None`, via
+/// `#[derive(Default)]` on `Option<T>`. Since a nullable field with no
+/// explicit `"default": "null"` now needs `Some(<empty>)`, not `None`, it
+/// always needs a manual impl unless the schema says the default is null.
 pub(crate) fn needs_manual_default(fields: &[FieldSpec]) -> bool {
     fields.iter().any(|f| {
         let nullable = is_nullable(f) || matches!(&f.default, Some(serde_json::Value::Null));
+        let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
+            || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
+        if nullable {
+            return !default_is_null;
+        }
         match &f.default {
-            None | Some(serde_json::Value::Null) => false, // null/None → None, same as derive
-            Some(serde_json::Value::String(s)) if s == "null" => false, // "null" string → None
-            Some(serde_json::Value::Bool(false)) if !nullable => false, // false == Default for bool
-            Some(serde_json::Value::String(s)) if s == "false" && !nullable => false,
-            Some(serde_json::Value::String(s)) if s.is_empty() && !nullable => false,
-            Some(serde_json::Value::Number(n)) if n.as_i64() == Some(0) && !nullable => false,
-            Some(serde_json::Value::String(s))
-                if parse_string_default_as_i64(s) == Some(0) && !nullable =>
-            {
+            // unreachable Null case: covered by `nullable` above. `Bool(false)` is
+            // the Default for bool.
+            None | Some(serde_json::Value::Null | serde_json::Value::Bool(false)) => false,
+            Some(serde_json::Value::String(s)) if s == "null" => false,
+            Some(serde_json::Value::String(s)) if s == "false" => false,
+            Some(serde_json::Value::String(s)) if s.is_empty() => false,
+            Some(serde_json::Value::Number(n)) if n.as_i64() == Some(0) => false,
+            Some(serde_json::Value::String(s)) if parse_string_default_as_i64(s) == Some(0) => {
                 false
             }
             Some(_) => true,

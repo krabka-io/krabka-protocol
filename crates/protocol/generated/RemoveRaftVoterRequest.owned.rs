@@ -24,12 +24,22 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveRaftVoterRequest {
     pub cluster_id: Option<String>,
     pub voter_id: i32,
     pub voter_directory_id: crate::primitives::uuid::Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for RemoveRaftVoterRequest {
+    fn default() -> Self {
+        Self {
+            cluster_id: Some(String::new()),
+            voter_id: 0i32,
+            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for RemoveRaftVoterRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -134,7 +144,10 @@ impl RemoveRaftVoterRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "clusterId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("voterId".to_string(), ::serde_json::json!(0));
     obj.insert(
         "voterDirectoryId".to_string(),
