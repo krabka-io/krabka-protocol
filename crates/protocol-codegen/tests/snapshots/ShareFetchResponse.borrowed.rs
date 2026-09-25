@@ -333,7 +333,7 @@ impl<'a> Default for PartitionData<'a> {
             acknowledge_error_code: 0i16,
             acknowledge_error_message: None,
             current_leader: <LeaderIdAndEpoch>::default(),
-            records: Some(crate::records::RecordsPayloadBorrowed::default()),
+            records: None,
             acquired_records: Vec::new(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }

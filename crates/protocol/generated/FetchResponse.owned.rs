@@ -354,7 +354,7 @@ impl Default for PartitionData {
             log_start_offset: -1i64,
             aborted_transactions: Some(Vec::new()),
             preferred_read_replica: -1i32,
-            records: Some(crate::records::RecordsPayload::default()),
+            records: None,
             diverging_epoch: EpochEndOffset::default(),
             current_leader: LeaderIdAndEpoch::default(),
             snapshot_id: SnapshotId::default(),
@@ -1314,10 +1314,7 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
                     if version >= 11 {
                         m.insert("preferredReadReplica".to_string(), ::serde_json::json!(-1));
                     }
-                    m.insert(
-                        "records".to_string(),
-                        ::serde_json::Value::String(String::new()),
-                    );
+                    m.insert("records".to_string(), ::serde_json::Value::Null);
                     ::serde_json::Value::Object(m)
                 }]),
             );

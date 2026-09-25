@@ -396,7 +396,7 @@ impl Default for PartitionData<'_> {
             log_start_offset: -1i64,
             aborted_transactions: Some(Vec::new()),
             preferred_read_replica: -1i32,
-            records: Some(crate::records::RecordsPayloadBorrowed::default()),
+            records: None,
             diverging_epoch: <EpochEndOffset>::default(),
             current_leader: <LeaderIdAndEpoch>::default(),
             snapshot_id: <SnapshotId>::default(),

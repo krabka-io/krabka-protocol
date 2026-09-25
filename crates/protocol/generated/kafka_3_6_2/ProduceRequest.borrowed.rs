@@ -300,20 +300,11 @@ impl TopicProduceData<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PartitionProduceData<'a> {
     pub index: i32,
     pub records: Option<crate::records::RecordsPayloadBorrowed<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
-}
-impl Default for PartitionProduceData<'_> {
-    fn default() -> Self {
-        Self {
-            index: 0i32,
-            records: Some(crate::records::RecordsPayloadBorrowed::default()),
-            unknown_tagged_fields: UnknownTaggedFields::default(),
-        }
-    }
 }
 impl PartitionProduceData<'_> {
     /// # Panics

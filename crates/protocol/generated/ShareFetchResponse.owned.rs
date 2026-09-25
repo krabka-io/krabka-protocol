@@ -298,7 +298,7 @@ impl ShareFetchableTopicResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PartitionData {
     pub partition_index: i32,
     pub error_code: i16,
@@ -309,21 +309,6 @@ pub struct PartitionData {
     pub records: Option<crate::records::RecordsPayload>,
     pub acquired_records: Vec<AcquiredRecords>,
     pub unknown_tagged_fields: UnknownTaggedFields,
-}
-impl Default for PartitionData {
-    fn default() -> Self {
-        Self {
-            partition_index: 0i32,
-            error_code: 0i16,
-            error_message: None,
-            acknowledge_error_code: 0i16,
-            acknowledge_error_message: None,
-            current_leader: LeaderIdAndEpoch::default(),
-            records: Some(crate::records::RecordsPayload::default()),
-            acquired_records: Vec::new(),
-            unknown_tagged_fields: UnknownTaggedFields::default(),
-        }
-    }
 }
 impl PartitionData {
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
