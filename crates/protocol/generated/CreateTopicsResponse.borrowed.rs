@@ -156,10 +156,10 @@ impl Default for CreatableTopicResult<'_> {
             name: "",
             topic_id: crate::primitives::uuid::Uuid::default(),
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(""),
             num_partitions: -1i32,
             replication_factor: -1i16,
-            configs: None,
+            configs: Some(Vec::new()),
             topic_config_error_code: 0i16,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -501,7 +501,7 @@ impl Default for CreatableTopicConfigs<'_> {
     fn default() -> Self {
         Self {
             name: "",
-            value: None,
+            value: Some(""),
             read_only: false,
             config_source: -1i8,
             is_sensitive: false,

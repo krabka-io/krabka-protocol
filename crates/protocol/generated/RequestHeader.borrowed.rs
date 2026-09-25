@@ -23,13 +23,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestHeader<'a> {
     pub request_api_key: i16,
     pub request_api_version: i16,
     pub correlation_id: i32,
     pub client_id: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for RequestHeader<'_> {
+    fn default() -> Self {
+        Self {
+            request_api_key: 0i16,
+            request_api_version: 0i16,
+            correlation_id: 0i32,
+            client_id: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl RequestHeader<'_> {
     /// # Panics

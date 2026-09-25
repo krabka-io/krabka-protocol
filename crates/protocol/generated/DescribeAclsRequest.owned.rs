@@ -39,10 +39,10 @@ impl Default for DescribeAclsRequest {
     fn default() -> Self {
         Self {
             resource_type_filter: 0i8,
-            resource_name_filter: None,
+            resource_name_filter: Some(String::new()),
             pattern_type_filter: 3i8,
-            principal_filter: None,
-            host_filter: None,
+            principal_filter: Some(String::new()),
+            host_filter: Some(String::new()),
             operation: 0i8,
             permission_type: 0i8,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -225,12 +225,21 @@ impl DescribeAclsRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("resourceTypeFilter".to_string(), ::serde_json::json!(0));
-    obj.insert("resourceNameFilter".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "resourceNameFilter".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     if version >= 1 {
         obj.insert("patternTypeFilter".to_string(), ::serde_json::json!(3));
     }
-    obj.insert("principalFilter".to_string(), ::serde_json::Value::Null);
-    obj.insert("hostFilter".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "principalFilter".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
+    obj.insert(
+        "hostFilter".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("operation".to_string(), ::serde_json::json!(0));
     obj.insert("permissionType".to_string(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)

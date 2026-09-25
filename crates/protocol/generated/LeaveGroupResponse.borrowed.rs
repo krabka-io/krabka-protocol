@@ -155,12 +155,22 @@ impl LeaveGroupResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberResponse<'a> {
     pub member_id: &'a str,
     pub group_instance_id: Option<&'a str>,
     pub error_code: i16,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for MemberResponse<'_> {
+    fn default() -> Self {
+        Self {
+            member_id: "",
+            group_instance_id: Some(""),
+            error_code: 0i16,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl MemberResponse<'_> {
     /// # Panics

@@ -123,13 +123,24 @@ impl AlterConfigsResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterConfigsResourceResponse {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub resource_type: i8,
     pub resource_name: String,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AlterConfigsResourceResponse {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            resource_type: 0i8,
+            resource_name: String::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for AlterConfigsResourceResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

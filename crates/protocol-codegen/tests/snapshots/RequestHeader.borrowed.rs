@@ -27,7 +27,7 @@ impl<'a> Default for RequestHeader<'a> {
             request_api_key: 0i16,
             request_api_version: 0i16,
             correlation_id: 0i32,
-            client_id: None,
+            client_id: Some(""),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

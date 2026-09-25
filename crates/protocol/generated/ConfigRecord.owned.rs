@@ -23,13 +23,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigRecord {
     pub resource_type: i8,
     pub resource_name: String,
     pub name: String,
     pub value: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ConfigRecord {
+    fn default() -> Self {
+        Self {
+            resource_type: 0i8,
+            resource_name: String::new(),
+            name: String::new(),
+            value: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for ConfigRecord {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -177,6 +188,9 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
         "name".to_string(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("value".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "value".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     ::serde_json::Value::Object(obj)
 }

@@ -25,13 +25,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDelegationTokenRequest {
     pub owner_principal_type: Option<String>,
     pub owner_principal_name: Option<String>,
     pub renewers: Vec<CreatableRenewers>,
     pub max_lifetime_ms: i64,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for CreateDelegationTokenRequest {
+    fn default() -> Self {
+        Self {
+            owner_principal_type: Some(String::new()),
+            owner_principal_name: Some(String::new()),
+            renewers: Vec::new(),
+            max_lifetime_ms: 0i64,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for CreateDelegationTokenRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -272,10 +283,16 @@ impl CreatableRenewers {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 3 {
-        obj.insert("ownerPrincipalType".to_string(), ::serde_json::Value::Null);
+        obj.insert(
+            "ownerPrincipalType".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
     }
     if version >= 3 {
-        obj.insert("ownerPrincipalName".to_string(), ::serde_json::Value::Null);
+        obj.insert(
+            "ownerPrincipalName".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
     }
     obj.insert("renewers".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert("maxLifetimeMs".to_string(), ::serde_json::json!(0));

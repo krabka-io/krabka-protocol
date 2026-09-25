@@ -26,7 +26,7 @@ pub struct MetadataRequest<'a> {
 impl<'a> Default for MetadataRequest<'a> {
     fn default() -> Self {
         Self {
-            topics: None,
+            topics: Some(Vec::new()),
             allow_auto_topic_creation: true,
             include_cluster_authorized_operations: false,
             include_topic_authorized_operations: false,
@@ -205,7 +205,7 @@ impl<'a> Default for MetadataRequestTopic<'a> {
     fn default() -> Self {
         Self {
             topic_id: crate::primitives::uuid::Uuid::default(),
-            name: None,
+            name: Some(""),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

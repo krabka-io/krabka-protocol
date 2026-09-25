@@ -25,13 +25,24 @@ pub const FLEXIBLE_MIN: i16 = 6;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetFetchRequest {
     pub group_id: String,
     pub topics: Option<Vec<OffsetFetchRequestTopic>>,
     pub groups: Vec<OffsetFetchRequestGroup>,
     pub require_stable: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for OffsetFetchRequest {
+    fn default() -> Self {
+        Self {
+            group_id: String::new(),
+            topics: Some(Vec::new()),
+            groups: Vec::new(),
+            require_stable: false,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for OffsetFetchRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -330,7 +341,7 @@ impl Default for OffsetFetchRequestGroup {
             group_id: String::new(),
             member_id: None,
             member_epoch: -1i32,
-            topics: None,
+            topics: Some(Vec::new()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -597,14 +608,7 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
         );
     }
     if version <= 7 {
-        obj.insert(
-            "topics".to_string(),
-            if (2..=7).contains(&version) {
-                ::serde_json::Value::Null
-            } else {
-                ::serde_json::Value::Array(vec![])
-            },
-        );
+        obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     }
     if version >= 8 {
         obj.insert("groups".to_string(), ::serde_json::Value::Array(vec![]));

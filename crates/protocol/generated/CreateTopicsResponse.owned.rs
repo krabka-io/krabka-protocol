@@ -138,10 +138,10 @@ impl Default for CreatableTopicResult {
             name: String::new(),
             topic_id: crate::primitives::uuid::Uuid::default(),
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(String::new()),
             num_partitions: -1i32,
             replication_factor: -1i16,
-            configs: None,
+            configs: Some(Vec::new()),
             topic_config_error_code: 0i16,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -464,7 +464,7 @@ impl Default for CreatableTopicConfigs {
     fn default() -> Self {
         Self {
             name: String::new(),
-            value: None,
+            value: Some(String::new()),
             read_only: false,
             config_source: -1i8,
             is_sensitive: false,
@@ -638,7 +638,10 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
                 );
             }
             m.insert("errorCode".to_string(), ::serde_json::json!(0));
-            m.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+            m.insert(
+                "errorMessage".to_string(),
+                ::serde_json::Value::String(String::new()),
+            );
             if version >= 5 {
                 m.insert("topicConfigErrorCode".to_string(), ::serde_json::json!(1));
             }
@@ -649,7 +652,7 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
                 m.insert("replicationFactor".to_string(), ::serde_json::json!(-1));
             }
             if version >= 5 {
-                m.insert("configs".to_string(), ::serde_json::Value::Null);
+                m.insert("configs".to_string(), ::serde_json::Value::Array(vec![]));
             }
             ::serde_json::Value::Object(m)
         }]),

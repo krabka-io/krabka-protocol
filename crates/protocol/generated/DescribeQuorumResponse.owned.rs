@@ -24,13 +24,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeQuorumResponse {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub topics: Vec<TopicData>,
     pub nodes: Vec<Node>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeQuorumResponse {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            topics: Vec::new(),
+            nodes: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeQuorumResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -274,7 +285,7 @@ impl TopicData {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionData {
     pub partition_index: i32,
     pub error_code: i16,
@@ -285,6 +296,21 @@ pub struct PartitionData {
     pub current_voters: Vec<super::common::describe_quorum_response::replica_state::ReplicaState>,
     pub observers: Vec<super::common::describe_quorum_response::replica_state::ReplicaState>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for PartitionData {
+    fn default() -> Self {
+        Self {
+            partition_index: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            leader_id: 0i32,
+            leader_epoch: 0i32,
+            high_watermark: 0i64,
+            current_voters: Vec::new(),
+            observers: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl PartitionData {
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -802,7 +828,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
     if version >= 2 {
-        obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+        obj.insert(
+            "errorMessage".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
     }
     obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     if version >= 2 {

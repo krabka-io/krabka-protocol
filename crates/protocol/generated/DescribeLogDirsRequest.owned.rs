@@ -23,10 +23,18 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeLogDirsRequest {
     pub topics: Option<Vec<DescribableLogDirTopic>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeLogDirsRequest {
+    fn default() -> Self {
+        Self {
+            topics: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeLogDirsRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -220,7 +228,7 @@ impl DescribableLogDirTopic {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("topics".to_string(), ::serde_json::Value::Null);
+    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeLogDirsRequest {

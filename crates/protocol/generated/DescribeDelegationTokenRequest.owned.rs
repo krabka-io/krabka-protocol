@@ -20,10 +20,18 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeDelegationTokenRequest {
     pub owners: Option<Vec<DescribeDelegationTokenOwner>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeDelegationTokenRequest {
+    fn default() -> Self {
+        Self {
+            owners: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeDelegationTokenRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -212,7 +220,7 @@ impl DescribeDelegationTokenOwner {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("owners".to_string(), ::serde_json::Value::Null);
+    obj.insert("owners".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeDelegationTokenRequest {

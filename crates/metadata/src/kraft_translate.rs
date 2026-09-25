@@ -523,6 +523,7 @@ fn topic_config_to_kraft(
                 resource_type: 2,
                 resource_name: config.topic.clone(),
                 name: key.clone(),
+                value: None,
                 ..Default::default()
             }));
         }
@@ -552,6 +553,7 @@ fn group_config_to_kraft(
                 resource_type: 32,
                 resource_name: config.group_id.clone(),
                 name: key.clone(),
+                value: None,
                 ..Default::default()
             }));
         }
@@ -581,6 +583,7 @@ fn client_metrics_config_to_kraft(
                 resource_type: 16,
                 resource_name: config.name.clone(),
                 name: key.clone(),
+                value: None,
                 ..Default::default()
             }));
         }

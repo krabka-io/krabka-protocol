@@ -25,7 +25,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShareAcknowledgeRequest<'a> {
     pub group_id: Option<&'a str>,
     pub member_id: Option<&'a str>,
@@ -33,6 +33,18 @@ pub struct ShareAcknowledgeRequest<'a> {
     pub is_renew_ack: bool,
     pub topics: Vec<AcknowledgeTopic>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ShareAcknowledgeRequest<'_> {
+    fn default() -> Self {
+        Self {
+            group_id: None,
+            member_id: Some(""),
+            share_session_epoch: 0i32,
+            is_renew_ack: false,
+            topics: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl ShareAcknowledgeRequest<'_> {
     /// # Panics

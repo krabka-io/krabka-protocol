@@ -27,7 +27,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateRaftVoterRequest<'a> {
     pub cluster_id: Option<&'a str>,
     pub current_leader_epoch: i32,
@@ -36,6 +36,19 @@ pub struct UpdateRaftVoterRequest<'a> {
     pub listeners: Vec<Listener<'a>>,
     pub k_raft_version_feature: KRaftVersionFeature,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for UpdateRaftVoterRequest<'_> {
+    fn default() -> Self {
+        Self {
+            cluster_id: Some(""),
+            current_leader_epoch: 0i32,
+            voter_id: 0i32,
+            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            listeners: Vec::new(),
+            k_raft_version_feature: <KRaftVersionFeature>::default(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl UpdateRaftVoterRequest<'_> {
     /// # Panics

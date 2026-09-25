@@ -36,7 +36,7 @@ pub struct MetadataRequest {
 impl Default for MetadataRequest {
     fn default() -> Self {
         Self {
-            topics: None,
+            topics: Some(Vec::new()),
             allow_auto_topic_creation: true,
             include_cluster_authorized_operations: false,
             include_topic_authorized_operations: false,
@@ -200,11 +200,20 @@ impl MetadataRequest {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataRequestTopic {
     pub topic_id: crate::primitives::uuid::Uuid,
     pub name: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for MetadataRequestTopic {
+    fn default() -> Self {
+        Self {
+            topic_id: crate::primitives::uuid::Uuid::default(),
+            name: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for MetadataRequestTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -309,14 +318,7 @@ impl MetadataRequestTopic {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert(
-        "topics".to_string(),
-        if version >= 1 {
-            ::serde_json::Value::Null
-        } else {
-            ::serde_json::Value::Array(vec![])
-        },
-    );
+    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
     if version >= 4 {
         obj.insert(
             "allowAutoTopicCreation".to_string(),
