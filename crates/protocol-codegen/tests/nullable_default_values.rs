@@ -107,13 +107,19 @@ fn owned_default_impl_uses_empty_values_not_none_for_nullable_no_default_fields(
         "level:0i32",
         "priority:5i32",
         // Nullable array/scalar/struct fields with no explicit default: the
-        // type's empty value, wrapped in `Some`, not `None`.
-        "owners:Some(Vec::new())",
-        "owner:Some(String::new())",
+        // type's empty value, wrapped in `Some`, not `None`. Anchored on the
+        // preceding field separator so this can't false-pass by matching
+        // inside the tagged counterpart's `tagged_owners:Some(Vec::new())` /
+        // `tagged_owner:Some(String::new())`, which the untagged field name
+        // is a plain suffix of.
+        ",owners:Some(Vec::new())",
+        ",owner:Some(String::new())",
         "nested:Some(OwnerStruct::default())",
         // A nullable `records` field always defaults to `None`, regardless
-        // of nullability's usual empty-value rule — tagged or not.
-        "records:None",
+        // of nullability's usual empty-value rule — tagged or not. Anchored
+        // for the same reason: `records:None` is a suffix of, and would
+        // otherwise false-match inside, `tagged_records:None`.
+        ",records:None",
         "tagged_records:None",
         // A `records` field with no `nullableVersions` at all keeps the
         // ordinary empty-value default: there is no `Option` to put `None`
@@ -139,17 +145,22 @@ fn borrowed_default_impl_uses_empty_values_not_none_for_nullable_no_default_fiel
     for expected in [
         "level:0i32",
         "priority:5i32",
-        "owners:Some(Vec::new())",
+        // Anchored on the preceding field separator, as in the owned test
+        // above, so these can't false-pass by matching inside the tagged
+        // counterparts (`tagged_owners:Some(Vec::new())`,
+        // `tagged_owner:Some("")`, `tagged_records:None`), which the
+        // untagged field names are plain suffixes of.
+        ",owners:Some(Vec::new())",
         // Borrowed scalars are `&str`/`&[u8]`, so the empty value is a
         // borrowed empty literal, not an owned `String::new()`.
-        "owner:Some(\"\")",
+        ",owner:Some(\"\")",
         // The borrowed-emitter half of `struct_members`' nullable-struct
         // guard (`!is_nullable(field)` in `borrowed_quote.rs`): a nullable
         // struct field must route through `borrowed_default_expr` (`Some(<Ty>::default())`)
         // rather than the bare `<Ty>::default()` shortcut non-nullable
         // struct fields take.
         "nested:Some(OwnerStruct::default())",
-        "records:None",
+        ",records:None",
         "tagged_records:None",
         "unaligned_records:crate::records::RecordsPayloadBorrowed::default()",
         "tagged_null_default:None",
