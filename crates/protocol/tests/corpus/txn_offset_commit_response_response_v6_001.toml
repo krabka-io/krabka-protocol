@@ -1,0 +1,6 @@
+api_key = 28
+version = 6
+direction = "response"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "TxnOffsetCommitResponse v6 (KIP-1319) hand-constructed default message from the trunk schema; the 4.3.0 oracle predates v6"

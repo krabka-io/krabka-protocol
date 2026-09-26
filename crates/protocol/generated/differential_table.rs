@@ -3373,9 +3373,21 @@ pub const CASES: &[Case] = &[
         kind: Kind::Request,
     },
     Case {
+        name: "StreamsGroupDescribeRequest",
+        api_key: 89,
+        version: 1,
+        kind: Kind::Request,
+    },
+    Case {
         name: "StreamsGroupDescribeResponse",
         api_key: 89,
         version: 0,
+        kind: Kind::Response,
+    },
+    Case {
+        name: "StreamsGroupDescribeResponse",
+        api_key: 89,
+        version: 1,
         kind: Kind::Response,
     },
     Case {
@@ -3385,12 +3397,24 @@ pub const CASES: &[Case] = &[
         kind: Kind::Request,
     },
     Case {
+        name: "StreamsGroupHeartbeatRequest",
+        api_key: 88,
+        version: 1,
+        kind: Kind::Request,
+    },
+    Case {
         name: "StreamsGroupHeartbeatResponse",
         api_key: 88,
         version: 0,
         kind: Kind::Response,
     },
     Case {
+        name: "StreamsGroupHeartbeatResponse",
+        api_key: 88,
+        version: 1,
+        kind: Kind::Response,
+    },
+    Case {
         name: "SyncGroupRequest",
         api_key: 14,
         version: 0,
@@ -3499,6 +3523,12 @@ pub const CASES: &[Case] = &[
         kind: Kind::Request,
     },
     Case {
+        name: "TxnOffsetCommitRequest",
+        api_key: 28,
+        version: 6,
+        kind: Kind::Request,
+    },
+    Case {
         name: "TxnOffsetCommitResponse",
         api_key: 28,
         version: 0,
@@ -3532,6 +3562,12 @@ pub const CASES: &[Case] = &[
         name: "TxnOffsetCommitResponse",
         api_key: 28,
         version: 5,
+        kind: Kind::Response,
+    },
+    Case {
+        name: "TxnOffsetCommitResponse",
+        api_key: 28,
+        version: 6,
         kind: Kind::Response,
     },
     Case {

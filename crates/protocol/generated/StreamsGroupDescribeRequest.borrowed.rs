@@ -12,8 +12,8 @@ use crate::{
 };
 pub const API_KEY: i16 = 89;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 0;
-pub const LATEST_STABLE_VERSION: i16 = 0;
+pub const MAX_VERSION: i16 = 1;
+pub const LATEST_STABLE_VERSION: i16 = 1;
 pub const FLEXIBLE_MIN: i16 = 0;
 #[inline]
 #[must_use]
@@ -24,6 +24,7 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct StreamsGroupDescribeRequest<'a> {
     pub group_ids: Vec<&'a str>,
     pub include_authorized_operations: bool,
+    pub include_topology_description: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl StreamsGroupDescribeRequest<'_> {
@@ -40,6 +41,7 @@ impl StreamsGroupDescribeRequest<'_> {
                 .map(std::string::ToString::to_string)
                 .collect(),
             include_authorized_operations: (self.include_authorized_operations),
+            include_topology_description: (self.include_topology_description),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -68,6 +70,9 @@ impl Encode for StreamsGroupDescribeRequest<'_> {
         if version >= 0 {
             put_bool(buf, self.include_authorized_operations);
         }
+        if version >= 1 {
+            put_bool(buf, self.include_topology_description);
+        }
         if flex {
             let tagged = WriteTaggedFields::new();
             tagged.write(buf, &self.unknown_tagged_fields);
@@ -95,6 +100,9 @@ impl Encode for StreamsGroupDescribeRequest<'_> {
             };
         }
         if version >= 0 {
+            n += 1;
+        }
+        if version >= 1 {
             n += 1;
         }
         if flex {
@@ -131,6 +139,9 @@ impl<'de> DecodeBorrow<'de> for StreamsGroupDescribeRequest<'de> {
         if version >= 0 {
             out.include_authorized_operations = get_bool(buf)?;
         }
+        if version >= 1 {
+            out.include_topology_description = get_bool(buf)?;
+        }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
         }
@@ -147,6 +158,9 @@ impl StreamsGroupDescribeRequest<'_> {
         }
         if version >= 0 {
             m.include_authorized_operations = true;
+        }
+        if version >= 1 {
+            m.include_topology_description = true;
         }
         m
     }

@@ -5,7 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
-        fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i16, put_i32},
+        fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
             get_compact_string_owned, get_nullable_string_owned, get_string_owned,
@@ -17,7 +17,7 @@ use crate::{
 };
 pub const API_KEY: i16 = 89;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 0;
+pub const MAX_VERSION: i16 = 1;
 pub const FLEXIBLE_MIN: i16 = 0;
 #[inline]
 #[must_use]
@@ -131,6 +131,11 @@ pub struct DescribedGroup {
     pub topology: Option<Topology>,
     pub members: Vec<Member>,
     pub authorized_operations: i32,
+    pub topology_description: Option<
+        super::common::streams_group_describe_response::topology_description::TopologyDescription,
+    >,
+    pub topology_description_status: i8,
+    pub assignor_name: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for DescribedGroup {
@@ -145,6 +150,9 @@ impl Default for DescribedGroup {
             topology: None,
             members: Vec::new(),
             authorized_operations: -2_147_483_648i32,
+            topology_description: None,
+            topology_description_status: 0i8,
+            assignor_name: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -230,6 +238,39 @@ impl DescribedGroup {
     fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.authorized_operations);
+        }
+    }
+    fn encode_field_9<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            match &self.topology_description {
+                None => {
+                    buf.put_i8(-1);
+                }
+                Some(v) => {
+                    buf.put_i8(1);
+                    v.encode(buf, version)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn encode_field_10<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+        if version >= 1 {
+            put_i8(buf, self.topology_description_status);
+        }
+    }
+    fn encode_field_11<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+        if version >= 1 {
+            if flex {
+                let () = put_compact_nullable_string(buf, self.assignor_name.as_deref());
+            } else {
+                let () = put_nullable_string(buf, self.assignor_name.as_deref());
+            }
         }
     }
     fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
@@ -360,6 +401,47 @@ impl DescribedGroup {
         }
         Ok(())
     }
+    fn decode_field_9<B: Buf>(
+        out: &mut Self,
+        buf: &mut B,
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.topology_description = if get_i8(buf)? < 0 {
+                None
+            } else {
+                Some(super::common::streams_group_describe_response::topology_description::TopologyDescription::decode(buf, version)?)
+            };
+        }
+        Ok(())
+    }
+    fn decode_field_10<B: Buf>(
+        out: &mut Self,
+        buf: &mut B,
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.topology_description_status = get_i8(buf)?;
+        }
+        Ok(())
+    }
+    fn decode_field_11<B: Buf>(
+        out: &mut Self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.assignor_name = if flex {
+                get_compact_nullable_string_owned(buf)?
+            } else {
+                get_nullable_string_owned(buf)?
+            };
+        }
+        Ok(())
+    }
     fn decode_tagged_fields<B: Buf>(
         out: &mut Self,
         buf: &mut B,
@@ -384,6 +466,9 @@ impl Encode for DescribedGroup {
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex)?;
         self.encode_field_8(buf, version, flex);
+        self.encode_field_9(buf, version, flex)?;
+        self.encode_field_10(buf, version, flex);
+        self.encode_field_11(buf, version, flex);
         self.encode_tagged_fields(buf, version, flex);
         Ok(())
     }
@@ -437,6 +522,22 @@ impl Encode for DescribedGroup {
         if version >= 0 {
             n += 4;
         }
+        if version >= 1 {
+            n += 1 + self
+                .topology_description
+                .as_ref()
+                .map_or(0, |v| v.encoded_len(version));
+        }
+        if version >= 1 {
+            n += 1;
+        }
+        if version >= 1 {
+            n += if flex {
+                compact_nullable_string_len(self.assignor_name.as_deref())
+            } else {
+                nullable_string_len(self.assignor_name.as_deref())
+            };
+        }
         if flex {
             let known_pairs: Vec<(u32, usize)> = Vec::new();
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -457,6 +558,9 @@ impl Decode<'_> for DescribedGroup {
         Self::decode_field_6(&mut out, buf, version, flex)?;
         Self::decode_field_7(&mut out, buf, version, flex)?;
         Self::decode_field_8(&mut out, buf, version, flex)?;
+        Self::decode_field_9(&mut out, buf, version, flex)?;
+        Self::decode_field_10(&mut out, buf, version, flex)?;
+        Self::decode_field_11(&mut out, buf, version, flex)?;
         Self::decode_tagged_fields(&mut out, buf, version, flex)?;
         Ok(out)
     }
@@ -492,6 +596,15 @@ impl DescribedGroup {
         }
         if version >= 0 {
             m.authorized_operations = 1i32;
+        }
+        if version >= 1 {
+            m.topology_description = Some(super::common::streams_group_describe_response::topology_description::TopologyDescription::populated(version));
+        }
+        if version >= 1 {
+            m.topology_description_status = 1i8;
+        }
+        if version >= 1 {
+            m.assignor_name = Some("x".to_string());
         }
         m
     }

@@ -1,0 +1,6 @@
+api_key = 89
+version = 1
+direction = "request"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "StreamsGroupDescribeRequest v1 (KIP-1331) hand-constructed default message with IncludeTopologyDescription false; the 4.3.0 oracle predates v1"

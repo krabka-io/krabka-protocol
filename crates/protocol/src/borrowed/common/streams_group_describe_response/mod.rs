@@ -5,3 +5,7 @@ pub mod key_value;
 pub mod task_ids;
 pub mod task_offset;
 pub mod topic_info;
+pub mod topology_description;
+pub mod topology_description_global_store;
+pub mod topology_description_node;
+pub mod topology_description_subtopology;

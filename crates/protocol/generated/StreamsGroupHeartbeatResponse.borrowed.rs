@@ -4,7 +4,7 @@ use bytes::BufMut;
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
-        fixed::{get_i16, get_i32, put_i16, put_i32},
+        fixed::{get_bool, get_i16, get_i32, get_i64, put_bool, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
             put_compact_nullable_string, put_compact_string, put_nullable_string, put_string,
@@ -19,7 +19,7 @@ use crate::{
 };
 pub const API_KEY: i16 = 88;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 0;
+pub const MAX_VERSION: i16 = 1;
 pub const FLEXIBLE_MIN: i16 = 0;
 #[inline]
 #[must_use]
@@ -34,8 +34,9 @@ pub struct StreamsGroupHeartbeatResponse<'a> {
     pub member_id: &'a str,
     pub member_epoch: i32,
     pub heartbeat_interval_ms: i32,
-    pub acceptable_recovery_lag: i32,
+    pub acceptable_recovery_lag_legacy: i32,
     pub task_offset_interval_ms: i32,
+    pub acceptable_recovery_lag: i64,
     pub status: Option<Vec<super::common::streams_group_heartbeat_response::status::Status<'a>>>,
     pub active_tasks:
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds<'a>>>,
@@ -43,6 +44,7 @@ pub struct StreamsGroupHeartbeatResponse<'a> {
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds<'a>>>,
     pub warmup_tasks:
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds<'a>>>,
+    pub topology_description_required: bool,
     pub endpoint_information_epoch: i32,
     pub partitions_by_user_endpoint: Option<Vec<EndpointToPartitions<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -56,12 +58,14 @@ impl Default for StreamsGroupHeartbeatResponse<'_> {
             member_id: "",
             member_epoch: 0i32,
             heartbeat_interval_ms: 0i32,
-            acceptable_recovery_lag: 0i32,
+            acceptable_recovery_lag_legacy: 0i32,
             task_offset_interval_ms: 0i32,
+            acceptable_recovery_lag: -1i64,
             status: Some(Vec::new()),
             active_tasks: None,
             standby_tasks: None,
             warmup_tasks: None,
+            topology_description_required: false,
             endpoint_information_epoch: 0i32,
             partitions_by_user_endpoint: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -83,12 +87,14 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
             member_id: (self.member_id).to_string(),
             member_epoch: (self.member_epoch),
             heartbeat_interval_ms: (self.heartbeat_interval_ms),
-            acceptable_recovery_lag: (self.acceptable_recovery_lag),
+            acceptable_recovery_lag_legacy: (self.acceptable_recovery_lag_legacy),
             task_offset_interval_ms: (self.task_offset_interval_ms),
+            acceptable_recovery_lag: (self.acceptable_recovery_lag),
             status: (self.status).as_ref().map(|v| v.iter().map(super::common::streams_group_heartbeat_response::status::Status::to_owned).collect()),
             active_tasks: (self.active_tasks).as_ref().map(|v| v.iter().map(super::common::streams_group_heartbeat_response::task_ids::TaskIds::to_owned).collect()),
             standby_tasks: (self.standby_tasks).as_ref().map(|v| v.iter().map(super::common::streams_group_heartbeat_response::task_ids::TaskIds::to_owned).collect()),
             warmup_tasks: (self.warmup_tasks).as_ref().map(|v| v.iter().map(super::common::streams_group_heartbeat_response::task_ids::TaskIds::to_owned).collect()),
+            topology_description_required: (self.topology_description_required),
             endpoint_information_epoch: (self.endpoint_information_epoch),
             partitions_by_user_endpoint: (self.partitions_by_user_endpoint).as_ref().map(|v| v.iter().map(EndpointToPartitions::to_owned).collect()),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -133,8 +139,8 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
     }
     fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
-        if version >= 0 {
-            put_i32(buf, self.acceptable_recovery_lag);
+        if version == 0 {
+            put_i32(buf, self.acceptable_recovery_lag_legacy);
         }
     }
     fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -142,7 +148,12 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
             put_i32(buf, self.task_offset_interval_ms);
         }
     }
-    fn encode_field_8<B: BufMut>(
+    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+        if version >= 1 {
+            put_i64(buf, self.acceptable_recovery_lag);
+        }
+    }
+    fn encode_field_9<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -161,7 +172,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn encode_field_9<B: BufMut>(
+    fn encode_field_10<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -180,7 +191,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn encode_field_10<B: BufMut>(
+    fn encode_field_11<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -199,7 +210,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn encode_field_11<B: BufMut>(
+    fn encode_field_12<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -218,12 +229,17 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn encode_field_12<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+    fn encode_field_13<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+        if version >= 1 {
+            put_bool(buf, self.topology_description_required);
+        }
+    }
+    fn encode_field_14<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.endpoint_information_epoch);
         }
     }
-    fn encode_field_13<B: BufMut>(
+    fn encode_field_15<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -328,8 +344,8 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         version: i16,
         _flex: bool,
     ) -> Result<(), ProtocolError> {
-        if version >= 0 {
-            out.acceptable_recovery_lag = get_i32(buf)?;
+        if version == 0 {
+            out.acceptable_recovery_lag_legacy = get_i32(buf)?;
         }
         Ok(())
     }
@@ -345,6 +361,17 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         Ok(())
     }
     fn decode_field_8(
+        out: &mut Self,
+        buf: &mut &'a [u8],
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.acceptable_recovery_lag = get_i64(buf)?;
+        }
+        Ok(())
+    }
+    fn decode_field_9(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -367,7 +394,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn decode_field_9(
+    fn decode_field_10(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -390,7 +417,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn decode_field_10(
+    fn decode_field_11(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -413,7 +440,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn decode_field_11(
+    fn decode_field_12(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -436,7 +463,18 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn decode_field_12(
+    fn decode_field_13(
+        out: &mut Self,
+        buf: &mut &'a [u8],
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.topology_description_required = get_bool(buf)?;
+        }
+        Ok(())
+    }
+    fn decode_field_14(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -447,7 +485,7 @@ impl<'a> StreamsGroupHeartbeatResponse<'a> {
         }
         Ok(())
     }
-    fn decode_field_13(
+    fn decode_field_15(
         out: &mut Self,
         buf: &mut &'a [u8],
         version: i16,
@@ -499,12 +537,14 @@ impl Encode for StreamsGroupHeartbeatResponse<'_> {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex)?;
+        self.encode_field_8(buf, version, flex);
         self.encode_field_9(buf, version, flex)?;
         self.encode_field_10(buf, version, flex)?;
         self.encode_field_11(buf, version, flex)?;
-        self.encode_field_12(buf, version, flex);
-        self.encode_field_13(buf, version, flex)?;
+        self.encode_field_12(buf, version, flex)?;
+        self.encode_field_13(buf, version, flex);
+        self.encode_field_14(buf, version, flex);
+        self.encode_field_15(buf, version, flex)?;
         self.encode_tagged_fields(buf, version, flex);
         Ok(())
     }
@@ -537,11 +577,14 @@ impl Encode for StreamsGroupHeartbeatResponse<'_> {
         if version >= 0 {
             n += 4;
         }
-        if version >= 0 {
+        if version == 0 {
             n += 4;
         }
         if version >= 0 {
             n += 4;
+        }
+        if version >= 1 {
+            n += 8;
         }
         if version >= 0 {
             n += {
@@ -591,6 +634,9 @@ impl Encode for StreamsGroupHeartbeatResponse<'_> {
                 prefix + body
             };
         }
+        if version >= 1 {
+            n += 1;
+        }
         if version >= 0 {
             n += 4;
         }
@@ -637,6 +683,8 @@ impl<'de> DecodeBorrow<'de> for StreamsGroupHeartbeatResponse<'de> {
         Self::decode_field_11(&mut out, buf, version, flex)?;
         Self::decode_field_12(&mut out, buf, version, flex)?;
         Self::decode_field_13(&mut out, buf, version, flex)?;
+        Self::decode_field_14(&mut out, buf, version, flex)?;
+        Self::decode_field_15(&mut out, buf, version, flex)?;
         Self::decode_tagged_fields(&mut out, buf, version, flex)?;
         Ok(out)
     }
@@ -664,11 +712,14 @@ impl StreamsGroupHeartbeatResponse<'_> {
         if version >= 0 {
             m.heartbeat_interval_ms = 1i32;
         }
-        if version >= 0 {
-            m.acceptable_recovery_lag = 1i32;
+        if version == 0 {
+            m.acceptable_recovery_lag_legacy = 1i32;
         }
         if version >= 0 {
             m.task_offset_interval_ms = 1i32;
+        }
+        if version >= 1 {
+            m.acceptable_recovery_lag = 1i64;
         }
         if version >= 0 {
             m.status = Some(vec![
@@ -695,6 +746,9 @@ impl StreamsGroupHeartbeatResponse<'_> {
                     version,
                 ),
             ]);
+        }
+        if version >= 1 {
+            m.topology_description_required = true;
         }
         if version >= 0 {
             m.endpoint_information_epoch = 1i32;
