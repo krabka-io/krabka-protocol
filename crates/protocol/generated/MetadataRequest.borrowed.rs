@@ -38,7 +38,7 @@ pub struct MetadataRequest<'a> {
 impl Default for MetadataRequest<'_> {
     fn default() -> Self {
         Self {
-            topics: None,
+            topics: Some(Vec::new()),
             allow_auto_topic_creation: true,
             include_cluster_authorized_operations: false,
             include_topic_authorized_operations: false,
@@ -219,11 +219,20 @@ impl MetadataRequest<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataRequestTopic<'a> {
     pub topic_id: crate::primitives::uuid::Uuid,
     pub name: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for MetadataRequestTopic<'_> {
+    fn default() -> Self {
+        Self {
+            topic_id: crate::primitives::uuid::Uuid::default(),
+            name: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl MetadataRequestTopic<'_> {
     /// # Panics

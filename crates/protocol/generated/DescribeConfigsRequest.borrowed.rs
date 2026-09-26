@@ -149,12 +149,22 @@ impl DescribeConfigsRequest<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsResource<'a> {
     pub resource_type: i8,
     pub resource_name: &'a str,
     pub configuration_keys: Option<Vec<&'a str>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsResource<'_> {
+    fn default() -> Self {
+        Self {
+            resource_type: 0i8,
+            resource_name: "",
+            configuration_keys: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeConfigsResource<'_> {
     /// # Panics

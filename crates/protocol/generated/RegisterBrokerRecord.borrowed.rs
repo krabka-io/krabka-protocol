@@ -52,7 +52,7 @@ impl Default for RegisterBrokerRecord<'_> {
             broker_epoch: 0i64,
             end_points: Vec::new(),
             features: Vec::new(),
-            rack: None,
+            rack: Some(""),
             fenced: true,
             in_controlled_shutdown: false,
             log_dirs: Vec::new(),

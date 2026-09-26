@@ -135,12 +135,22 @@ impl DescribeConfigsRequest {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsResource {
     pub resource_type: i8,
     pub resource_name: String,
     pub configuration_keys: Option<Vec<String>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsResource {
+    fn default() -> Self {
+        Self {
+            resource_type: 0i8,
+            resource_name: String::new(),
+            configuration_keys: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeConfigsResource {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

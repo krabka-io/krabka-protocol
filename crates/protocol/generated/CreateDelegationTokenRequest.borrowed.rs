@@ -27,13 +27,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDelegationTokenRequest<'a> {
     pub owner_principal_type: Option<&'a str>,
     pub owner_principal_name: Option<&'a str>,
     pub renewers: Vec<CreatableRenewers<'a>>,
     pub max_lifetime_ms: i64,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for CreateDelegationTokenRequest<'_> {
+    fn default() -> Self {
+        Self {
+            owner_principal_type: Some(""),
+            owner_principal_name: Some(""),
+            renewers: Vec::new(),
+            max_lifetime_ms: 0i64,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl CreateDelegationTokenRequest<'_> {
     /// # Panics

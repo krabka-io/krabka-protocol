@@ -437,11 +437,20 @@ impl CreatableReplicaAssignment {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatableTopicConfig<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for CreatableTopicConfig<'_> {
+    fn default() -> Self {
+        Self {
+            name: "",
+            value: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl CreatableTopicConfig<'_> {
     /// # Panics

@@ -44,7 +44,7 @@ impl Default for ShareFetchRequest {
     fn default() -> Self {
         Self {
             group_id: None,
-            member_id: None,
+            member_id: Some(String::new()),
             share_session_epoch: 0i32,
             max_wait_ms: 0i32,
             min_bytes: 0i32,
@@ -872,7 +872,10 @@ impl ForgottenTopic {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("groupId".to_string(), ::serde_json::Value::Null);
-    obj.insert("memberId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "memberId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("shareSessionEpoch".to_string(), ::serde_json::json!(0));
     obj.insert("maxWaitMs".to_string(), ::serde_json::json!(0));
     obj.insert("minBytes".to_string(), ::serde_json::json!(0));

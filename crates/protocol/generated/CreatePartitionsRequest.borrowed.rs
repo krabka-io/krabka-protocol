@@ -146,12 +146,22 @@ impl CreatePartitionsRequest<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatePartitionsTopic<'a> {
     pub name: &'a str,
     pub count: i32,
     pub assignments: Option<Vec<CreatePartitionsAssignment>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for CreatePartitionsTopic<'_> {
+    fn default() -> Self {
+        Self {
+            name: "",
+            count: 0i32,
+            assignments: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl CreatePartitionsTopic<'_> {
     /// # Panics

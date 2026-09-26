@@ -40,7 +40,7 @@ pub struct AddRaftVoterRequest<'a> {
 impl Default for AddRaftVoterRequest<'_> {
     fn default() -> Self {
         Self {
-            cluster_id: None,
+            cluster_id: Some(""),
             timeout_ms: 0i32,
             voter_id: 0i32,
             voter_directory_id: crate::primitives::uuid::Uuid::default(),

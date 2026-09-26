@@ -24,7 +24,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShareAcknowledgeRequest {
     pub group_id: Option<String>,
     pub member_id: Option<String>,
@@ -32,6 +32,18 @@ pub struct ShareAcknowledgeRequest {
     pub is_renew_ack: bool,
     pub topics: Vec<AcknowledgeTopic>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ShareAcknowledgeRequest {
+    fn default() -> Self {
+        Self {
+            group_id: None,
+            member_id: Some(String::new()),
+            share_session_epoch: 0i32,
+            is_renew_ack: false,
+            topics: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for ShareAcknowledgeRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -469,7 +481,10 @@ impl AcknowledgementBatch {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("groupId".to_string(), ::serde_json::Value::Null);
-    obj.insert("memberId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "memberId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("shareSessionEpoch".to_string(), ::serde_json::json!(0));
     if version >= 2 {
         obj.insert("isRenewAck".to_string(), ::serde_json::Value::Bool(false));

@@ -141,10 +141,10 @@ impl Default for DeleteAclsFilter<'_> {
     fn default() -> Self {
         Self {
             resource_type_filter: 0i8,
-            resource_name_filter: None,
+            resource_name_filter: Some(""),
             pattern_type_filter: 3i8,
-            principal_filter: None,
-            host_filter: None,
+            principal_filter: Some(""),
+            host_filter: Some(""),
             operation: 0i8,
             permission_type: 0i8,
             unknown_tagged_fields: UnknownTaggedFields::default(),

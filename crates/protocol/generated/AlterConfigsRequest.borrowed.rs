@@ -271,11 +271,20 @@ impl AlterConfigsResource<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterableConfig<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AlterableConfig<'_> {
+    fn default() -> Self {
+        Self {
+            name: "",
+            value: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl AlterableConfig<'_> {
     /// # Panics

@@ -123,7 +123,7 @@ impl DescribeConfigsResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsResult {
     pub error_code: i16,
     pub error_message: Option<String>,
@@ -131,6 +131,18 @@ pub struct DescribeConfigsResult {
     pub resource_name: String,
     pub configs: Vec<DescribeConfigsResourceResult>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsResult {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            resource_type: 0i8,
+            resource_name: String::new(),
+            configs: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeConfigsResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -289,13 +301,13 @@ impl Default for DescribeConfigsResourceResult {
     fn default() -> Self {
         Self {
             name: String::new(),
-            value: None,
+            value: Some(String::new()),
             read_only: false,
             config_source: -1i8,
             is_sensitive: false,
             synonyms: Vec::new(),
             config_type: 0i8,
-            documentation: None,
+            documentation: Some(String::new()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -605,12 +617,22 @@ impl DescribeConfigsResourceResult {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsSynonym {
     pub name: String,
     pub value: Option<String>,
     pub source: i8,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsSynonym {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            value: Some(String::new()),
+            source: 0i8,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeConfigsSynonym {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

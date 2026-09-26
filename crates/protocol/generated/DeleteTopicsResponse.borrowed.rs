@@ -141,13 +141,24 @@ impl DeleteTopicsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletableTopicResult<'a> {
     pub name: Option<&'a str>,
     pub topic_id: crate::primitives::uuid::Uuid,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DeletableTopicResult<'_> {
+    fn default() -> Self {
+        Self {
+            name: Some(""),
+            topic_id: crate::primitives::uuid::Uuid::default(),
+            error_code: 0i16,
+            error_message: None,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DeletableTopicResult<'_> {
     /// # Panics

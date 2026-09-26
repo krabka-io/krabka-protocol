@@ -38,7 +38,7 @@ pub struct AddRaftVoterRequest {
 impl Default for AddRaftVoterRequest {
     fn default() -> Self {
         Self {
-            cluster_id: None,
+            cluster_id: Some(String::new()),
             timeout_ms: 0i32,
             voter_id: 0i32,
             voter_directory_id: crate::primitives::uuid::Uuid::default(),
@@ -311,7 +311,10 @@ impl Listener {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "clusterId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("timeoutMs".to_string(), ::serde_json::json!(0));
     obj.insert("voterId".to_string(), ::serde_json::json!(0));
     obj.insert(

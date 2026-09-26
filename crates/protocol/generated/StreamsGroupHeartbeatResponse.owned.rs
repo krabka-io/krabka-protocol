@@ -24,7 +24,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamsGroupHeartbeatResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
@@ -44,6 +44,27 @@ pub struct StreamsGroupHeartbeatResponse {
     pub endpoint_information_epoch: i32,
     pub partitions_by_user_endpoint: Option<Vec<EndpointToPartitions>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for StreamsGroupHeartbeatResponse {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: None,
+            member_id: String::new(),
+            member_epoch: 0i32,
+            heartbeat_interval_ms: 0i32,
+            acceptable_recovery_lag: 0i32,
+            task_offset_interval_ms: 0i32,
+            status: Some(Vec::new()),
+            active_tasks: None,
+            standby_tasks: None,
+            warmup_tasks: None,
+            endpoint_information_epoch: 0i32,
+            partitions_by_user_endpoint: None,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl StreamsGroupHeartbeatResponse {
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -806,7 +827,7 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     obj.insert("heartbeatIntervalMs".to_string(), ::serde_json::json!(0));
     obj.insert("acceptableRecoveryLag".to_string(), ::serde_json::json!(0));
     obj.insert("taskOffsetIntervalMs".to_string(), ::serde_json::json!(0));
-    obj.insert("status".to_string(), ::serde_json::Value::Null);
+    obj.insert("status".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert("activeTasks".to_string(), ::serde_json::Value::Null);
     obj.insert("standbyTasks".to_string(), ::serde_json::Value::Null);
     obj.insert("warmupTasks".to_string(), ::serde_json::Value::Null);

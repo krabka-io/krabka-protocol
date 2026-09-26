@@ -458,6 +458,12 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
 /// Returns a Rust expression for the default value of an owned field. It
 /// respects the schema-level `default` attribute, for example `"-1"` for
 /// `ControllerId`.
+///
+/// A nullable field with no explicit `"default"` in its schema gets the
+/// *empty* value of its type wrapped in `Some`, matching Kafka's Java message
+/// generator (`FieldSpec.fieldDefaultToJava`): an empty array, an empty
+/// string, or a default-constructed nested struct. Only a field whose schema
+/// explicitly says `"default": "null"` defaults to `None`.
 pub(crate) fn owned_default_expr(f: &FieldSpec, res_map: &HashMap<String, Resolution>) -> String {
     let base = base_type(&f.field_type);
     let is_array = f.field_type.starts_with("[]");
@@ -465,25 +471,42 @@ pub(crate) fn owned_default_expr(f: &FieldSpec, res_map: &HashMap<String, Resolu
     // Kafka schemas use "null" (string) to mean the default is null for nullable fields.
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
-    if nullable {
-        if default_is_null || f.default.is_none() {
-            return "None".into();
-        }
-        if let Some(v) = &f.default {
-            return format!("Some({})", scalar_owned_default(base, v));
-        }
+
+    // Kafka's `FieldSpec.fieldDefaultToJava` hardcodes `null` as the default
+    // for `records` fields unconditionally, regardless of any explicit
+    // schema default. This is a permanent special case, not subject to the
+    // general nullable-default-value rule below. It only applies here when
+    // the field is nullable (`Option<T>` on the Rust side); a `records`
+    // field with no `nullableVersions` (e.g.
+    // `FetchSnapshotResponse.UnalignedRecords`) has no `Option` to put
+    // `None` into, and keeps the empty-value default, matching how Kafka's
+    // Java field (always a plain, nullable-by-language reference) still
+    // requires the caller to set a real value before encoding such a field.
+    if base == "records" && nullable {
+        return "None".into();
     }
-    if is_array {
-        return "Vec::new()".into();
+
+    if nullable && default_is_null {
+        return "None".into();
     }
-    if f.default.is_none()
+
+    let inner = if is_array {
+        "Vec::new()".into()
+    } else if f.default.is_none()
         && let Some(resolution) = res_map.get(base)
     {
-        return format!("{}::default()", resolution.rust_path);
-    }
-    match &f.default {
-        Some(v) => scalar_owned_default(base, v),
-        None => owned_zero(base),
+        format!("{}::default()", resolution.rust_path)
+    } else {
+        match &f.default {
+            Some(v) => scalar_owned_default(base, v),
+            None => owned_zero(base),
+        }
+    };
+
+    if nullable {
+        format!("Some({inner})")
+    } else {
+        inner
     }
 }
 
@@ -523,6 +546,7 @@ fn owned_zero(base: &str) -> String {
         "uint32" => "0u32".into(),
         "float64" => "0.0f64".into(),
         "uuid" => "crate::primitives::uuid::Uuid::default()".into(),
+        "records" => "crate::records::RecordsPayload::default()".into(),
         _ => "Default::default()".into(),
     }
 }
@@ -534,19 +558,28 @@ fn parse_string_default_as_i64(s: &str) -> Option<i64> {
 
 /// Returns true if any field in `fields` has a non-trivial schema default,
 /// which is one that differs from the Rust type's natural Default.
+///
+/// A nullable field's derived `Default` is always `None`, via
+/// `#[derive(Default)]` on `Option<T>`. Since a nullable field with no
+/// explicit `"default": "null"` now needs `Some(<empty>)`, not `None`, it
+/// always needs a manual impl unless the schema says the default is null.
 pub(crate) fn needs_manual_default(fields: &[FieldSpec]) -> bool {
     fields.iter().any(|f| {
         let nullable = is_nullable(f) || matches!(&f.default, Some(serde_json::Value::Null));
+        let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
+            || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
+        if nullable {
+            return !default_is_null;
+        }
         match &f.default {
-            None | Some(serde_json::Value::Null) => false, // null/None → None, same as derive
-            Some(serde_json::Value::String(s)) if s == "null" => false, // "null" string → None
-            Some(serde_json::Value::Bool(false)) if !nullable => false, // false == Default for bool
-            Some(serde_json::Value::String(s)) if s == "false" && !nullable => false,
-            Some(serde_json::Value::String(s)) if s.is_empty() && !nullable => false,
-            Some(serde_json::Value::Number(n)) if n.as_i64() == Some(0) && !nullable => false,
-            Some(serde_json::Value::String(s))
-                if parse_string_default_as_i64(s) == Some(0) && !nullable =>
-            {
+            // unreachable Null case: covered by `nullable` above. `Bool(false)` is
+            // the Default for bool.
+            None | Some(serde_json::Value::Null | serde_json::Value::Bool(false)) => false,
+            Some(serde_json::Value::String(s)) if s == "null" => false,
+            Some(serde_json::Value::String(s)) if s == "false" => false,
+            Some(serde_json::Value::String(s)) if s.is_empty() => false,
+            Some(serde_json::Value::Number(n)) if n.as_i64() == Some(0) => false,
+            Some(serde_json::Value::String(s)) if parse_string_default_as_i64(s) == Some(0) => {
                 false
             }
             Some(_) => true,
@@ -652,13 +685,32 @@ pub(crate) fn wrap_non_nullable_for_option(
 pub(crate) fn tagged_is_default_cond(f: &FieldSpec) -> String {
     let field = name_conv::field_name(&f.name);
     let base = base_type(&f.field_type);
+    let is_array = f.field_type.starts_with("[]");
     let nullable = is_nullable(f) || matches!(&f.default, Some(serde_json::Value::Null));
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
         || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
 
-    if nullable && (default_is_null || f.default.is_none()) {
-        // Default is None; the field is an Option<T>.
+    // `records` fields always default to `None`, per Kafka's generator (see
+    // `owned_default_expr`), when they are nullable (`Option<T>`).
+    if base == "records" && nullable {
         return format!("self.{field}.is_none()");
+    }
+    if nullable && default_is_null {
+        // Explicit `"default": "null"`: the field's default is `None`.
+        return format!("self.{field}.is_none()");
+    }
+    if nullable && f.default.is_none() {
+        // No explicit default: Kafka's implicit default for a nullable
+        // array/string/bytes/struct field is the *empty* value wrapped in
+        // `Some` (see `owned_default_expr`), not `None`. `None` (the wire
+        // null) is a distinct, non-default value here and must still be
+        // tag-encoded.
+        let inner = if is_array {
+            "Vec::new()".to_string()
+        } else {
+            owned_zero(base)
+        };
+        return format!("self.{field} == Some({inner})");
     }
     if let Some(v) = &f.default {
         // Compare against the explicit schema default.
@@ -1140,5 +1192,112 @@ pub(crate) fn version_cond(r: VersionRange, version_var: &str) -> String {
         format!("{version_var} >= {}", r.min)
     } else {
         format!("({}..={}).contains(&{version_var})", r.min, r.max)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// A nullable, tagged array field with no explicit `"default"` in its
+    /// schema — the shape of `MetadataRequest.Topics`, but tagged. Kafka never
+    /// happens to combine `taggedVersions` with a no-default nullable field in
+    /// its own schemas today, but the generator must still get it right: it is
+    /// a plain consequence of KIP-482 tagged fields and the ordinary
+    /// nullable-array default rule, not a special case either omits.
+    fn tagged_nullable_no_default_array_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Owners", "type": "[]string", "versions": "1+",
+            "nullableVersions": "1+", "taggedVersions": "1+", "tag": 5
+        }))
+        .unwrap()
+    }
+
+    /// The bug `chatgpt-codex-connector` flagged on PR #31: a nullable tagged
+    /// field with no explicit default gets `Some(Vec::new())` as its actual
+    /// `Default::default()` value (see `owned_default_expr`), matching
+    /// Kafka's `FieldSpec.fieldDefault` (empty, not null, absent an explicit
+    /// `"default": "null"`). `tagged_is_default_cond` must therefore treat
+    /// `Some(empty)` as the default, not `None` — otherwise a
+    /// default-constructed message needlessly writes the empty-valued tag
+    /// (wasting bytes and diverging from Kafka's own generator, which
+    /// suppresses it), while an explicit `None` (a real wire null, a value
+    /// the schema's own comment gives separate meaning to) would be wrongly
+    /// suppressed instead.
+    #[test]
+    fn tagged_nullable_no_default_field_defaults_to_some_empty_not_none() {
+        let field = tagged_nullable_no_default_array_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(owned_default_expr(&field, &res_map) == "Some(Vec::new())");
+        assert!(tagged_is_default_cond(&field) == "self.owners == Some(Vec::new())");
+    }
+
+    /// A nullable, tagged, non-array scalar field with no explicit default.
+    /// This is the `owned_zero(base)` half of the no-default branch that
+    /// `tagged_nullable_no_default_field_defaults_to_some_empty_not_none`
+    /// does not reach, since that test's field is an array and takes the
+    /// `is_array` arm instead.
+    fn tagged_nullable_no_default_scalar_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Owner", "type": "string", "versions": "1+",
+            "nullableVersions": "1+", "taggedVersions": "1+", "tag": 6
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn tagged_nullable_no_default_scalar_field_defaults_to_some_empty_not_none() {
+        let field = tagged_nullable_no_default_scalar_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(owned_default_expr(&field, &res_map) == "Some(String::new())");
+        assert!(tagged_is_default_cond(&field) == "self.owner == Some(String::new())");
+    }
+
+    /// The bug a review comment on PR #31 flagged: `FieldSpec.fieldDefaultToJava`
+    /// hardcodes `null` as the default for `records` fields unconditionally
+    /// (independent of any explicit schema default), unlike every other
+    /// nullable type. A `records` field with `nullableVersions` (the shape of
+    /// `FetchResponse.PartitionData.records`) must therefore default to
+    /// `None`, not `Some(RecordsPayload::default())` — the empty-value rule
+    /// that applies to every other nullable field with no explicit default.
+    fn nullable_records_field_with_no_default() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "Records", "type": "records", "versions": "0+",
+            "nullableVersions": "0+"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn nullable_records_field_always_defaults_to_none() {
+        let field = nullable_records_field_with_no_default();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(owned_default_expr(&field, &res_map) == "None");
+        assert!(tagged_is_default_cond(&field) == "self.records.is_none()");
+    }
+
+    /// A `records` field with no `nullableVersions` at all (the shape of
+    /// `FetchSnapshotResponse.UnalignedRecords`) has no `Option` on the Rust
+    /// side to put `None` into, so it keeps the ordinary empty-value default.
+    fn non_nullable_records_field() -> FieldSpec {
+        serde_json::from_value(serde_json::json!({
+            "name": "UnalignedRecords", "type": "records", "versions": "0+"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn non_nullable_records_field_keeps_empty_default() {
+        let field = non_nullable_records_field();
+        let res_map: HashMap<String, Resolution> = HashMap::new();
+
+        assert!(
+            owned_default_expr(&field, &res_map) == "crate::records::RecordsPayload::default()"
+        );
     }
 }

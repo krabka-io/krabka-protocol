@@ -123,13 +123,24 @@ impl DeleteTopicsResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletableTopicResult {
     pub name: Option<String>,
     pub topic_id: crate::primitives::uuid::Uuid,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DeletableTopicResult {
+    fn default() -> Self {
+        Self {
+            name: Some(String::new()),
+            topic_id: crate::primitives::uuid::Uuid::default(),
+            error_code: 0i16,
+            error_message: None,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DeletableTopicResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

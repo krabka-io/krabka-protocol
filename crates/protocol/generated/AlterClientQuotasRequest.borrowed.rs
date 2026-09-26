@@ -252,11 +252,20 @@ impl EntryData<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityData<'a> {
     pub entity_type: &'a str,
     pub entity_name: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EntityData<'_> {
+    fn default() -> Self {
+        Self {
+            entity_type: "",
+            entity_name: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl EntityData<'_> {
     /// # Panics

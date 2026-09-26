@@ -25,12 +25,22 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveRaftVoterRequest<'a> {
     pub cluster_id: Option<&'a str>,
     pub voter_id: i32,
     pub voter_directory_id: crate::primitives::uuid::Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for RemoveRaftVoterRequest<'_> {
+    fn default() -> Self {
+        Self {
+            cluster_id: Some(""),
+            voter_id: 0i32,
+            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl RemoveRaftVoterRequest<'_> {
     /// # Panics

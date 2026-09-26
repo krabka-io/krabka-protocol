@@ -20,10 +20,18 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeUserScramCredentialsRequest {
     pub users: Option<Vec<UserName>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeUserScramCredentialsRequest {
+    fn default() -> Self {
+        Self {
+            users: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DescribeUserScramCredentialsRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -187,7 +195,7 @@ impl UserName {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("users".to_string(), ::serde_json::Value::Null);
+    obj.insert("users".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeUserScramCredentialsRequest {

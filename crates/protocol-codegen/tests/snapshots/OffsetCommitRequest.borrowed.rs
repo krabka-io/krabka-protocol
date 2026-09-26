@@ -336,7 +336,7 @@ impl<'a> Default for OffsetCommitRequestPartition<'a> {
             partition_index: 0i32,
             committed_offset: 0i64,
             committed_leader_epoch: -1i32,
-            committed_metadata: None,
+            committed_metadata: Some(""),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

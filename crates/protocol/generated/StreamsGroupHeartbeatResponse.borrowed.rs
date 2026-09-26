@@ -26,7 +26,7 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamsGroupHeartbeatResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
@@ -46,6 +46,27 @@ pub struct StreamsGroupHeartbeatResponse<'a> {
     pub endpoint_information_epoch: i32,
     pub partitions_by_user_endpoint: Option<Vec<EndpointToPartitions<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for StreamsGroupHeartbeatResponse<'_> {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: None,
+            member_id: "",
+            member_epoch: 0i32,
+            heartbeat_interval_ms: 0i32,
+            acceptable_recovery_lag: 0i32,
+            task_offset_interval_ms: 0i32,
+            status: Some(Vec::new()),
+            active_tasks: None,
+            standby_tasks: None,
+            warmup_tasks: None,
+            endpoint_information_epoch: 0i32,
+            partitions_by_user_endpoint: None,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl<'a> StreamsGroupHeartbeatResponse<'a> {
     /// # Panics

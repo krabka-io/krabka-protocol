@@ -45,7 +45,7 @@ impl Default for ShareFetchRequest<'_> {
     fn default() -> Self {
         Self {
             group_id: None,
-            member_id: None,
+            member_id: Some(""),
             share_session_epoch: 0i32,
             max_wait_ms: 0i32,
             min_bytes: 0i32,

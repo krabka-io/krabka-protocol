@@ -34,7 +34,7 @@ impl Default for ElectLeadersRequest {
     fn default() -> Self {
         Self {
             election_type: 0i8,
-            topic_partitions: None,
+            topic_partitions: Some(Vec::new()),
             timeout_ms: 60_000i32,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -259,7 +259,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     if version >= 1 {
         obj.insert("electionType".to_string(), ::serde_json::json!(0));
     }
-    obj.insert("topicPartitions".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "topicPartitions".to_string(),
+        ::serde_json::Value::Array(vec![]),
+    );
     obj.insert("timeoutMs".to_string(), ::serde_json::json!(60_000));
     ::serde_json::Value::Object(obj)
 }

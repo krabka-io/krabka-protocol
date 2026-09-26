@@ -45,7 +45,7 @@ impl Default for JoinGroupResponse {
             error_code: 0i16,
             generation_id: -1i32,
             protocol_type: None,
-            protocol_name: None,
+            protocol_name: Some(String::new()),
             leader: String::new(),
             skip_assignment: false,
             member_id: String::new(),
@@ -563,11 +563,7 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     }
     obj.insert(
         "protocolName".to_string(),
-        if version >= 7 {
-            ::serde_json::Value::Null
-        } else {
-            ::serde_json::Value::String(String::new())
-        },
+        ::serde_json::Value::String(String::new()),
     );
     obj.insert(
         "leader".to_string(),

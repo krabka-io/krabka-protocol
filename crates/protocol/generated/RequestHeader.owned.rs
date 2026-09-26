@@ -22,13 +22,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestHeader {
     pub request_api_key: i16,
     pub request_api_version: i16,
     pub correlation_id: i32,
     pub client_id: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for RequestHeader {
+    fn default() -> Self {
+        Self {
+            request_api_key: 0i16,
+            request_api_version: 0i16,
+            correlation_id: 0i32,
+            client_id: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for RequestHeader {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -156,7 +167,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     obj.insert("requestApiVersion".to_string(), ::serde_json::json!(0));
     obj.insert("correlationId".to_string(), ::serde_json::json!(0));
     if version >= 1 {
-        obj.insert("clientId".to_string(), ::serde_json::Value::Null);
+        obj.insert(
+            "clientId".to_string(),
+            ::serde_json::Value::String(String::new()),
+        );
     }
     ::serde_json::Value::Object(obj)
 }

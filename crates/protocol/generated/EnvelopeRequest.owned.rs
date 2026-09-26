@@ -22,12 +22,22 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvelopeRequest {
     pub request_data: ::bytes::Bytes,
     pub request_principal: Option<::bytes::Bytes>,
     pub client_host_address: ::bytes::Bytes,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EnvelopeRequest {
+    fn default() -> Self {
+        Self {
+            request_data: bytes::Bytes::new(),
+            request_principal: Some(bytes::Bytes::new()),
+            client_host_address: bytes::Bytes::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for EnvelopeRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -160,7 +170,10 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
         "requestData".to_string(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("requestPrincipal".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "requestPrincipal".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert(
         "clientHostAddress".to_string(),
         ::serde_json::Value::String(String::new()),

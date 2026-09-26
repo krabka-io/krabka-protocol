@@ -39,7 +39,7 @@ impl Default for AlterPartitionReassignmentsResponse {
             throttle_time_ms: 0i32,
             allow_replication_factor_change: true,
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(String::new()),
             responses: Vec::new(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -285,12 +285,22 @@ impl ReassignableTopicResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReassignablePartitionResponse {
     pub partition_index: i32,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ReassignablePartitionResponse {
+    fn default() -> Self {
+        Self {
+            partition_index: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for ReassignablePartitionResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -391,7 +401,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
         );
     }
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "errorMessage".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("responses".to_string(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

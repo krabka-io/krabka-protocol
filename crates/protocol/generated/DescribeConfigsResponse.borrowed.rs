@@ -141,7 +141,7 @@ impl DescribeConfigsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsResult<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
@@ -149,6 +149,18 @@ pub struct DescribeConfigsResult<'a> {
     pub resource_name: &'a str,
     pub configs: Vec<DescribeConfigsResourceResult<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsResult<'_> {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(""),
+            resource_type: 0i8,
+            resource_name: "",
+            configs: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeConfigsResult<'_> {
     /// # Panics
@@ -326,13 +338,13 @@ impl Default for DescribeConfigsResourceResult<'_> {
     fn default() -> Self {
         Self {
             name: "",
-            value: None,
+            value: Some(""),
             read_only: false,
             config_source: -1i8,
             is_sensitive: false,
             synonyms: Vec::new(),
             config_type: 0i8,
-            documentation: None,
+            documentation: Some(""),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -664,12 +676,22 @@ impl DescribeConfigsResourceResult<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeConfigsSynonym<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
     pub source: i8,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeConfigsSynonym<'_> {
+    fn default() -> Self {
+        Self {
+            name: "",
+            value: Some(""),
+            source: 0i8,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeConfigsSynonym<'_> {
     /// # Panics

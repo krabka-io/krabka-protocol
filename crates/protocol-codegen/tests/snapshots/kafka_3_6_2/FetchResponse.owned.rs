@@ -253,7 +253,7 @@ impl Default for PartitionData {
             high_watermark: 0i64,
             last_stable_offset: -1i64,
             log_start_offset: -1i64,
-            aborted_transactions: None,
+            aborted_transactions: Some(Vec::new()),
             preferred_read_replica: -1i32,
             records: None,
             diverging_epoch: EpochEndOffset::default(),
@@ -1001,7 +1001,7 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
                         });
                     }
                     if version >= 4 {
-                        m.insert("abortedTransactions".to_string(), ::serde_json::Value::Null);
+                        m.insert("abortedTransactions".to_string(), ::serde_json::Value::Array(vec![]));
                     }
                     if version >= 11 {
                         m.insert("preferredReadReplica".to_string(), ::serde_json::json!(-1));

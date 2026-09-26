@@ -26,13 +26,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateFeaturesResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub results: Vec<UpdatableFeatureResult<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for UpdateFeaturesResponse<'_> {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            results: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl UpdateFeaturesResponse<'_> {
     /// # Panics
@@ -181,12 +192,22 @@ impl UpdateFeaturesResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdatableFeatureResult<'a> {
     pub feature: &'a str,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for UpdatableFeatureResult<'_> {
+    fn default() -> Self {
+        Self {
+            feature: "",
+            error_code: 0i16,
+            error_message: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl UpdatableFeatureResult<'_> {
     /// # Panics

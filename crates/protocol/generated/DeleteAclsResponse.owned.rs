@@ -125,12 +125,22 @@ impl DeleteAclsResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeleteAclsFilterResult {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub matching_acls: Vec<DeleteAclsMatchingAcl>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DeleteAclsFilterResult {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            matching_acls: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for DeleteAclsFilterResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -256,7 +266,7 @@ impl Default for DeleteAclsMatchingAcl {
     fn default() -> Self {
         Self {
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(String::new()),
             resource_type: 0i8,
             resource_name: String::new(),
             pattern_type: 3i8,

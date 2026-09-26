@@ -122,11 +122,20 @@ impl DescribeShareGroupOffsetsRequest<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeShareGroupOffsetsRequestGroup<'a> {
     pub group_id: &'a str,
     pub topics: Option<Vec<DescribeShareGroupOffsetsRequestTopic<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeShareGroupOffsetsRequestGroup<'_> {
+    fn default() -> Self {
+        Self {
+            group_id: "",
+            topics: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeShareGroupOffsetsRequestGroup<'_> {
     /// # Panics

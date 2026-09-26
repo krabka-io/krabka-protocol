@@ -37,7 +37,7 @@ pub struct InitProducerIdRequest {
 impl Default for InitProducerIdRequest {
     fn default() -> Self {
         Self {
-            transactional_id: None,
+            transactional_id: Some(String::new()),
             transaction_timeout_ms: 0i32,
             producer_id: -1i64,
             producer_epoch: -1i16,
@@ -186,7 +186,10 @@ impl InitProducerIdRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("transactionalId".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "transactionalId".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("transactionTimeoutMs".to_string(), ::serde_json::json!(0));
     if version >= 3 {
         obj.insert("producerId".to_string(), ::serde_json::json!(-1));

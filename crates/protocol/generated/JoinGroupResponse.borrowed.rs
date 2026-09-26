@@ -46,7 +46,7 @@ impl Default for JoinGroupResponse<'_> {
             error_code: 0i16,
             generation_id: -1i32,
             protocol_type: None,
-            protocol_name: None,
+            protocol_name: Some(""),
             leader: "",
             skip_assignment: false,
             member_id: "",

@@ -124,12 +124,22 @@ impl DescribeClientQuotasRequest {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentData {
     pub entity_type: String,
     pub match_type: i8,
     pub match_: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ComponentData {
+    fn default() -> Self {
+        Self {
+            entity_type: String::new(),
+            match_type: 0i8,
+            match_: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for ComponentData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

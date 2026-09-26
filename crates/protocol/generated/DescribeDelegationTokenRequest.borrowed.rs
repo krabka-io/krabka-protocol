@@ -19,10 +19,18 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeDelegationTokenRequest<'a> {
     pub owners: Option<Vec<DescribeDelegationTokenOwner<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeDelegationTokenRequest<'_> {
+    fn default() -> Self {
+        Self {
+            owners: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeDelegationTokenRequest<'_> {
     /// # Panics

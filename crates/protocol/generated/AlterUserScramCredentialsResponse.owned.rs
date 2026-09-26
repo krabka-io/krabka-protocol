@@ -123,12 +123,22 @@ impl AlterUserScramCredentialsResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterUserScramCredentialsResult {
     pub user: String,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AlterUserScramCredentialsResult {
+    fn default() -> Self {
+        Self {
+            user: String::new(),
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for AlterUserScramCredentialsResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

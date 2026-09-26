@@ -24,12 +24,22 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvelopeRequest<'a> {
     pub request_data: &'a [u8],
     pub request_principal: Option<&'a [u8]>,
     pub client_host_address: &'a [u8],
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EnvelopeRequest<'_> {
+    fn default() -> Self {
+        Self {
+            request_data: &[],
+            request_principal: Some(&[]),
+            client_host_address: &[],
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl EnvelopeRequest<'_> {
     /// # Panics

@@ -27,13 +27,24 @@ pub const FLEXIBLE_MIN: i16 = 6;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetFetchRequest<'a> {
     pub group_id: &'a str,
     pub topics: Option<Vec<OffsetFetchRequestTopic<'a>>>,
     pub groups: Vec<OffsetFetchRequestGroup<'a>>,
     pub require_stable: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for OffsetFetchRequest<'_> {
+    fn default() -> Self {
+        Self {
+            group_id: "",
+            topics: Some(Vec::new()),
+            groups: Vec::new(),
+            require_stable: false,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl OffsetFetchRequest<'_> {
     /// # Panics
@@ -365,7 +376,7 @@ impl Default for OffsetFetchRequestGroup<'_> {
             group_id: "",
             member_id: None,
             member_epoch: -1i32,
-            topics: None,
+            topics: Some(Vec::new()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }

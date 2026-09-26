@@ -25,13 +25,24 @@ pub const FLEXIBLE_MIN: i16 = 2;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaslAuthenticateResponse<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub auth_bytes: &'a [u8],
     pub session_lifetime_ms: i64,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for SaslAuthenticateResponse<'_> {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(""),
+            auth_bytes: &[],
+            session_lifetime_ms: 0i64,
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl SaslAuthenticateResponse<'_> {
     /// # Panics

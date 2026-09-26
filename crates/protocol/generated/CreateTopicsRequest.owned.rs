@@ -386,11 +386,20 @@ impl CreatableReplicaAssignment {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatableTopicConfig {
     pub name: String,
     pub value: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for CreatableTopicConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            value: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for CreatableTopicConfig {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

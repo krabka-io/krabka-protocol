@@ -123,12 +123,22 @@ impl AlterClientQuotasResponse {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryData {
     pub error_code: i16,
     pub error_message: Option<String>,
     pub entity: Vec<EntityData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EntryData {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            entity: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for EntryData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -232,11 +242,20 @@ impl EntryData {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityData {
     pub entity_type: String,
     pub entity_name: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for EntityData {
+    fn default() -> Self {
+        Self {
+            entity_type: String::new(),
+            entity_name: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for EntityData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {

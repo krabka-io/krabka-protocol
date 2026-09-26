@@ -324,7 +324,7 @@ impl Default for MetadataResponseTopic {
     fn default() -> Self {
         Self {
             error_code: 0i16,
-            name: None,
+            name: Some(String::new()),
             topic_id: crate::primitives::uuid::Uuid::default(),
             is_internal: false,
             partitions: Vec::new(),

@@ -50,7 +50,7 @@ impl Default for RegisterBrokerRecord {
             broker_epoch: 0i64,
             end_points: Vec::new(),
             features: Vec::new(),
-            rack: None,
+            rack: Some(String::new()),
             fenced: true,
             in_controlled_shutdown: false,
             log_dirs: Vec::new(),
@@ -747,7 +747,10 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     obj.insert("brokerEpoch".to_string(), ::serde_json::json!(0));
     obj.insert("endPoints".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert("features".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("rack".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "rack".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     obj.insert("fenced".to_string(), ::serde_json::Value::Bool(true));
     if version >= 1 {
         obj.insert(
@@ -792,7 +795,10 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     m.insert("brokerEpoch".to_string(), ::serde_json::json!(0));
     m.insert("endPoints".to_string(), ::serde_json::Value::Array(vec![]));
     m.insert("features".to_string(), ::serde_json::Value::Array(vec![]));
-    m.insert("rack".to_string(), ::serde_json::Value::Null);
+    m.insert(
+        "rack".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     m.insert("fenced".to_string(), ::serde_json::Value::Bool(true));
     if version >= 1 {
         m.insert(

@@ -26,13 +26,24 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeUserScramCredentialsResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub results: Vec<DescribeUserScramCredentialsResult<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeUserScramCredentialsResponse<'_> {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(""),
+            results: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeUserScramCredentialsResponse<'_> {
     /// # Panics
@@ -183,13 +194,24 @@ impl DescribeUserScramCredentialsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeUserScramCredentialsResult<'a> {
     pub user: &'a str,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub credential_infos: Vec<CredentialInfo>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeUserScramCredentialsResult<'_> {
+    fn default() -> Self {
+        Self {
+            user: "",
+            error_code: 0i16,
+            error_message: Some(""),
+            credential_infos: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeUserScramCredentialsResult<'_> {
     /// # Panics

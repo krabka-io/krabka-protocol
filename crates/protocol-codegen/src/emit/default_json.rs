@@ -105,28 +105,33 @@ fn version_cond(vr: VersionRange) -> Option<String> {
 /// The goal is to match what `MessageName::default()` encodes so that the
 /// oracle produces the same bytes as the Rust implementation.
 ///
-/// Key rules:
-/// - Nullable non-array fields with no default: Rust `Default` produces
-///   `None`, which encodes as null, so emit `null` for nullable versions.
-/// - Nullable array fields with no default: Rust `Default` produces `None`,
-///   which encodes as a null array of -1, so emit `null` for nullable
-///   versions. For non-nullable versions, emit the empty array `[]`.
+/// Key rules, matching Kafka's Java message generator
+/// (`FieldSpec.fieldDefaultToJava`):
+/// - Fields with an explicit `"default": "null"`: Rust `Default` produces
+///   `None`, so emit `null`, staying version-aware for split nullability
+///   ranges (null only where the field is actually nullable, the type's zero
+///   value otherwise).
+/// - Nullable fields with NO explicit default (array, string, or struct):
+///   Rust `Default` now produces the *empty* value (`Some(<empty>)`), not
+///   `None`, so emit the type's zero value for every version, not just the
+///   non-nullable ones.
 /// - Non-nullable array fields: always `[]`.
-/// - Fields with an explicit null default: emit `null`, and stay version-aware
-///   for split nullability ranges.
 pub(crate) fn json_value_expr_versioned(f: &FieldSpec) -> String {
     let is_array = f.field_type.starts_with("[]");
     let default_is_null = matches!(&f.default, Some(serde_json::Value::Null))
-        || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null");
+        || matches!(&f.default, Some(serde_json::Value::String(s)) if s == "null")
+        // Kafka's `FieldSpec.fieldDefaultToJava` hardcodes `null` as the
+        // default for `records` fields unconditionally, regardless of any
+        // explicit schema default. This is a permanent special case, not
+        // subject to the general nullable-default-value rule below. It only
+        // applies when the field is nullable in some version: the JVM's
+        // JSON-to-Data converter rejects a JSON `null` for a `records` field
+        // that has no `nullableVersions` at all (e.g.
+        // `FetchSnapshotResponse.UnalignedRecords`), which keeps the
+        // type-zero (empty base64) fallback below.
+        || (base_type(&f.field_type) == "records" && f.nullable_versions.is_some());
 
-    // Fields where Rust Default produces None:
-    // - explicit null default
-    // - nullable non-array fields with no default (None is the zero)
-    // - nullable array fields with no default (None is the zero)
-    let rust_default_is_none =
-        default_is_null || (f.nullable_versions.is_some() && f.default.is_none());
-
-    if rust_default_is_none {
+    if default_is_null {
         if let Some(nv) = f.nullable_versions {
             // Check if nullable for ALL valid versions (trivial case: no branching needed).
             let always_nullable =
@@ -293,4 +298,43 @@ fn is_numeric_type(t: &str) -> bool {
         t,
         "int8" | "int16" | "int32" | "int64" | "uint16" | "uint32" | "float64"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use assert2::assert;
+
+    use super::*;
+
+    /// The JSON-oracle half of the `records`-null-default bug a review
+    /// comment on PR #31 flagged: Kafka's `FieldSpec.fieldDefaultToJava`
+    /// hardcodes `null` as the default for `records` fields unconditionally.
+    /// A nullable `records` field (the shape of
+    /// `FetchResponse.PartitionData.records`) must emit `Value::Null`, not
+    /// the empty-string placeholder the general nullable-default-value rule
+    /// would otherwise produce.
+    #[test]
+    fn nullable_records_field_emits_json_null() {
+        let field: FieldSpec = serde_json::from_value(serde_json::json!({
+            "name": "Records", "type": "records", "versions": "0+",
+            "nullableVersions": "0+"
+        }))
+        .unwrap();
+
+        assert!(json_value_expr_versioned(&field) == "::serde_json::Value::Null");
+    }
+
+    /// A `records` field with no `nullableVersions` at all (the shape of
+    /// `FetchSnapshotResponse.UnalignedRecords`) keeps the empty-string
+    /// placeholder: the JVM's JSON-to-Data converter rejects a JSON `null`
+    /// for a `records` field it does not consider nullable.
+    #[test]
+    fn non_nullable_records_field_keeps_empty_string_placeholder() {
+        let field: FieldSpec = serde_json::from_value(serde_json::json!({
+            "name": "UnalignedRecords", "type": "records", "versions": "0+"
+        }))
+        .unwrap();
+
+        assert!(json_value_expr_versioned(&field) == "::serde_json::Value::String(String::new())");
+    }
 }

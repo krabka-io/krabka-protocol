@@ -23,12 +23,22 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddRaftVoterResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AddRaftVoterResponse {
+    fn default() -> Self {
+        Self {
+            throttle_time_ms: 0i32,
+            error_code: 0i16,
+            error_message: Some(String::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl Encode for AddRaftVoterResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
@@ -135,6 +145,9 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert(
+        "errorMessage".to_string(),
+        ::serde_json::Value::String(String::new()),
+    );
     ::serde_json::Value::Object(obj)
 }

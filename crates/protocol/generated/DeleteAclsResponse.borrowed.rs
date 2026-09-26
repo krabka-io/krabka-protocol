@@ -143,12 +143,22 @@ impl DeleteAclsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeleteAclsFilterResult<'a> {
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub matching_acls: Vec<DeleteAclsMatchingAcl<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DeleteAclsFilterResult<'_> {
+    fn default() -> Self {
+        Self {
+            error_code: 0i16,
+            error_message: Some(""),
+            matching_acls: Vec::new(),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DeleteAclsFilterResult<'_> {
     /// # Panics
@@ -291,7 +301,7 @@ impl Default for DeleteAclsMatchingAcl<'_> {
     fn default() -> Self {
         Self {
             error_code: 0i16,
-            error_message: None,
+            error_message: Some(""),
             resource_type: 0i8,
             resource_name: "",
             pattern_type: 3i8,

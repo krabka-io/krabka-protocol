@@ -146,12 +146,22 @@ impl AlterUserScramCredentialsResponse<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterUserScramCredentialsResult<'a> {
     pub user: &'a str,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for AlterUserScramCredentialsResult<'_> {
+    fn default() -> Self {
+        Self {
+            user: "",
+            error_code: 0i16,
+            error_message: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl AlterUserScramCredentialsResult<'_> {
     /// # Panics

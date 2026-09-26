@@ -144,12 +144,22 @@ impl DescribeClientQuotasRequest<'_> {
         m
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentData<'a> {
     pub entity_type: &'a str,
     pub match_type: i8,
     pub match_: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for ComponentData<'_> {
+    fn default() -> Self {
+        Self {
+            entity_type: "",
+            match_type: 0i8,
+            match_: Some(""),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl ComponentData<'_> {
     /// # Panics

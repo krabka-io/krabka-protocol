@@ -51,7 +51,7 @@ impl Default for BrokerRegistrationRequest<'_> {
             incarnation_id: crate::primitives::uuid::Uuid::default(),
             listeners: Vec::new(),
             features: Vec::new(),
-            rack: None,
+            rack: Some(""),
             is_migrating_zk_broker: false,
             log_dirs: Vec::new(),
             previous_broker_epoch: -1i64,

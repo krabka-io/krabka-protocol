@@ -19,10 +19,18 @@ pub const FLEXIBLE_MIN: i16 = 0;
 pub fn is_flexible(version: i16) -> bool {
     version >= FLEXIBLE_MIN
 }
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeUserScramCredentialsRequest<'a> {
     pub users: Option<Vec<UserName<'a>>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
+}
+impl Default for DescribeUserScramCredentialsRequest<'_> {
+    fn default() -> Self {
+        Self {
+            users: Some(Vec::new()),
+            unknown_tagged_fields: UnknownTaggedFields::default(),
+        }
+    }
 }
 impl DescribeUserScramCredentialsRequest<'_> {
     /// # Panics
