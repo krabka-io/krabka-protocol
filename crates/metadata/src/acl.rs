@@ -18,6 +18,11 @@ pub enum ResourceType {
     /// `Describe` operation is externally grantable, because `Create`,
     /// `Renew`, and `Expire` are implicit on ownership.
     DelegationToken,
+    /// KIP-373 users. The resource name is a user principal name, without the
+    /// `User:` prefix. `CreateTokens` and `DescribeTokens` on a `User`
+    /// resource let one principal create or describe delegation tokens owned
+    /// by another. Kafka wire discriminant 7.
+    User,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -45,6 +50,12 @@ pub enum AclOperation {
     DescribeConfigs,
     AlterConfigs,
     IdempotentWrite,
+    /// KIP-373: permission to create a delegation token on behalf of the
+    /// `User` resource. Kafka wire discriminant 13.
+    CreateTokens,
+    /// KIP-373: permission to describe the delegation tokens the `User`
+    /// resource owns. Kafka wire discriminant 14.
+    DescribeTokens,
     /// KIP-939: permission to take part in two-phase commit (2PC) on a
     /// `TransactionalId`. An `InitProducerId` that carries `enable2Pc=true`
     /// needs it in addition to `Write`. Kafka wire discriminant 15.
@@ -125,6 +136,24 @@ mod tests {
             permission_type: PermissionType::Allow,
         };
         assert2::assert!(rt(&entry) == entry);
+    }
+
+    /// KIP-373's `User` resource and token operations survive the metadata
+    /// log's serde encoding like every other variant.
+    #[test]
+    fn kip_373_entries_round_trip() {
+        for operation in [AclOperation::CreateTokens, AclOperation::DescribeTokens] {
+            let entry = AclEntry {
+                resource_type: ResourceType::User,
+                resource_name: "alice".into(),
+                pattern_type: PatternType::Literal,
+                principal: "User:bob".into(),
+                host: "*".into(),
+                operation,
+                permission_type: PermissionType::Allow,
+            };
+            assert2::assert!(rt(&entry) == entry);
+        }
     }
 
     #[test]

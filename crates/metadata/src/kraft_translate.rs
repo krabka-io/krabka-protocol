@@ -165,6 +165,7 @@ fn resource_type_to_wire(rt: ResourceType) -> i8 {
         ResourceType::Cluster => 4,
         ResourceType::TransactionalId => 5,
         ResourceType::DelegationToken => 6,
+        ResourceType::User => 7,
     }
 }
 
@@ -175,6 +176,7 @@ fn resource_type_from_wire(b: i8) -> Result<ResourceType, TranslateError> {
         4 => Ok(ResourceType::Cluster),
         5 => Ok(ResourceType::TransactionalId),
         6 => Ok(ResourceType::DelegationToken),
+        7 => Ok(ResourceType::User),
         other => Err(TranslateError::Invalid {
             field: "acl resource_type",
             detail: format!("unknown wire byte {other}"),
@@ -213,6 +215,8 @@ fn operation_to_wire(op: AclOperation) -> i8 {
         AclOperation::DescribeConfigs => 10,
         AclOperation::AlterConfigs => 11,
         AclOperation::IdempotentWrite => 12,
+        AclOperation::CreateTokens => 13,
+        AclOperation::DescribeTokens => 14,
         AclOperation::TwoPhaseCommit => 15,
     }
 }
@@ -230,6 +234,8 @@ fn operation_from_wire(b: i8) -> Result<AclOperation, TranslateError> {
         10 => Ok(AclOperation::DescribeConfigs),
         11 => Ok(AclOperation::AlterConfigs),
         12 => Ok(AclOperation::IdempotentWrite),
+        13 => Ok(AclOperation::CreateTokens),
+        14 => Ok(AclOperation::DescribeTokens),
         15 => Ok(AclOperation::TwoPhaseCommit),
         other => Err(TranslateError::Invalid {
             field: "acl operation",
@@ -2417,6 +2423,78 @@ mod tests {
             permission_type: PermissionType::Allow,
         });
         round_trip(&rec, &img());
+    }
+
+    /// Every ACL resource type and operation maps to Kafka's `i8`
+    /// discriminant and back through a full `AccessControlEntryRecord`
+    /// round trip, KIP-373's `USER` (7), `CREATE_TOKENS` (13) and
+    /// `DESCRIBE_TOKENS` (14) included.
+    #[test]
+    fn acl_enums_map_to_kafka_wire_codes() {
+        for (resource_type, wire) in [
+            (ResourceType::Topic, 2_i8),
+            (ResourceType::Group, 3),
+            (ResourceType::Cluster, 4),
+            (ResourceType::TransactionalId, 5),
+            (ResourceType::DelegationToken, 6),
+            (ResourceType::User, 7),
+        ] {
+            check!(
+                (
+                    resource_type_to_wire(resource_type),
+                    resource_type_from_wire(wire).unwrap(),
+                ) == (wire, resource_type)
+            );
+        }
+        for (operation, wire) in [
+            (AclOperation::All, 2_i8),
+            (AclOperation::Read, 3),
+            (AclOperation::Write, 4),
+            (AclOperation::Create, 5),
+            (AclOperation::Delete, 6),
+            (AclOperation::Alter, 7),
+            (AclOperation::Describe, 8),
+            (AclOperation::ClusterAction, 9),
+            (AclOperation::DescribeConfigs, 10),
+            (AclOperation::AlterConfigs, 11),
+            (AclOperation::IdempotentWrite, 12),
+            (AclOperation::CreateTokens, 13),
+            (AclOperation::DescribeTokens, 14),
+            (AclOperation::TwoPhaseCommit, 15),
+        ] {
+            check!(
+                (
+                    operation_to_wire(operation),
+                    operation_from_wire(wire).unwrap()
+                ) == (wire, operation)
+            );
+        }
+        check!(resource_type_from_wire(8).is_err());
+        check!(operation_from_wire(16).is_err());
+    }
+
+    /// KIP-373: `CREATE_TOKENS` and `DESCRIBE_TOKENS` granted on a `USER`
+    /// resource survive the record-to-wire round trip.
+    #[test]
+    fn access_control_entry_user_token_operations_round_trip() {
+        for operation in [AclOperation::CreateTokens, AclOperation::DescribeTokens] {
+            let rec = MetadataRecord::V1AccessControlEntry(AclEntry {
+                resource_type: ResourceType::User,
+                resource_name: "alice".into(),
+                pattern_type: PatternType::Literal,
+                principal: "User:token-requester".into(),
+                host: "*".into(),
+                operation,
+                permission_type: PermissionType::Allow,
+            });
+            let value = to_kraft_values(&rec, &img()).unwrap().remove(0);
+            check!(from_kraft_value(&value, &img()).unwrap() == rec);
+            let KraftMetadataRecord::AccessControlEntry(wire) = to_kraft(&rec, &img()).unwrap()
+            else {
+                panic!("expected an access control entry");
+            };
+            check!((wire.resource_type, wire.operation) == (7, operation_to_wire(operation)));
+        }
     }
 
     #[test]
