@@ -206,6 +206,8 @@ pub mod txn_offset_commit_response;
 pub mod unregister_broker_record;
 pub mod unregister_broker_request;
 pub mod unregister_broker_response;
+pub mod unregister_controller_request;
+pub mod unregister_controller_response;
 pub mod update_features_request;
 pub mod update_features_response;
 pub mod update_raft_voter_request;

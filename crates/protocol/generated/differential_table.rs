@@ -3547,6 +3547,18 @@ pub const CASES: &[Case] = &[
         kind: Kind::Response,
     },
     Case {
+        name: "UnregisterControllerRequest",
+        api_key: 94,
+        version: 0,
+        kind: Kind::Request,
+    },
+    Case {
+        name: "UnregisterControllerResponse",
+        api_key: 94,
+        version: 0,
+        kind: Kind::Response,
+    },
+    Case {
         name: "UpdateFeaturesRequest",
         api_key: 57,
         version: 0,
@@ -4866,6 +4878,18 @@ fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        "UnregisterControllerRequest" => {
+            let msg = krabka_protocol::owned::unregister_controller_request::UnregisterControllerRequest::default();
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
+        "UnregisterControllerResponse" => {
+            let msg = krabka_protocol::owned::unregister_controller_response::UnregisterControllerResponse::default();
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
         "UpdateFeaturesRequest" => {
             let msg =
                 krabka_protocol::owned::update_features_request::UpdateFeaturesRequest::default();
@@ -4894,6 +4918,11 @@ fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn encode_default_22(name: &str, version: i16) -> Option<Vec<u8>> {
+    Some(match name {
         "VoteRequest" => {
             let msg = krabka_protocol::owned::vote_request::VoteRequest::default();
             let mut buf = BytesMut::new();
@@ -4906,11 +4935,6 @@ fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn encode_default_22(name: &str, version: i16) -> Option<Vec<u8>> {
-    Some(match name {
         "WriteShareGroupStateRequest" => {
             let msg = krabka_protocol::owned::write_share_group_state_request::WriteShareGroupStateRequest::default();
             let mut buf = BytesMut::new();
@@ -5431,6 +5455,12 @@ fn default_json_for_2(name: &str, version: i16) -> Option<::serde_json::Value> {
         "UnregisterBrokerResponse" => {
             krabka_protocol::owned::unregister_broker_response::default_json(version)
         }
+        "UnregisterControllerRequest" => {
+            krabka_protocol::owned::unregister_controller_request::default_json(version)
+        }
+        "UnregisterControllerResponse" => {
+            krabka_protocol::owned::unregister_controller_response::default_json(version)
+        }
         "UpdateFeaturesRequest" => {
             krabka_protocol::owned::update_features_request::default_json(version)
         }
@@ -5451,6 +5481,11 @@ fn default_json_for_2(name: &str, version: i16) -> Option<::serde_json::Value> {
         "WriteShareGroupStateResponse" => {
             krabka_protocol::owned::write_share_group_state_response::default_json(version)
         }
+        _ => return None,
+    })
+}
+fn default_json_for_3(name: &str, version: i16) -> Option<::serde_json::Value> {
+    Some(match name {
         "WriteTxnMarkersRequest" => {
             krabka_protocol::owned::write_txn_markers_request::default_json(version)
         }
@@ -5469,6 +5504,7 @@ pub fn default_json_for(name: &str, version: i16) -> ::serde_json::Value {
     result = result.or_else(|| default_json_for_0(name, version));
     result = result.or_else(|| default_json_for_1(name, version));
     result = result.or_else(|| default_json_for_2(name, version));
+    result = result.or_else(|| default_json_for_3(name, version));
     result.unwrap_or_else(|| panic!("unknown message in default_json_for: {name}"))
 }
 #[derive(Debug, Clone, Copy)]
@@ -7991,6 +8027,22 @@ fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        "UnregisterControllerRequest" => {
+            let mut cur = bytes;
+            let msg = krabka_protocol::owned::unregister_controller_request::UnregisterControllerRequest::decode(&mut cur, version).unwrap();
+            assert!(cur.is_empty());
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
+        "UnregisterControllerResponse" => {
+            let mut cur = bytes;
+            let msg = krabka_protocol::owned::unregister_controller_response::UnregisterControllerResponse::decode(&mut cur, version).unwrap();
+            assert!(cur.is_empty());
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
         "UpdateFeaturesRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8015,6 +8067,12 @@ fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
+    use krabka_protocol::Decode;
+    Some(match name {
         "UpdateRaftVoterRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8035,12 +8093,6 @@ fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
-    use krabka_protocol::Decode;
-    Some(match name {
         "VoteRequest" => {
             let mut cur = bytes;
             let msg = krabka_protocol::owned::vote_request::VoteRequest::decode(&mut cur, version)
@@ -8076,6 +8128,12 @@ fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn roundtrip_30(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
+    use krabka_protocol::Decode;
+    Some(match name {
         "WriteTxnMarkersRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8135,6 +8193,7 @@ pub fn roundtrip(name: &str, version: i16, bytes: &[u8]) -> Vec<u8> {
     result = result.or_else(|| roundtrip_27(name, version, bytes));
     result = result.or_else(|| roundtrip_28(name, version, bytes));
     result = result.or_else(|| roundtrip_29(name, version, bytes));
+    result = result.or_else(|| roundtrip_30(name, version, bytes));
     result.unwrap_or_else(|| panic!("unknown message in roundtrip: {name}"))
 }
 const REQUEST_FLEX_MIN: &[(&str, i16)] = &[
@@ -8222,6 +8281,7 @@ const REQUEST_FLEX_MIN: &[(&str, i16)] = &[
     ("SyncGroupRequest", 4),
     ("TxnOffsetCommitRequest", 3),
     ("UnregisterBrokerRequest", 0),
+    ("UnregisterControllerRequest", 0),
     ("UpdateFeaturesRequest", 0),
     ("UpdateRaftVoterRequest", 0),
     ("VoteRequest", 0),
@@ -8312,6 +8372,7 @@ const RESPONSE_FLEX_MIN: &[(&str, i16)] = &[
     ("SyncGroupResponse", 4),
     ("TxnOffsetCommitResponse", 3),
     ("UnregisterBrokerResponse", 0),
+    ("UnregisterControllerResponse", 0),
     ("UpdateFeaturesResponse", 0),
     ("UpdateRaftVoterResponse", 0),
     ("VoteResponse", 0),

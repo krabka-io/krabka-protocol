@@ -193,6 +193,8 @@ pub enum ApiKey {
     DeleteShareGroupOffsets = 92,
     /// `GetReplicaLogInfoRequest` (versions 0–0).
     GetReplicaLogInfo = 93,
+    /// `UnregisterControllerRequest` (versions 0–0).
+    UnregisterController = 94,
 }
 impl ApiKey {
     /// All known API keys, in ascending numeric order.
@@ -287,6 +289,7 @@ impl ApiKey {
         ApiKey::AlterShareGroupOffsets,
         ApiKey::DeleteShareGroupOffsets,
         ApiKey::GetReplicaLogInfo,
+        ApiKey::UnregisterController,
     ];
     /// Resolve from numeric key; returns `None` for unknown keys.
     #[must_use]
@@ -382,6 +385,7 @@ impl ApiKey {
             91 => Some(ApiKey::AlterShareGroupOffsets),
             92 => Some(ApiKey::DeleteShareGroupOffsets),
             93 => Some(ApiKey::GetReplicaLogInfo),
+            94 => Some(ApiKey::UnregisterController),
             _ => None,
         }
     }
