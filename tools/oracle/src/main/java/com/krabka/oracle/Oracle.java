@@ -37,13 +37,15 @@ public final class Oracle {
 
     // Where a "messageName" lookup searches, in order. Kafka appends "Data" to
     // the class name of a request, a response or a header, and not to the
-    // name of a record. The metadata records are in kafka-metadata, and the
-    // remote log metadata records are in kafka-storage.
+    // name of a record. The metadata records are in kafka-metadata, the
+    // remote log metadata records are in kafka-storage, and the group
+    // coordinator records are in kafka-group-coordinator.
     private static final String[] MESSAGE_CLASS_FORMATS = {
         MSG_PKG + "%sData",
         MSG_PKG + "%s",
         "org.apache.kafka.common.metadata.%s",
         "org.apache.kafka.server.log.remote.metadata.storage.generated.%s",
+        "org.apache.kafka.coordinator.group.generated.%s",
     };
 
     public static void main(String[] args) throws Exception {

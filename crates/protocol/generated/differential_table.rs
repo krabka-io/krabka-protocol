@@ -5782,6 +5782,26 @@ pub const TAGGED_CASES: &[TaggedCase] = &[
         version: 1,
     },
     TaggedCase {
+        name: "OffsetCommitValue",
+        version: 0,
+    },
+    TaggedCase {
+        name: "OffsetCommitValue",
+        version: 1,
+    },
+    TaggedCase {
+        name: "OffsetCommitValue",
+        version: 2,
+    },
+    TaggedCase {
+        name: "OffsetCommitValue",
+        version: 3,
+    },
+    TaggedCase {
+        name: "OffsetCommitValue",
+        version: 4,
+    },
+    TaggedCase {
         name: "PartitionChangeRecord",
         version: 0,
     },
@@ -6046,12 +6066,16 @@ fn encode_tagged_fixture_1(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>
                 encode_with(&borrowed, version),
             )
         }
-        "PartitionChangeRecord" => {
-            let owned = krabka_protocol::owned::partition_change_record::tagged_fixture();
-            let max = krabka_protocol::owned::partition_change_record::MAX_VERSION;
+        "OffsetCommitValue" => {
+            let owned = krabka_protocol::owned::offset_commit_value::tagged_fixture();
+            let max = krabka_protocol::owned::offset_commit_value::MAX_VERSION;
             let full = encode_with(&owned, max);
             let mut cur = full.as_slice();
-            let borrowed = krabka_protocol::borrowed::partition_change_record::PartitionChangeRecord::decode_borrow(&mut cur, max).unwrap();
+            let borrowed =
+                krabka_protocol::borrowed::offset_commit_value::OffsetCommitValue::decode_borrow(
+                    &mut cur, max,
+                )
+                .unwrap();
             assert2::assert!(cur.is_empty());
             (
                 encode_with(&owned, version),
@@ -6064,6 +6088,18 @@ fn encode_tagged_fixture_1(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>
 fn encode_tagged_fixture_2(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
     use krabka_protocol::DecodeBorrow;
     Some(match name {
+        "PartitionChangeRecord" => {
+            let owned = krabka_protocol::owned::partition_change_record::tagged_fixture();
+            let max = krabka_protocol::owned::partition_change_record::MAX_VERSION;
+            let full = encode_with(&owned, max);
+            let mut cur = full.as_slice();
+            let borrowed = krabka_protocol::borrowed::partition_change_record::PartitionChangeRecord::decode_borrow(&mut cur, max).unwrap();
+            assert2::assert!(cur.is_empty());
+            (
+                encode_with(&owned, version),
+                encode_with(&borrowed, version),
+            )
+        }
         "PartitionRecord" => {
             let owned = krabka_protocol::owned::partition_record::tagged_fixture();
             let max = krabka_protocol::owned::partition_record::MAX_VERSION;
@@ -6136,6 +6172,12 @@ fn encode_tagged_fixture_2(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>
                 encode_with(&borrowed, version),
             )
         }
+        _ => return None,
+    })
+}
+fn encode_tagged_fixture_3(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
+    use krabka_protocol::DecodeBorrow;
+    Some(match name {
         "UpdateRaftVoterResponse" => {
             let owned = krabka_protocol::owned::update_raft_voter_response::tagged_fixture();
             let max = krabka_protocol::owned::update_raft_voter_response::MAX_VERSION;
@@ -6148,12 +6190,6 @@ fn encode_tagged_fixture_2(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>
                 encode_with(&borrowed, version),
             )
         }
-        _ => return None,
-    })
-}
-fn encode_tagged_fixture_3(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
-    use krabka_protocol::DecodeBorrow;
-    Some(match name {
         "VoteResponse" => {
             let owned = krabka_protocol::owned::vote_response::tagged_fixture();
             let max = krabka_protocol::owned::vote_response::MAX_VERSION;
@@ -6222,6 +6258,9 @@ pub fn tagged_fixture_json_for(name: &str, version: i16) -> ::serde_json::Value 
         }
         "FetchSnapshotResponse" => {
             krabka_protocol::owned::fetch_snapshot_response::tagged_fixture_json(version)
+        }
+        "OffsetCommitValue" => {
+            krabka_protocol::owned::offset_commit_value::tagged_fixture_json(version)
         }
         "PartitionChangeRecord" => {
             krabka_protocol::owned::partition_change_record::tagged_fixture_json(version)

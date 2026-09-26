@@ -74,9 +74,12 @@ namespaces under `crates/protocol/schemas/versions/` keep their own `VERSION`
 and their own upstream tag, so bump each one on its own.
 
 `sync-schemas.sh` copies only `clients/src/main/resources/common/message`. The
-top-level set also holds the metadata records from Kafka's `metadata` module
-and the remote log metadata records from its `storage` module, and some
-schemas carry local edits. The script deletes or overwrites them.
+top-level set also holds the metadata records from Kafka's `metadata` module,
+the remote log metadata records from its `storage` module and the group
+coordinator records from its `group-coordinator` module, and some schemas carry
+local edits: a record's `type` is `data`, since the generator knows no
+`metadata`, `coordinator-key` or `coordinator-value` type. The script deletes
+or overwrites them.
 
 The `jvm differential` CI job runs step 5 on every pull request. A mismatch
 there after a bump is a real difference between the generated codecs and the
