@@ -420,7 +420,8 @@ pub fn to_kraft_records(
 /// A missing finalized metadata.version is treated as the latest supported
 /// level, matching standalone bootstrap. `Partition` and `PartitionChange` use
 /// v0, v1, or v2 at the Kafka KIP-858/KIP-966 boundaries. `RegisterBroker` uses v1,
-/// v2, or v3 at the migration/KIP-858 boundaries.
+/// v2, v3, or v4 at the migration/KIP-858/KIP-1066 boundaries, as Kafka's
+/// `MetadataVersion.registerBrokerRecordVersion` does.
 ///
 /// # Errors
 /// Propagates [`to_kraft_records`] errors, plus [`TranslateError::Encode`] if
@@ -449,7 +450,11 @@ pub fn to_kraft_values(
                     }
                 }
                 KraftMetadataRecord::RegisterBroker(_) => {
-                    if metadata_version >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL {
+                    if metadata_version >= crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                        4
+                    } else if metadata_version
+                        >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL
+                    {
                         3
                     } else if metadata_version >= 8 {
                         2
@@ -2009,6 +2014,52 @@ mod tests {
         });
         image.apply(&rec);
         round_trip(&rec, &image);
+    }
+
+    /// `RegisterBroker` frames at the version Kafka's
+    /// `MetadataVersion.registerBrokerRecordVersion` picks for each level: v4
+    /// from `4.3-IV0` (KIP-1066 cordoned log dirs), v3 from `3.7-IV2`, v2 from
+    /// `3.4-IV0`, v1 below.
+    #[test]
+    fn register_broker_frames_at_kafkas_record_version() {
+        use crate::metadata_version::{
+            CORDONED_LOG_DIRS_MIN_LEVEL, DIRECTORY_ASSIGNMENT_MIN_LEVEL, METADATA_VERSION_MAX,
+            METADATA_VERSION_MIN,
+        };
+
+        let record = MetadataRecord::V1BrokerRegistration(BrokerRegistrationRecord {
+            node_id: NodeId(3),
+            broker_epoch: 5,
+            incarnation_id: uuid::Uuid::from_u128(3),
+            host: "127.0.0.1".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![],
+            features: std::collections::BTreeMap::new(),
+        });
+
+        for (level, want) in [
+            (METADATA_VERSION_MAX, 4_i16),
+            (CORDONED_LOG_DIRS_MIN_LEVEL, 4),
+            (CORDONED_LOG_DIRS_MIN_LEVEL - 1, 3),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL, 3),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1, 2),
+            (8, 2),
+            (METADATA_VERSION_MIN, 1),
+        ] {
+            let mut image = img();
+            image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
+                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                level,
+            }));
+            let value = to_kraft_values(&record, &image).unwrap().remove(0);
+            let (wire, version) = KraftMetadataRecord::decode_value(&value).unwrap();
+            check!(
+                (version, from_kraft(&wire, &image).unwrap()) == (want, record.clone()),
+                "metadata.version {level}"
+            );
+        }
     }
 
     /// Partition records frame at v2 once ELR is available, v1 once directory
