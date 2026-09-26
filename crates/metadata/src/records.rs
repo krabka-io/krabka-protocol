@@ -162,6 +162,16 @@ pub struct BrokerRegistrationRecord {
     /// Empty at metadata versions before `3.7-IV2` and in legacy snapshots.
     #[serde(default)]
     pub log_dirs: Vec<uuid::Uuid>,
+    /// KIP-631 fencing state. Krabka's own brokers register unfenced and have
+    /// no fence lifecycle; a registration a JVM controller wrote carries its
+    /// real value, and a `BrokerRegistrationChangeRecord` updates it.
+    pub fenced: bool,
+    /// KIP-841: the broker is in controlled shutdown.
+    pub in_controlled_shutdown: bool,
+    /// KIP-1066 cordoned log directories. `None` until the broker first
+    /// reports them in a heartbeat, as in Kafka's `BrokerRegistration`. Only
+    /// carried from `metadata.version` `4.3-IV0`.
+    pub cordoned_log_dirs: Option<Vec<uuid::Uuid>>,
     /// KIP-584 feature ranges advertised by this broker at registration.
     /// Empty only for legacy Krabka snapshots written before the ranges were
     /// retained in the image.
@@ -535,6 +545,9 @@ mod tests {
             port: 9092,
             rack: Some("us-east-1a".into()),
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![],
             features: std::collections::BTreeMap::new(),
         });
@@ -551,6 +564,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![BrokerEndpoint {
                 name: "EXTERNAL".into(),
                 host: "ext.example.com".into(),

@@ -704,15 +704,17 @@ impl MetadataImage {
                 })
             }));
         }
-        if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
-            records.extend(self.brokers.values().filter_map(|broker| {
-                if broker.log_dirs.is_empty() {
-                    return None;
-                }
-                let mut projected = broker.clone();
+        records.extend(self.brokers.values().filter_map(|broker| {
+            let mut projected = broker.clone();
+            if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
                 projected.log_dirs.clear();
-                Some(MetadataRecord::V1BrokerRegistration(projected))
-            }));
+            }
+            if target < crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                projected.cordoned_log_dirs = None;
+            }
+            (projected != *broker).then_some(MetadataRecord::V1BrokerRegistration(projected))
+        }));
+        if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
             for partition in self.all_partitions() {
                 records.extend(
                     partition
@@ -1575,6 +1577,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![],
             features: BTreeMap::new(),
         })
@@ -1795,6 +1800,9 @@ mod tests {
                 port: 9092,
                 rack: Some("r1".into()),
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![crate::records::BrokerEndpoint {
                     name: "EXTERNAL".into(),
                     host: "ext".into(),
@@ -1811,6 +1819,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             }),
@@ -2352,6 +2363,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![],
             features: std::collections::BTreeMap::new(),
         });
@@ -3585,6 +3599,9 @@ mod tests {
             rack: None,
             endpoints: vec![],
             log_dirs: vec![directory],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             features: std::collections::BTreeMap::new(),
         };
         image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
@@ -3631,6 +3648,59 @@ mod tests {
         assert2::assert!(image.broker(NodeId(1)).expect("broker").log_dirs.is_empty());
     }
 
+    /// KIP-1066 cordoned log dirs exist from `4.3-IV0`: a downgrade below it
+    /// re-registers the broker without them, and below `3.7-IV2` without its
+    /// log dirs as well.
+    #[test]
+    fn downgrade_projection_clears_cordoned_log_dirs_below_kip_1066() {
+        use crate::metadata_version::{
+            CORDONED_LOG_DIRS_MIN_LEVEL, DIRECTORY_ASSIGNMENT_MIN_LEVEL,
+        };
+
+        let directory = Uuid::from_u128(0xD1);
+        let broker = BrokerRegistrationRecord {
+            node_id: NodeId(1),
+            broker_epoch: 7,
+            incarnation_id: Uuid::from_u128(1),
+            host: "broker-1".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![directory],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: Some(vec![directory]),
+            features: std::collections::BTreeMap::new(),
+        };
+        let mut image = img();
+        image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
+
+        let uncordoned = BrokerRegistrationRecord {
+            cordoned_log_dirs: None,
+            ..broker.clone()
+        };
+        let without_dirs = BrokerRegistrationRecord {
+            log_dirs: vec![],
+            ..uncordoned.clone()
+        };
+        for (target, want) in [
+            (CORDONED_LOG_DIRS_MIN_LEVEL, vec![]),
+            (
+                CORDONED_LOG_DIRS_MIN_LEVEL - 1,
+                vec![MetadataRecord::V1BrokerRegistration(uncordoned)],
+            ),
+            (
+                DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1,
+                vec![MetadataRecord::V1BrokerRegistration(without_dirs)],
+            ),
+        ] {
+            assert2::check!(
+                image.metadata_version_downgrade_records(target) == want,
+                "target {target}"
+            );
+        }
+    }
+
     #[test]
     fn topic_by_id_resolves_and_drops_on_delete() {
         use crate::records::{MetadataRecord, TopicRecord};
@@ -3669,6 +3739,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             },
@@ -3699,6 +3772,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             },

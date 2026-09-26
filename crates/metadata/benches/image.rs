@@ -56,6 +56,9 @@ fn broker_record(node_id: u64) -> MetadataRecord {
         port: 9092,
         rack: Some("us-east-1a".to_string()),
         log_dirs: vec![],
+        fenced: false,
+        in_controlled_shutdown: false,
+        cordoned_log_dirs: None,
         endpoints: vec![BrokerEndpoint {
             name: "PLAINTEXT".to_string(),
             host: format!("broker-{node_id}"),
