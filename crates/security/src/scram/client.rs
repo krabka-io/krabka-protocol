@@ -9,6 +9,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use sha2::{Digest, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 
+use super::messages::{encode_saslname, is_extension};
 use crate::{AuthError, SaslMechanism};
 
 /// RFC 5802 SCRAM client-side handshake, initial phase.
@@ -17,6 +18,7 @@ pub struct ScramClientExchange {
     username: String,
     password: Vec<u8>,
     mechanism: SaslMechanism,
+    extensions: Vec<(String, String)>,
 }
 
 /// Post-client-first phase: awaiting the server-first message.
@@ -48,7 +50,36 @@ impl ScramClientExchange {
             username,
             password,
             mechanism,
+            extensions: Vec::new(),
         }
+    }
+
+    /// Append SCRAM extensions to client-first, after the nonce, in the given
+    /// order, as Kafka's `ScramSaslClient` does with the extensions its
+    /// callback supplies. A KIP-48 delegation-token login sends
+    /// `("tokenauth", "true")` with the token id as the username and the token
+    /// HMAC as the password.
+    ///
+    /// # Errors
+    /// [`AuthError::MalformedMessage`] when a key is not ASCII-alphabetic or a
+    /// value is empty or holds a `,` or a non-ASCII byte, which Kafka's
+    /// client-first grammar would reject.
+    pub fn with_extensions<K, V>(
+        mut self,
+        extensions: impl IntoIterator<Item = (K, V)>,
+    ) -> Result<Self, AuthError>
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        for (key, value) in extensions {
+            let (key, value) = (key.into(), value.into());
+            if !is_extension(&key, &value) {
+                return Err(AuthError::MalformedMessage);
+            }
+            self.extensions.push((key, value));
+        }
+        Ok(self)
     }
 
     // SCRAM client-first. skip_all keeps the stored `password` out of span
@@ -73,7 +104,17 @@ impl ScramClientExchange {
             .fill(&mut nonce_bytes)
             .map_err(|_| AuthError::MalformedMessage)?;
         let client_nonce = B64.encode(nonce_bytes);
-        let bare = format!("n={},r={}", self.username, client_nonce);
+        let bare = std::iter::once(format!(
+            "n={},r={client_nonce}",
+            encode_saslname(&self.username)
+        ))
+        .chain(
+            self.extensions
+                .iter()
+                .map(|(key, value)| format!("{key}={value}")),
+        )
+        .collect::<Vec<_>>()
+        .join(",");
         let msg = format!("n,,{bare}");
         let next = AwaitingServerFirst {
             username: self.username,
@@ -185,7 +226,7 @@ impl AwaitingServerFinal {
     }
 }
 
-fn compute_proof_sha512(
+pub(super) fn compute_proof_sha512(
     password: &[u8],
     salt: &[u8],
     iters: u32,
@@ -214,7 +255,7 @@ fn compute_proof_sha512(
     Ok((proof, server_key))
 }
 
-fn compute_proof_sha256(
+pub(super) fn compute_proof_sha256(
     password: &[u8],
     salt: &[u8],
     iters: u32,
