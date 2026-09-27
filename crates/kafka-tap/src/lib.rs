@@ -65,6 +65,13 @@ fn handle_conn(client: TcpStream, upstream: &str, recorder: Recorder) -> io::Res
 /// Copy length-prefixed frames from `src` to `dst`, and tee each frame to the
 /// recorder. `is_request` selects between header parsing and correlation
 /// lookup.
+///
+/// Each frame reaches the recorder before it is written on. A response cannot
+/// exist until its request has been forwarded, so this is what makes a
+/// request reach the recorder before its own response does: forwarded first,
+/// the response pump could record the reply while the request pump had yet to
+/// record the request, and the standalone tap's spool would list them the
+/// wrong way round.
 fn pump(
     mut src: TcpStream,
     mut dst: TcpStream,
@@ -87,28 +94,19 @@ fn pump(
         let mut body = vec![0u8; n as usize];
         src.read_exact(&mut body)?;
 
-        let request_prefix = if is_request {
-            parse_request_prefix(&body).inspect(|p| {
+        if is_request {
+            if let Some(p) = parse_request_prefix(&body) {
                 pending
                     .lock()
                     .unwrap()
                     .record(p.correlation_id, p.api_key, p.api_version);
-            })
-        } else {
-            None
-        };
-
-        dst.write_all(&len_buf)?;
-        dst.write_all(&body)?;
-        dst.flush()?;
-
-        if let Some(p) = request_prefix {
-            recorder(CapturedFrame {
-                api_key: p.api_key,
-                version: p.api_version,
-                is_request: true,
-                body,
-            });
+                recorder(CapturedFrame {
+                    api_key: p.api_key,
+                    version: p.api_version,
+                    is_request: true,
+                    body: body.clone(),
+                });
+            }
         } else if let Some(corr) = read_correlation_id(&body)
             && let Some((api_key, version)) = pending.lock().unwrap().take(corr)
         {
@@ -116,9 +114,13 @@ fn pump(
                 api_key,
                 version,
                 is_request: false,
-                body,
+                body: body.clone(),
             });
         }
+
+        dst.write_all(&len_buf)?;
+        dst.write_all(&body)?;
+        dst.flush()?;
     }
 }
 
@@ -172,7 +174,9 @@ mod tests {
     /// one response through real sockets is what tells those apart.
     ///
     /// It also pins the frame-length guard. `n < 0` read as `n > 0` returns
-    /// before relaying anything at all.
+    /// before relaying anything at all. And it pins the recording order: a
+    /// `pump` that forwards before it records can let the response reach the
+    /// recorder ahead of its request.
     #[test]
     fn relays_frames_both_ways_and_records_them() {
         let response = 7i32.to_be_bytes().to_vec();
@@ -202,14 +206,9 @@ mod tests {
         // Forwarded byte-for-byte.
         assert2::check!(body == response);
 
-        // `pump` writes the frame on before it hands it to the recorder, so
-        // reading the response above does not mean the response has been
-        // recorded yet. Wait for it rather than racing it.
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while seen.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(5));
-        }
-
+        // `pump` records a frame before it writes it on, so by the time the
+        // response has arrived here both frames have been recorded, request
+        // first. No waiting, and the order below is the one the recorder saw.
         // Both directions reached the recorder, and the response was correlated
         // back to the api key and version the request carried.
         let kinds: Vec<_> = seen
