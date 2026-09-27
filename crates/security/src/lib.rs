@@ -37,6 +37,7 @@
 
 pub mod ca;
 pub mod delegation_token;
+#[cfg(not(target_family = "wasm"))]
 pub mod gssapi;
 mod jwks;
 mod jwks_trust;

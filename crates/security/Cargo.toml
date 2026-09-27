@@ -48,13 +48,6 @@ jsonpath-rust = { workspace = true }
 # fire-and-forget on-demand JWKS refresh signals. The "sync" feature is
 # enough — no runtime / no I/O surface in this crate.
 tokio = { workspace = true, features = ["sync"] }
-# Slice: SASL/GSSAPI (Kerberos). Pure-Rust SSPI implementation. Provides the
-# server-side accept_security_context path backed by a service keytab, plus the
-# client initiate path used for inter-broker auth. `network_client` pulls in the
-# reqwest-based KDC transport so the SSP can reach the KDC over the network; we
-# pick `ring` over the default `aws-lc-rs` crypto provider to match the rest of
-# the workspace (rustls/rcgen already ride on ring).
-sspi.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
@@ -66,3 +59,15 @@ tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 [[bench]]
 name = "scram"
 harness = false
+
+# SASL/GSSAPI (Kerberos) rides on `sspi`, a pure-Rust SSPI implementation. It
+# provides the server-side accept_security_context path backed by a service
+# keytab, plus the client initiate path used for inter-broker auth.
+# `network_client` pulls in the reqwest-based KDC transport so the SSP can reach
+# the KDC over the network; `ring` is picked over the default `aws-lc-rs` crypto
+# provider to match the rest of the workspace (rustls/rcgen already ride on
+# ring). That transport does not build for WebAssembly, and the website
+# playground compiles `krabka-metadata`, and through it this crate, for
+# `wasm32-unknown-unknown`, so the GSSAPI surface is native-only.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+sspi.workspace = true
