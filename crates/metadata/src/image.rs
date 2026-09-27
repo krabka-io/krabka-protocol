@@ -631,12 +631,12 @@ impl MetadataImage {
 
     /// The minimum `metadata.version` level that the live image needs: the
     /// floor that a downgrade must not drop below. It rises with feature-gated
-    /// state present in the image, such as `KRaft` SCRAM creds and delegation
-    /// tokens. The baseline is `METADATA_VERSION_MIN`.
+    /// state present in the image: `KRaft` SCRAM creds, delegation tokens, and
+    /// KIP-1276 CIDR ACL hosts. The baseline is `METADATA_VERSION_MIN`.
     #[must_use]
     pub fn min_required_metadata_version(&self) -> i16 {
         use crate::metadata_version::{
-            DELEGATION_TOKEN_MIN_LEVEL, METADATA_VERSION_MIN, SCRAM_MIN_LEVEL,
+            CIDR_ACL_MIN_LEVEL, DELEGATION_TOKEN_MIN_LEVEL, METADATA_VERSION_MIN, SCRAM_MIN_LEVEL,
         };
         let mut floor = METADATA_VERSION_MIN;
         if !self.scram_credentials.is_empty() {
@@ -644,6 +644,9 @@ impl MetadataImage {
         }
         if !self.delegation_tokens.is_empty() {
             floor = floor.max(DELEGATION_TOKEN_MIN_LEVEL);
+        }
+        if self.all_acls().any(|acl| is_cidr_acl_host(&acl.host)) {
+            floor = floor.max(CIDR_ACL_MIN_LEVEL);
         }
         floor
     }
@@ -662,6 +665,30 @@ impl MetadataImage {
         };
 
         let mut records = Vec::new();
+        if target < crate::metadata_version::CIDR_ACL_MIN_LEVEL {
+            let mut cidr_acls: Vec<&AclEntry> = self
+                .all_acls()
+                .filter(|acl| is_cidr_acl_host(&acl.host))
+                .collect();
+            cidr_acls.sort_by(|a, b| {
+                (&a.resource_name, &a.principal, &a.host).cmp(&(
+                    &b.resource_name,
+                    &b.principal,
+                    &b.host,
+                ))
+            });
+            records.extend(cidr_acls.into_iter().map(|acl| {
+                MetadataRecord::V1DeleteAccessControlEntry(crate::AclEntryFilter {
+                    resource_type: Some(acl.resource_type),
+                    resource_name: Some(acl.resource_name.clone()),
+                    pattern_type: Some(acl.pattern_type),
+                    principal: Some(acl.principal.clone()),
+                    host: Some(acl.host.clone()),
+                    operation: Some(acl.operation),
+                    permission_type: Some(acl.permission_type),
+                })
+            }));
+        }
         if target < SCRAM_MIN_LEVEL {
             records.extend(self.scram_credentials.keys().map(|(user, mechanism)| {
                 MetadataRecord::V1DeleteScramCredential(DeleteScramCredentialRecord {
@@ -677,15 +704,17 @@ impl MetadataImage {
                 })
             }));
         }
-        if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
-            records.extend(self.brokers.values().filter_map(|broker| {
-                if broker.log_dirs.is_empty() {
-                    return None;
-                }
-                let mut projected = broker.clone();
+        records.extend(self.brokers.values().filter_map(|broker| {
+            let mut projected = broker.clone();
+            if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
                 projected.log_dirs.clear();
-                Some(MetadataRecord::V1BrokerRegistration(projected))
-            }));
+            }
+            if target < crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                projected.cordoned_log_dirs = None;
+            }
+            (projected != *broker).then_some(MetadataRecord::V1BrokerRegistration(projected))
+        }));
+        if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
             for partition in self.all_partitions() {
                 records.extend(
                     partition
@@ -1442,6 +1471,13 @@ impl MetadataImage {
     }
 }
 
+/// KIP-1276: Kafka's `AclControlManager.validateHostPattern` treats any ACL
+/// host containing `/` as a CIDR block, which needs `metadata.version`
+/// `4.4-IV1`.
+fn is_cidr_acl_host(host: &str) -> bool {
+    host.contains('/')
+}
+
 #[cfg(test)]
 mod tests {
     use krabka_units::bytes_per_sec;
@@ -1541,6 +1577,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![],
             features: BTreeMap::new(),
         })
@@ -1761,6 +1800,9 @@ mod tests {
                 port: 9092,
                 rack: Some("r1".into()),
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![crate::records::BrokerEndpoint {
                     name: "EXTERNAL".into(),
                     host: "ext".into(),
@@ -1777,6 +1819,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             }),
@@ -2318,6 +2363,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![],
             features: std::collections::BTreeMap::new(),
         });
@@ -3352,6 +3400,81 @@ mod tests {
         assert2::assert!(restored.next_producer_id() == 2_000);
     }
 
+    /// KIP-1276: an ACL whose host is a CIDR block raises the floor to
+    /// `4.4-IV1`, and a downgrade below it removes exactly those ACLs.
+    #[test]
+    fn cidr_acl_hosts_follow_the_kip_1276_gate() {
+        use crate::{
+            AclEntryFilter,
+            acl::{AclOperation, PermissionType},
+            metadata_version::{CIDR_ACL_MIN_LEVEL, METADATA_VERSION_MIN},
+        };
+
+        let acl = |host: &str| AclEntry {
+            resource_type: ResourceType::Topic,
+            resource_name: "orders".into(),
+            pattern_type: PatternType::Literal,
+            principal: "User:alice".into(),
+            host: host.into(),
+            operation: AclOperation::Read,
+            permission_type: PermissionType::Allow,
+        };
+        let delete = |host: &str| {
+            let entry = acl(host);
+            MetadataRecord::V1DeleteAccessControlEntry(AclEntryFilter {
+                resource_type: Some(entry.resource_type),
+                resource_name: Some(entry.resource_name),
+                pattern_type: Some(entry.pattern_type),
+                principal: Some(entry.principal),
+                host: Some(entry.host),
+                operation: Some(entry.operation),
+                permission_type: Some(entry.permission_type),
+            })
+        };
+        for (case, hosts, floor, cidr_hosts) in [
+            ("no ACLs", vec![], METADATA_VERSION_MIN, vec![]),
+            (
+                "wildcard and address",
+                vec!["*", "10.0.0.1"],
+                METADATA_VERSION_MIN,
+                vec![],
+            ),
+            (
+                "IPv4 CIDR",
+                vec!["*", "10.0.0.0/8"],
+                CIDR_ACL_MIN_LEVEL,
+                vec!["10.0.0.0/8"],
+            ),
+            (
+                "IPv6 CIDR",
+                vec!["2001:db8::/32"],
+                CIDR_ACL_MIN_LEVEL,
+                vec!["2001:db8::/32"],
+            ),
+        ] {
+            let mut image = img();
+            for host in &hosts {
+                image.apply(&MetadataRecord::V1AccessControlEntry(acl(host)));
+            }
+            let want_cleanup: Vec<_> = cidr_hosts.into_iter().map(delete).collect();
+            assert2::check!(
+                (
+                    image.min_required_metadata_version(),
+                    image.metadata_version_downgrade_records(CIDR_ACL_MIN_LEVEL),
+                    image.metadata_version_downgrade_records(CIDR_ACL_MIN_LEVEL - 1),
+                ) == (floor, vec![], want_cleanup.clone()),
+                "case {case}"
+            );
+            for record in &want_cleanup {
+                image.apply(record);
+            }
+            assert2::check!(
+                image.min_required_metadata_version() == METADATA_VERSION_MIN,
+                "case {case} after cleanup"
+            );
+        }
+    }
+
     #[test]
     fn min_required_metadata_version_rises_with_scram_and_tokens() {
         use krabka_security::{KafkaPrincipal, SaslMechanism};
@@ -3476,6 +3599,9 @@ mod tests {
             rack: None,
             endpoints: vec![],
             log_dirs: vec![directory],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             features: std::collections::BTreeMap::new(),
         };
         image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
@@ -3522,6 +3648,59 @@ mod tests {
         assert2::assert!(image.broker(NodeId(1)).expect("broker").log_dirs.is_empty());
     }
 
+    /// KIP-1066 cordoned log dirs exist from `4.3-IV0`: a downgrade below it
+    /// re-registers the broker without them, and below `3.7-IV2` without its
+    /// log dirs as well.
+    #[test]
+    fn downgrade_projection_clears_cordoned_log_dirs_below_kip_1066() {
+        use crate::metadata_version::{
+            CORDONED_LOG_DIRS_MIN_LEVEL, DIRECTORY_ASSIGNMENT_MIN_LEVEL,
+        };
+
+        let directory = Uuid::from_u128(0xD1);
+        let broker = BrokerRegistrationRecord {
+            node_id: NodeId(1),
+            broker_epoch: 7,
+            incarnation_id: Uuid::from_u128(1),
+            host: "broker-1".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![directory],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: Some(vec![directory]),
+            features: std::collections::BTreeMap::new(),
+        };
+        let mut image = img();
+        image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
+
+        let uncordoned = BrokerRegistrationRecord {
+            cordoned_log_dirs: None,
+            ..broker.clone()
+        };
+        let without_dirs = BrokerRegistrationRecord {
+            log_dirs: vec![],
+            ..uncordoned.clone()
+        };
+        for (target, want) in [
+            (CORDONED_LOG_DIRS_MIN_LEVEL, vec![]),
+            (
+                CORDONED_LOG_DIRS_MIN_LEVEL - 1,
+                vec![MetadataRecord::V1BrokerRegistration(uncordoned)],
+            ),
+            (
+                DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1,
+                vec![MetadataRecord::V1BrokerRegistration(without_dirs)],
+            ),
+        ] {
+            assert2::check!(
+                image.metadata_version_downgrade_records(target) == want,
+                "target {target}"
+            );
+        }
+    }
+
     #[test]
     fn topic_by_id_resolves_and_drops_on_delete() {
         use crate::records::{MetadataRecord, TopicRecord};
@@ -3560,6 +3739,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             },
@@ -3590,6 +3772,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             },

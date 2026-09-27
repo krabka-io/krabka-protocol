@@ -9,7 +9,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use sha2::{Digest, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 
-use super::{ScramCredential, scram_hash_len};
+use super::{ScramClientFirst, ScramCredential, scram_hash_len};
 use crate::{AuthError, AuthMethod, Principal, SaslMechanism};
 
 struct AwaitingClientFirst {
@@ -22,6 +22,7 @@ struct AwaitingClientFinal {
     username: String,
     credential: ScramCredential,
     principal_override: Option<Principal>,
+    gs2_header: String,
     client_first_bare: String,
     server_first: String,
 }
@@ -110,28 +111,27 @@ impl AwaitingClientFirst {
         )
     )]
     fn step(self, client_bytes: &[u8]) -> StepResult {
-        let Ok(s) = std::str::from_utf8(client_bytes) else {
-            return StepResult::Failed(AuthError::MalformedMessage);
+        // Kafka's `ClientFirstMessage` grammar: a GS2 header of `n,,` or
+        // `n,a=<authzid>,`, then `n=`, `r=` and any extensions. Extensions
+        // such as `tokenauth` are signed as part of the bare message; the
+        // caller has already chosen the credential they select.
+        let client_first = match ScramClientFirst::parse(client_bytes) {
+            Ok(client_first) => client_first,
+            Err(e) => return StepResult::Failed(e),
         };
-        // GS2 header "n,," then bare client-first
-        let Some(bare) = s.strip_prefix("n,,") else {
-            return StepResult::Failed(AuthError::MalformedMessage);
-        };
-        let mut user = None;
-        let mut nonce = None;
-        for attr in bare.split(',') {
-            if let Some(v) = attr.strip_prefix("n=") {
-                user = Some(v.to_string());
-            } else if let Some(v) = attr.strip_prefix("r=") {
-                nonce = Some(v.to_string());
-            }
-        }
-        let (Some(u), Some(c_nonce)) = (user, nonce) else {
-            return StepResult::Failed(AuthError::MalformedMessage);
-        };
-        if u != self.username {
+        if client_first.username != self.username {
             return StepResult::Failed(AuthError::UnknownUser);
         }
+        // `ScramSaslServer`: an authorization id, when the client sends one,
+        // must name the authenticating user.
+        if client_first
+            .authzid
+            .as_ref()
+            .is_some_and(|authzid| *authzid != client_first.username)
+        {
+            return StepResult::Failed(AuthError::AuthorizationIdMismatch);
+        }
+        let c_nonce = client_first.nonce;
         let mut server_nonce_bytes = [0u8; 18];
         SystemRandom::new()
             .fill(&mut server_nonce_bytes)
@@ -149,7 +149,8 @@ impl AwaitingClientFirst {
             username: self.username,
             credential: self.credential,
             principal_override: self.principal_override,
-            client_first_bare: bare.to_string(),
+            gs2_header: client_first.gs2_header,
+            client_first_bare: client_first.bare,
             server_first,
         };
         StepResult::Continue(response, ScramServerExchange::AwaitingClientFinal(next))
@@ -205,9 +206,10 @@ impl AwaitingClientFinal {
             return StepResult::Failed(AuthError::MalformedMessage);
         }
 
-        // RFC 5802 §5.1: with no channel binding, the GS2 header is
-        // `n,,` and `c=` must equal its base64 encoding (`"biws"`).
-        if cb != B64.encode(b"n,,") {
+        // RFC 5802 §5.1: with no channel binding, `c=` is the base64 of the
+        // GS2 header the client sent in client-first: `biws` for `n,,`, and
+        // the encoding of `n,a=<authzid>,` when it named an authorization id.
+        if cb != B64.encode(self.gs2_header.as_bytes()) {
             return StepResult::Failed(AuthError::MalformedMessage);
         }
 

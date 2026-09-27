@@ -142,21 +142,54 @@ fn mismatch(label: &str, rust_bytes: &[u8], jvm_bytes: &[u8]) -> String {
 }
 
 fn oracle_supports(name: &str, version: i16) -> bool {
-    // The pinned Kafka 4.3.0 client predates KIP-1242, so it has no v5 of
-    // ApiVersions. It silently encodes a v5 request as v4, and it cannot size a
-    // v5 response that holds supported features. The Rust v5 codecs remain
-    // covered by their owned roundtrip tests.
-    !(matches!(name, "ApiVersionsRequest" | "ApiVersionsResponse") && version == 5)
+    // Each skipped pair stays covered by its owned roundtrip tests, by the
+    // corpus frames the 4.3.0 oracle recorded for versions that predate a
+    // rename, and by `trunk_schema_versions` for the trunk versions.
+    match name {
+        // The pinned Kafka 4.3.0 client predates KIP-1242, so it has no v5 of
+        // ApiVersions. It silently encodes a v5 request as v4, and it cannot
+        // size a v5 response that holds supported features.
+        "ApiVersionsRequest" | "ApiVersionsResponse" => version < 5,
+        // KIP-1312's api key 94 postdates 4.3.0, which has no class for it.
+        // KIP-1331 renamed v0's `AcceptableRecoveryLag` to
+        // `AcceptableRecoveryLagLegacy`, so 4.3.0's JSON converter cannot read
+        // the v0 fixture, and v1 postdates it.
+        "UnregisterControllerRequest"
+        | "UnregisterControllerResponse"
+        | "StreamsGroupHeartbeatResponse" => false,
+        // KIP-1319 renamed `GenerationId` to `GenerationIdOrMemberEpoch` from
+        // v3, which 4.3.0's JSON converter cannot read, and added v6.
+        "TxnOffsetCommitRequest" => version < 3,
+        "TxnOffsetCommitResponse" => version < 6,
+        // KIP-1331 added v1, which 4.3.0 silently encodes as v0.
+        "StreamsGroupHeartbeatRequest"
+        | "StreamsGroupDescribeRequest"
+        | "StreamsGroupDescribeResponse" => version < 1,
+        _ => true,
+    }
 }
 
 #[test]
-fn kafka_430_oracle_excludes_kip1242_api_versions() {
+fn kafka_430_oracle_excludes_what_it_cannot_express() {
     let cases = [
         ("ApiVersionsRequest", 4, true),
         ("ApiVersionsRequest", 5, false),
         ("ApiVersionsResponse", 4, true),
         ("ApiVersionsResponse", 5, false),
         ("FetchRequest", 5, true),
+        ("UnregisterControllerRequest", 0, false),
+        ("UnregisterControllerResponse", 0, false),
+        ("TxnOffsetCommitRequest", 2, true),
+        ("TxnOffsetCommitRequest", 3, false),
+        ("TxnOffsetCommitResponse", 5, true),
+        ("TxnOffsetCommitResponse", 6, false),
+        ("StreamsGroupHeartbeatRequest", 0, true),
+        ("StreamsGroupHeartbeatRequest", 1, false),
+        ("StreamsGroupHeartbeatResponse", 0, false),
+        ("StreamsGroupDescribeRequest", 0, true),
+        ("StreamsGroupDescribeRequest", 1, false),
+        ("StreamsGroupDescribeResponse", 0, true),
+        ("StreamsGroupDescribeResponse", 1, false),
     ];
     for (name, version, supported) in cases {
         assert2::assert!(

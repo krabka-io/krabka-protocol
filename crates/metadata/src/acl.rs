@@ -18,6 +18,11 @@ pub enum ResourceType {
     /// `Describe` operation is externally grantable, because `Create`,
     /// `Renew`, and `Expire` are implicit on ownership.
     DelegationToken,
+    /// KIP-373 users. The resource name is a user principal name, without the
+    /// `User:` prefix. `CreateTokens` and `DescribeTokens` on a `User`
+    /// resource let one principal create or describe delegation tokens owned
+    /// by another. Kafka wire discriminant 7.
+    User,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -49,6 +54,12 @@ pub enum AclOperation {
     /// `TransactionalId`. An `InitProducerId` that carries `enable2Pc=true`
     /// needs it in addition to `Write`. Kafka wire discriminant 15.
     TwoPhaseCommit,
+    /// KIP-373: permission to create a delegation token on behalf of the
+    /// `User` resource. Kafka wire discriminant 13.
+    CreateTokens,
+    /// KIP-373: permission to describe the delegation tokens the `User`
+    /// resource owns. Kafka wire discriminant 14.
+    DescribeTokens,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,6 +136,72 @@ mod tests {
             permission_type: PermissionType::Allow,
         };
         assert2::assert!(rt(&entry) == entry);
+    }
+
+    /// The metadata log stores ACL enums by variant index, so a variant
+    /// inserted anywhere but the end would make every stored entry after it
+    /// decode as its neighbour. Pin the encoding of every variant.
+    #[test]
+    fn acl_enum_log_encoding_is_stable() {
+        let index = |i: u32| i.to_le_bytes().to_vec();
+        let resource_types = [
+            (ResourceType::Topic, 0),
+            (ResourceType::Group, 1),
+            (ResourceType::Cluster, 2),
+            (ResourceType::TransactionalId, 3),
+            (ResourceType::DelegationToken, 4),
+            (ResourceType::User, 5),
+        ];
+        for (variant, want) in resource_types {
+            let bytes = <SerdeCompat<ResourceType>>::serialize(&variant).unwrap();
+            assert2::assert!((variant, bytes) == (variant, index(want)));
+        }
+        let operations = [
+            (AclOperation::All, 0),
+            (AclOperation::Read, 1),
+            (AclOperation::Write, 2),
+            (AclOperation::Create, 3),
+            (AclOperation::Delete, 4),
+            (AclOperation::Alter, 5),
+            (AclOperation::Describe, 6),
+            (AclOperation::ClusterAction, 7),
+            (AclOperation::DescribeConfigs, 8),
+            (AclOperation::AlterConfigs, 9),
+            (AclOperation::IdempotentWrite, 10),
+            (AclOperation::TwoPhaseCommit, 11),
+            (AclOperation::CreateTokens, 12),
+            (AclOperation::DescribeTokens, 13),
+        ];
+        for (variant, want) in operations {
+            let bytes = <SerdeCompat<AclOperation>>::serialize(&variant).unwrap();
+            assert2::assert!((variant, bytes) == (variant, index(want)));
+        }
+        for (variant, want) in [(PatternType::Literal, 0), (PatternType::Prefixed, 1)] {
+            let bytes = <SerdeCompat<PatternType>>::serialize(&variant).unwrap();
+            assert2::assert!((variant, bytes) == (variant, index(want)));
+        }
+        for (variant, want) in [(PermissionType::Allow, 0), (PermissionType::Deny, 1)] {
+            let bytes = <SerdeCompat<PermissionType>>::serialize(&variant).unwrap();
+            assert2::assert!((variant, bytes) == (variant, index(want)));
+        }
+    }
+
+    /// KIP-373's `User` resource and token operations survive the metadata
+    /// log's serde encoding like every other variant.
+    #[test]
+    fn kip_373_entries_round_trip() {
+        for operation in [AclOperation::CreateTokens, AclOperation::DescribeTokens] {
+            let entry = AclEntry {
+                resource_type: ResourceType::User,
+                resource_name: "alice".into(),
+                pattern_type: PatternType::Literal,
+                principal: "User:bob".into(),
+                host: "*".into(),
+                operation,
+                permission_type: PermissionType::Allow,
+            };
+            assert2::assert!(rt(&entry) == entry);
+        }
     }
 
     #[test]

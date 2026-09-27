@@ -120,6 +120,10 @@ pub enum AuthError {
     MalformedMessage,
     #[error("unsupported mechanism")]
     UnsupportedMechanism,
+    /// SCRAM client-first named a GS2 authorization id other than the
+    /// authenticating user, which Kafka's `ScramSaslServer` refuses.
+    #[error("authorization id differs from the authenticating user")]
+    AuthorizationIdMismatch,
     /// OAUTHBEARER token failed validation. The token was expired, carried bad
     /// claims, was a signed token that the unsecured validator rejected, had no
     /// principal, and so on. This maps to the RFC 7628 `invalid_token` server

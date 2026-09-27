@@ -13,12 +13,14 @@ val kafkaVersion = "4.3.0"
 
 dependencies {
     implementation("org.apache.kafka:kafka-clients:$kafkaVersion")
-    // The generated metadata records (`PartitionRecord` and others) and the
-    // remote log metadata records. The oracle uses only their generated
+    // The generated metadata records (`PartitionRecord` and others), the
+    // remote log metadata records and the group coordinator records
+    // (`OffsetCommitValue` and others). The oracle uses only their generated
     // message and JSON converter classes, which need nothing beyond
     // kafka-clients, so their own dependencies stay out.
     implementation("org.apache.kafka:kafka-metadata:$kafkaVersion") { isTransitive = false }
     implementation("org.apache.kafka:kafka-storage:$kafkaVersion") { isTransitive = false }
+    implementation("org.apache.kafka:kafka-group-coordinator:$kafkaVersion") { isTransitive = false }
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
     // Compression codec libraries. The `compress` and `decompress` ops need
     // them at compile time.

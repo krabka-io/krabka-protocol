@@ -5,7 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
-        fixed::{get_i16, get_i32, put_i16, put_i32},
+        fixed::{get_bool, get_i16, get_i32, get_i64, put_bool, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
             get_compact_string_owned, get_nullable_string_owned, get_string_owned,
@@ -17,7 +17,7 @@ use crate::{
 };
 pub const API_KEY: i16 = 88;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 0;
+pub const MAX_VERSION: i16 = 1;
 pub const FLEXIBLE_MIN: i16 = 0;
 #[inline]
 #[must_use]
@@ -32,8 +32,9 @@ pub struct StreamsGroupHeartbeatResponse {
     pub member_id: String,
     pub member_epoch: i32,
     pub heartbeat_interval_ms: i32,
-    pub acceptable_recovery_lag: i32,
+    pub acceptable_recovery_lag_legacy: i32,
     pub task_offset_interval_ms: i32,
+    pub acceptable_recovery_lag: i64,
     pub status: Option<Vec<super::common::streams_group_heartbeat_response::status::Status>>,
     pub active_tasks:
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds>>,
@@ -41,6 +42,7 @@ pub struct StreamsGroupHeartbeatResponse {
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds>>,
     pub warmup_tasks:
         Option<Vec<super::common::streams_group_heartbeat_response::task_ids::TaskIds>>,
+    pub topology_description_required: bool,
     pub endpoint_information_epoch: i32,
     pub partitions_by_user_endpoint: Option<Vec<EndpointToPartitions>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -54,12 +56,14 @@ impl Default for StreamsGroupHeartbeatResponse {
             member_id: String::new(),
             member_epoch: 0i32,
             heartbeat_interval_ms: 0i32,
-            acceptable_recovery_lag: 0i32,
+            acceptable_recovery_lag_legacy: 0i32,
             task_offset_interval_ms: 0i32,
+            acceptable_recovery_lag: -1i64,
             status: Some(Vec::new()),
             active_tasks: None,
             standby_tasks: None,
             warmup_tasks: None,
+            topology_description_required: false,
             endpoint_information_epoch: 0i32,
             partitions_by_user_endpoint: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -106,8 +110,8 @@ impl StreamsGroupHeartbeatResponse {
         }
     }
     fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
-        if version >= 0 {
-            put_i32(buf, self.acceptable_recovery_lag);
+        if version == 0 {
+            put_i32(buf, self.acceptable_recovery_lag_legacy);
         }
     }
     fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -115,7 +119,12 @@ impl StreamsGroupHeartbeatResponse {
             put_i32(buf, self.task_offset_interval_ms);
         }
     }
-    fn encode_field_8<B: BufMut>(
+    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+        if version >= 1 {
+            put_i64(buf, self.acceptable_recovery_lag);
+        }
+    }
+    fn encode_field_9<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -134,7 +143,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn encode_field_9<B: BufMut>(
+    fn encode_field_10<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -153,7 +162,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn encode_field_10<B: BufMut>(
+    fn encode_field_11<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -172,7 +181,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn encode_field_11<B: BufMut>(
+    fn encode_field_12<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -191,12 +200,17 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn encode_field_12<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+    fn encode_field_13<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
+        if version >= 1 {
+            put_bool(buf, self.topology_description_required);
+        }
+    }
+    fn encode_field_14<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.endpoint_information_epoch);
         }
     }
-    fn encode_field_13<B: BufMut>(
+    fn encode_field_15<B: BufMut>(
         &self,
         buf: &mut B,
         version: i16,
@@ -301,8 +315,8 @@ impl StreamsGroupHeartbeatResponse {
         version: i16,
         _flex: bool,
     ) -> Result<(), ProtocolError> {
-        if version >= 0 {
-            out.acceptable_recovery_lag = get_i32(buf)?;
+        if version == 0 {
+            out.acceptable_recovery_lag_legacy = get_i32(buf)?;
         }
         Ok(())
     }
@@ -318,6 +332,17 @@ impl StreamsGroupHeartbeatResponse {
         Ok(())
     }
     fn decode_field_8<B: Buf>(
+        out: &mut Self,
+        buf: &mut B,
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.acceptable_recovery_lag = get_i64(buf)?;
+        }
+        Ok(())
+    }
+    fn decode_field_9<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -340,7 +365,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn decode_field_9<B: Buf>(
+    fn decode_field_10<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -363,7 +388,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn decode_field_10<B: Buf>(
+    fn decode_field_11<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -386,7 +411,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn decode_field_11<B: Buf>(
+    fn decode_field_12<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -409,7 +434,18 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn decode_field_12<B: Buf>(
+    fn decode_field_13<B: Buf>(
+        out: &mut Self,
+        buf: &mut B,
+        version: i16,
+        _flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 1 {
+            out.topology_description_required = get_bool(buf)?;
+        }
+        Ok(())
+    }
+    fn decode_field_14<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -420,7 +456,7 @@ impl StreamsGroupHeartbeatResponse {
         }
         Ok(())
     }
-    fn decode_field_13<B: Buf>(
+    fn decode_field_15<B: Buf>(
         out: &mut Self,
         buf: &mut B,
         version: i16,
@@ -472,12 +508,14 @@ impl Encode for StreamsGroupHeartbeatResponse {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex)?;
+        self.encode_field_8(buf, version, flex);
         self.encode_field_9(buf, version, flex)?;
         self.encode_field_10(buf, version, flex)?;
         self.encode_field_11(buf, version, flex)?;
-        self.encode_field_12(buf, version, flex);
-        self.encode_field_13(buf, version, flex)?;
+        self.encode_field_12(buf, version, flex)?;
+        self.encode_field_13(buf, version, flex);
+        self.encode_field_14(buf, version, flex);
+        self.encode_field_15(buf, version, flex)?;
         self.encode_tagged_fields(buf, version, flex);
         Ok(())
     }
@@ -510,11 +548,14 @@ impl Encode for StreamsGroupHeartbeatResponse {
         if version >= 0 {
             n += 4;
         }
-        if version >= 0 {
+        if version == 0 {
             n += 4;
         }
         if version >= 0 {
             n += 4;
+        }
+        if version >= 1 {
+            n += 8;
         }
         if version >= 0 {
             n += {
@@ -564,6 +605,9 @@ impl Encode for StreamsGroupHeartbeatResponse {
                 prefix + body
             };
         }
+        if version >= 1 {
+            n += 1;
+        }
         if version >= 0 {
             n += 4;
         }
@@ -610,6 +654,8 @@ impl Decode<'_> for StreamsGroupHeartbeatResponse {
         Self::decode_field_11(&mut out, buf, version, flex)?;
         Self::decode_field_12(&mut out, buf, version, flex)?;
         Self::decode_field_13(&mut out, buf, version, flex)?;
+        Self::decode_field_14(&mut out, buf, version, flex)?;
+        Self::decode_field_15(&mut out, buf, version, flex)?;
         Self::decode_tagged_fields(&mut out, buf, version, flex)?;
         Ok(out)
     }
@@ -637,11 +683,14 @@ impl StreamsGroupHeartbeatResponse {
         if version >= 0 {
             m.heartbeat_interval_ms = 1i32;
         }
-        if version >= 0 {
-            m.acceptable_recovery_lag = 1i32;
+        if version == 0 {
+            m.acceptable_recovery_lag_legacy = 1i32;
         }
         if version >= 0 {
             m.task_offset_interval_ms = 1i32;
+        }
+        if version >= 1 {
+            m.acceptable_recovery_lag = 1i64;
         }
         if version >= 0 {
             m.status = Some(vec![
@@ -668,6 +717,9 @@ impl StreamsGroupHeartbeatResponse {
                     version,
                 ),
             ]);
+        }
+        if version >= 1 {
+            m.topology_description_required = true;
         }
         if version >= 0 {
             m.endpoint_information_epoch = 1i32;
@@ -814,7 +866,7 @@ impl EndpointToPartitions {
 /// Only includes fields valid for the given version.
 #[must_use]
 #[allow(unused_comparisons)]
-pub fn default_json(_version: i16) -> ::serde_json::Value {
+pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
     obj.insert("errorCode".to_string(), ::serde_json::json!(0));
@@ -825,12 +877,26 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
     );
     obj.insert("memberEpoch".to_string(), ::serde_json::json!(0));
     obj.insert("heartbeatIntervalMs".to_string(), ::serde_json::json!(0));
-    obj.insert("acceptableRecoveryLag".to_string(), ::serde_json::json!(0));
+    if version <= 0 {
+        obj.insert(
+            "acceptableRecoveryLagLegacy".to_string(),
+            ::serde_json::json!(0),
+        );
+    }
     obj.insert("taskOffsetIntervalMs".to_string(), ::serde_json::json!(0));
+    if version >= 1 {
+        obj.insert("acceptableRecoveryLag".to_string(), ::serde_json::json!(-1));
+    }
     obj.insert("status".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert("activeTasks".to_string(), ::serde_json::Value::Null);
     obj.insert("standbyTasks".to_string(), ::serde_json::Value::Null);
     obj.insert("warmupTasks".to_string(), ::serde_json::Value::Null);
+    if version >= 1 {
+        obj.insert(
+            "topologyDescriptionRequired".to_string(),
+            ::serde_json::Value::Bool(false),
+        );
+    }
     obj.insert(
         "endpointInformationEpoch".to_string(),
         ::serde_json::json!(0),

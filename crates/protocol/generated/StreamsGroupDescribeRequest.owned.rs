@@ -15,8 +15,8 @@ use crate::{
 };
 pub const API_KEY: i16 = 89;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 0;
-pub const LATEST_STABLE_VERSION: i16 = 0;
+pub const MAX_VERSION: i16 = 1;
+pub const LATEST_STABLE_VERSION: i16 = 1;
 pub const FLEXIBLE_MIN: i16 = 0;
 #[inline]
 #[must_use]
@@ -27,6 +27,7 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct StreamsGroupDescribeRequest {
     pub group_ids: Vec<String>,
     pub include_authorized_operations: bool,
+    pub include_topology_description: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for StreamsGroupDescribeRequest {
@@ -52,6 +53,9 @@ impl Encode for StreamsGroupDescribeRequest {
         }
         if version >= 0 {
             put_bool(buf, self.include_authorized_operations);
+        }
+        if version >= 1 {
+            put_bool(buf, self.include_topology_description);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
@@ -80,6 +84,9 @@ impl Encode for StreamsGroupDescribeRequest {
             };
         }
         if version >= 0 {
+            n += 1;
+        }
+        if version >= 1 {
             n += 1;
         }
         if flex {
@@ -116,6 +123,9 @@ impl Decode<'_> for StreamsGroupDescribeRequest {
         if version >= 0 {
             out.include_authorized_operations = get_bool(buf)?;
         }
+        if version >= 1 {
+            out.include_topology_description = get_bool(buf)?;
+        }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
         }
@@ -133,6 +143,9 @@ impl StreamsGroupDescribeRequest {
         if version >= 0 {
             m.include_authorized_operations = true;
         }
+        if version >= 1 {
+            m.include_topology_description = true;
+        }
         m
     }
 }
@@ -140,13 +153,19 @@ impl StreamsGroupDescribeRequest {
 /// Only includes fields valid for the given version.
 #[must_use]
 #[allow(unused_comparisons)]
-pub fn default_json(_version: i16) -> ::serde_json::Value {
+pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert("groupIds".to_string(), ::serde_json::Value::Array(vec![]));
     obj.insert(
         "includeAuthorizedOperations".to_string(),
         ::serde_json::Value::Bool(false),
     );
+    if version >= 1 {
+        obj.insert(
+            "includeTopologyDescription".to_string(),
+            ::serde_json::Value::Bool(false),
+        );
+    }
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for StreamsGroupDescribeRequest {

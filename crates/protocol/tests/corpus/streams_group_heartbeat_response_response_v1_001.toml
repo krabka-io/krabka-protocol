@@ -1,0 +1,6 @@
+api_key = 88
+version = 1
+direction = "response"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "StreamsGroupHeartbeatResponse v1 (KIP-1331) hand-constructed default message with AcceptableRecoveryLag -1; the 4.3.0 oracle predates v1"

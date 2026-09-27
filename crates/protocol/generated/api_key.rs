@@ -61,7 +61,7 @@ pub enum ApiKey {
     EndTxn = 26,
     /// `WriteTxnMarkersRequest` (versions 1–2).
     WriteTxnMarkers = 27,
-    /// `TxnOffsetCommitRequest` (versions 0–5).
+    /// `TxnOffsetCommitRequest` (versions 0–6).
     TxnOffsetCommit = 28,
     /// `DescribeAclsRequest` (versions 1–3).
     DescribeAcls = 29,
@@ -181,9 +181,9 @@ pub enum ApiKey {
     DeleteShareGroupState = 86,
     /// `ReadShareGroupStateSummaryRequest` (versions 0–1).
     ReadShareGroupStateSummary = 87,
-    /// `StreamsGroupHeartbeatRequest` (versions 0–0).
+    /// `StreamsGroupHeartbeatRequest` (versions 0–1).
     StreamsGroupHeartbeat = 88,
-    /// `StreamsGroupDescribeRequest` (versions 0–0).
+    /// `StreamsGroupDescribeRequest` (versions 0–1).
     StreamsGroupDescribe = 89,
     /// `DescribeShareGroupOffsetsRequest` (versions 0–1).
     DescribeShareGroupOffsets = 90,
@@ -193,6 +193,8 @@ pub enum ApiKey {
     DeleteShareGroupOffsets = 92,
     /// `GetReplicaLogInfoRequest` (versions 0–0).
     GetReplicaLogInfo = 93,
+    /// `UnregisterControllerRequest` (versions 0–0).
+    UnregisterController = 94,
 }
 impl ApiKey {
     /// All known API keys, in ascending numeric order.
@@ -287,6 +289,7 @@ impl ApiKey {
         ApiKey::AlterShareGroupOffsets,
         ApiKey::DeleteShareGroupOffsets,
         ApiKey::GetReplicaLogInfo,
+        ApiKey::UnregisterController,
     ];
     /// Resolve from numeric key; returns `None` for unknown keys.
     #[must_use]
@@ -382,6 +385,7 @@ impl ApiKey {
             91 => Some(ApiKey::AlterShareGroupOffsets),
             92 => Some(ApiKey::DeleteShareGroupOffsets),
             93 => Some(ApiKey::GetReplicaLogInfo),
+            94 => Some(ApiKey::UnregisterController),
             _ => None,
         }
     }

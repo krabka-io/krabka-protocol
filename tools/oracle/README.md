@@ -27,8 +27,9 @@ The program supports these operations:
 
 An `encode` or `decode` request names its message with `apiKey` and
 `isRequest`, or with `messageName`. A `messageName` lookup also finds the
-metadata records in `kafka-metadata` (for example `PartitionRecord`) and the
-remote log metadata records in `kafka-storage`.
+metadata records in `kafka-metadata` (for example `PartitionRecord`), the
+remote log metadata records in `kafka-storage`, and the group coordinator
+records in `kafka-group-coordinator` (for example `OffsetCommitValue`).
 
 ## Kafka version
 

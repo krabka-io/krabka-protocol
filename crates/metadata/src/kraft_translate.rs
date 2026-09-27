@@ -41,10 +41,13 @@
 //!   per-listener `endpoints` list; KIP-631 has only `end_points` (no
 //!   top-level host/port). When listeners exist, their first entry supplies
 //!   the legacy top-level pair on decode. A legacy Krabka record with no
-//!   listeners uses one empty-name compatibility entry. All the
-//!   other KIP-631 extras (`incarnation_id`, `features`, `fenced`, …) are
-//!   defaulted on encode and dropped on decode. `broker_epoch` IS carried
-//!   (KIP-903 ISR fencing).
+//!   listeners uses one empty-name compatibility entry. `broker_epoch`,
+//!   `incarnation_id`, `features`, `log_dirs`, `fenced`,
+//!   `in_controlled_shutdown` and `cordoned_log_dirs` are carried; the ZK
+//!   migration flag is dropped.
+//! - `BrokerRegistrationChange`: decodes, against the image, to the broker's
+//!   updated `V1BrokerRegistration`, the way Kafka's `ClusterControlManager`
+//!   replays it. It re-encodes as a full `RegisterBroker`.
 //! - `DelegationToken`: KIP-631's record has no `hmac` field. The HMAC is
 //!   hex-encoded into the otherwise-unused `requester` slot so it
 //!   round-trips; `KafkaPrincipal`s map through their `Type:Name` string
@@ -54,6 +57,7 @@ use bytes::Bytes;
 use krabka_protocol::{
     owned::{
         access_control_entry_record::AccessControlEntryRecord,
+        broker_registration_change_record::BrokerRegistrationChangeRecord,
         client_quota_record::{ClientQuotaRecord as KClientQuotaRecord, EntityData},
         config_record::ConfigRecord,
         delegation_token_record::DelegationTokenRecord as KDelegationTokenRecord,
@@ -165,6 +169,7 @@ fn resource_type_to_wire(rt: ResourceType) -> i8 {
         ResourceType::Cluster => 4,
         ResourceType::TransactionalId => 5,
         ResourceType::DelegationToken => 6,
+        ResourceType::User => 7,
     }
 }
 
@@ -175,6 +180,7 @@ fn resource_type_from_wire(b: i8) -> Result<ResourceType, TranslateError> {
         4 => Ok(ResourceType::Cluster),
         5 => Ok(ResourceType::TransactionalId),
         6 => Ok(ResourceType::DelegationToken),
+        7 => Ok(ResourceType::User),
         other => Err(TranslateError::Invalid {
             field: "acl resource_type",
             detail: format!("unknown wire byte {other}"),
@@ -213,6 +219,8 @@ fn operation_to_wire(op: AclOperation) -> i8 {
         AclOperation::DescribeConfigs => 10,
         AclOperation::AlterConfigs => 11,
         AclOperation::IdempotentWrite => 12,
+        AclOperation::CreateTokens => 13,
+        AclOperation::DescribeTokens => 14,
         AclOperation::TwoPhaseCommit => 15,
     }
 }
@@ -230,6 +238,8 @@ fn operation_from_wire(b: i8) -> Result<AclOperation, TranslateError> {
         10 => Ok(AclOperation::DescribeConfigs),
         11 => Ok(AclOperation::AlterConfigs),
         12 => Ok(AclOperation::IdempotentWrite),
+        13 => Ok(AclOperation::CreateTokens),
+        14 => Ok(AclOperation::DescribeTokens),
         15 => Ok(AclOperation::TwoPhaseCommit),
         other => Err(TranslateError::Invalid {
             field: "acl operation",
@@ -420,7 +430,8 @@ pub fn to_kraft_records(
 /// A missing finalized metadata.version is treated as the latest supported
 /// level, matching standalone bootstrap. `Partition` and `PartitionChange` use
 /// v0, v1, or v2 at the Kafka KIP-858/KIP-966 boundaries. `RegisterBroker` uses v1,
-/// v2, or v3 at the migration/KIP-858 boundaries.
+/// v2, v3, or v4 at the migration/KIP-858/KIP-1066 boundaries, as Kafka's
+/// `MetadataVersion.registerBrokerRecordVersion` does.
 ///
 /// # Errors
 /// Propagates [`to_kraft_records`] errors, plus [`TranslateError::Encode`] if
@@ -449,7 +460,11 @@ pub fn to_kraft_values(
                     }
                 }
                 KraftMetadataRecord::RegisterBroker(_) => {
-                    if metadata_version >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL {
+                    if metadata_version >= crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                        4
+                    } else if metadata_version
+                        >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL
+                    {
                         3
                     } else if metadata_version >= 8 {
                         2
@@ -938,12 +953,16 @@ fn register_broker_to_kraft(
         end_points,
         features,
         log_dirs: b.log_dirs.iter().copied().map(to_kuuid).collect(),
+        cordoned_log_dirs: b
+            .cordoned_log_dirs
+            .as_ref()
+            .map(|dirs| dirs.iter().copied().map(to_kuuid).collect()),
         broker_epoch: b.broker_epoch,
         incarnation_id: to_kuuid(b.incarnation_id),
-        // Krabka brokers are always-active; there is no fence/unfence lifecycle.
-        // Emit false rather than the schema default (true) so JVM tools do not
-        // interpret our brokers as fenced on startup.
-        fenced: false,
+        // Krabka's own brokers register with `fenced: false`, not the schema
+        // default (true), so JVM tools do not read them as fenced on startup.
+        fenced: b.fenced,
+        in_controlled_shutdown: b.in_controlled_shutdown,
         ..Default::default()
     })
 }
@@ -1241,6 +1260,11 @@ pub fn from_kraft(
         KraftMetadataRecord::RegisterBroker(b) => Ok(MetadataRecord::V1BrokerRegistration(
             register_broker_from_kraft(b)?,
         )),
+        KraftMetadataRecord::BrokerRegistrationChange(change) => {
+            Ok(MetadataRecord::V1BrokerRegistration(
+                broker_registration_change_from_kraft(change, image)?,
+            ))
+        }
         KraftMetadataRecord::RegisterController(c) => Ok(MetadataRecord::V1ControllerRegistration(
             register_controller_from_kraft(c)?,
         )),
@@ -1383,7 +1407,73 @@ fn register_broker_from_kraft(
         rack: b.rack.clone(),
         endpoints,
         log_dirs,
+        fenced: b.fenced,
+        in_controlled_shutdown: b.in_controlled_shutdown,
+        cordoned_log_dirs: b
+            .cordoned_log_dirs
+            .as_ref()
+            .map(|dirs| dirs.iter().copied().map(from_kuuid).collect()),
         features,
+    })
+}
+
+/// Replay a `BrokerRegistrationChangeRecord` onto the broker's current
+/// registration, as Kafka's `ClusterControlManager.replayRegistrationChange`
+/// does: the broker must be registered at the record's epoch, `fenced` is
+/// -1 (unfence), 0 (no change) or 1 (fence), `inControlledShutdown` is 0 (no
+/// change) or 1, an empty `logDirs` means no change, and a null
+/// `cordonedLogDirs` means no change.
+fn broker_registration_change_from_kraft(
+    change: &BrokerRegistrationChangeRecord,
+    image: &MetadataImage,
+) -> Result<BrokerRegistrationRecord, TranslateError> {
+    let node_id = node_id_from_wire(change.broker_id, "broker registration change id")?;
+    let current = image
+        .broker(node_id)
+        .filter(|broker| broker.broker_epoch == change.broker_epoch)
+        .ok_or_else(|| TranslateError::Invalid {
+            field: "broker registration change",
+            detail: format!(
+                "no registration for broker {} at epoch {}",
+                change.broker_id, change.broker_epoch
+            ),
+        })?;
+    let fenced = match change.fenced {
+        -1 => false,
+        0 => current.fenced,
+        1 => true,
+        other => {
+            return Err(TranslateError::Invalid {
+                field: "broker registration change fenced",
+                detail: format!("unknown value {other}"),
+            });
+        }
+    };
+    let in_controlled_shutdown = match change.in_controlled_shutdown {
+        0 => current.in_controlled_shutdown,
+        1 => true,
+        other => {
+            return Err(TranslateError::Invalid {
+                field: "broker registration change in_controlled_shutdown",
+                detail: format!("unknown value {other}"),
+            });
+        }
+    };
+    let log_dirs = if change.log_dirs.is_empty() {
+        current.log_dirs.clone()
+    } else {
+        change.log_dirs.iter().copied().map(from_kuuid).collect()
+    };
+    let cordoned_log_dirs = match &change.cordoned_log_dirs {
+        None => current.cordoned_log_dirs.clone(),
+        Some(dirs) => Some(dirs.iter().copied().map(from_kuuid).collect()),
+    };
+    Ok(BrokerRegistrationRecord {
+        log_dirs,
+        fenced,
+        in_controlled_shutdown,
+        cordoned_log_dirs,
+        ..current.clone()
     })
 }
 
@@ -1827,6 +1917,9 @@ mod tests {
                 port: 9092,
                 rack: Some("us-east-1a".into()),
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             }),
@@ -1847,6 +1940,9 @@ mod tests {
                 port: 9093,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![
                     BrokerEndpoint {
                         name: "EXTERNAL".into(),
@@ -1877,6 +1973,9 @@ mod tests {
             port: 9092,
             rack: None,
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             endpoints: vec![BrokerEndpoint {
                 name: "EXTERNAL".into(),
                 host: "ext.example.com".into(),
@@ -1935,6 +2034,9 @@ mod tests {
                 port: 9092,
                 rack: None,
                 log_dirs: vec![],
+                fenced: false,
+                in_controlled_shutdown: false,
+                cordoned_log_dirs: None,
                 endpoints: vec![],
                 features: std::collections::BTreeMap::new(),
             }),
@@ -1954,6 +2056,9 @@ mod tests {
             rack: None,
             endpoints: vec![],
             log_dirs: vec![directory],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             features: std::collections::BTreeMap::new(),
         });
 
@@ -2009,6 +2114,191 @@ mod tests {
         });
         image.apply(&rec);
         round_trip(&rec, &image);
+    }
+
+    /// `RegisterBroker` frames at the version Kafka's
+    /// `MetadataVersion.registerBrokerRecordVersion` picks for each level: v4
+    /// from `4.3-IV0` (KIP-1066 cordoned log dirs), v3 from `3.7-IV2`, v2 from
+    /// `3.4-IV0`, v1 below.
+    #[test]
+    fn register_broker_frames_at_kafkas_record_version() {
+        use crate::metadata_version::{
+            CORDONED_LOG_DIRS_MIN_LEVEL, DIRECTORY_ASSIGNMENT_MIN_LEVEL, METADATA_VERSION_MAX,
+            METADATA_VERSION_MIN,
+        };
+
+        // Every field a registration carries, so each rung shows which of them
+        // survive: log dirs from v3, cordoned log dirs from v4.
+        let directory = uuid::Uuid::from_u128(0xD1);
+        let full = BrokerRegistrationRecord {
+            node_id: NodeId(3),
+            broker_epoch: 5,
+            incarnation_id: uuid::Uuid::from_u128(3),
+            host: "127.0.0.1".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![directory],
+            fenced: true,
+            in_controlled_shutdown: true,
+            cordoned_log_dirs: Some(vec![directory]),
+            features: std::collections::BTreeMap::new(),
+        };
+        let without_cordoned = BrokerRegistrationRecord {
+            cordoned_log_dirs: None,
+            ..full.clone()
+        };
+        let without_dirs = BrokerRegistrationRecord {
+            log_dirs: vec![],
+            ..without_cordoned.clone()
+        };
+
+        for (level, want_version, want) in [
+            (METADATA_VERSION_MAX, 4_i16, &full),
+            (CORDONED_LOG_DIRS_MIN_LEVEL, 4, &full),
+            (CORDONED_LOG_DIRS_MIN_LEVEL - 1, 3, &without_cordoned),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL, 3, &without_cordoned),
+            (DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1, 2, &without_dirs),
+            (8, 2, &without_dirs),
+            (METADATA_VERSION_MIN, 1, &without_dirs),
+        ] {
+            let mut image = img();
+            image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
+                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                level,
+            }));
+            let record = MetadataRecord::V1BrokerRegistration(full.clone());
+            let value = to_kraft_values(&record, &image).unwrap().remove(0);
+            let (wire, version) = KraftMetadataRecord::decode_value(&value).unwrap();
+            check!(
+                (version, from_kraft(&wire, &image).unwrap())
+                    == (
+                        want_version,
+                        MetadataRecord::V1BrokerRegistration(want.clone())
+                    ),
+                "metadata.version {level}"
+            );
+        }
+    }
+
+    /// A `BrokerRegistrationChangeRecord` replays onto the registered broker
+    /// as Kafka's `ClusterControlManager.replayRegistrationChange` does.
+    #[test]
+    fn broker_registration_change_replays_onto_the_registration() {
+        let (d1, d2) = (uuid::Uuid::from_u128(0xD1), uuid::Uuid::from_u128(0xD2));
+        let registered = BrokerRegistrationRecord {
+            node_id: NodeId(3),
+            broker_epoch: 5,
+            incarnation_id: uuid::Uuid::from_u128(3),
+            host: "broker-3".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![d1],
+            fenced: true,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
+            features: std::collections::BTreeMap::new(),
+        };
+        let mut image = img();
+        image.apply(&MetadataRecord::V1BrokerRegistration(registered.clone()));
+
+        let change = |fenced: i8,
+                      in_controlled_shutdown: i8,
+                      log_dirs: Vec<uuid::Uuid>,
+                      cordoned: Option<Vec<uuid::Uuid>>| {
+            BrokerRegistrationChangeRecord {
+                broker_id: 3,
+                broker_epoch: 5,
+                fenced,
+                in_controlled_shutdown,
+                log_dirs: log_dirs.into_iter().map(to_kuuid).collect(),
+                cordoned_log_dirs: cordoned.map(|dirs| dirs.into_iter().map(to_kuuid).collect()),
+                ..Default::default()
+            }
+        };
+        let updated = |edit: fn(&mut BrokerRegistrationRecord)| {
+            let mut broker = registered.clone();
+            edit(&mut broker);
+            Ok(MetadataRecord::V1BrokerRegistration(broker))
+        };
+        let invalid = |field, detail: &str| {
+            Err(TranslateError::Invalid {
+                field,
+                detail: detail.into(),
+            })
+        };
+
+        for (case, record, want) in [
+            ("no change", change(0, 0, vec![], None), updated(|_| {})),
+            (
+                "unfence",
+                change(-1, 0, vec![], None),
+                updated(|b| b.fenced = false),
+            ),
+            ("fence", change(1, 0, vec![], None), updated(|_| {})),
+            (
+                "controlled shutdown",
+                change(0, 1, vec![], None),
+                updated(|b| b.in_controlled_shutdown = true),
+            ),
+            (
+                "new log dirs",
+                change(0, 0, vec![d2], None),
+                updated(|b| b.log_dirs = vec![uuid::Uuid::from_u128(0xD2)]),
+            ),
+            (
+                "cordon a dir",
+                change(0, 0, vec![], Some(vec![d1])),
+                updated(|b| b.cordoned_log_dirs = Some(vec![uuid::Uuid::from_u128(0xD1)])),
+            ),
+            (
+                "uncordon every dir",
+                change(0, 0, vec![], Some(vec![])),
+                updated(|b| b.cordoned_log_dirs = Some(vec![])),
+            ),
+            (
+                "stale epoch",
+                BrokerRegistrationChangeRecord {
+                    broker_epoch: 4,
+                    ..change(0, 0, vec![], None)
+                },
+                invalid(
+                    "broker registration change",
+                    "no registration for broker 3 at epoch 4",
+                ),
+            ),
+            (
+                "unknown broker",
+                BrokerRegistrationChangeRecord {
+                    broker_id: 9,
+                    ..change(0, 0, vec![], None)
+                },
+                invalid(
+                    "broker registration change",
+                    "no registration for broker 9 at epoch 5",
+                ),
+            ),
+            (
+                "unknown fenced value",
+                change(2, 0, vec![], None),
+                invalid("broker registration change fenced", "unknown value 2"),
+            ),
+            (
+                "unknown controlled shutdown value",
+                change(0, -1, vec![], None),
+                invalid(
+                    "broker registration change in_controlled_shutdown",
+                    "unknown value -1",
+                ),
+            ),
+        ] {
+            // Through the v3 value bytes, the version that carries every field.
+            let value = KraftMetadataRecord::BrokerRegistrationChange(record)
+                .encode_value(3)
+                .unwrap();
+            check!(from_kraft_value(&value, &image) == want, "case {case}");
+        }
     }
 
     /// Partition records frame at v2 once ELR is available, v1 once directory
@@ -2077,6 +2367,9 @@ mod tests {
             rack: None,
             endpoints: vec![],
             log_dirs: vec![],
+            fenced: false,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
             features: std::collections::BTreeMap::from([
                 ("metadata.version".to_string(), (7_i16, 25_i16)),
                 ("kraft.version".to_string(), (0, 1)),
@@ -2366,6 +2659,78 @@ mod tests {
             permission_type: PermissionType::Allow,
         });
         round_trip(&rec, &img());
+    }
+
+    /// Every ACL resource type and operation maps to Kafka's `i8`
+    /// discriminant and back through a full `AccessControlEntryRecord`
+    /// round trip, KIP-373's `USER` (7), `CREATE_TOKENS` (13) and
+    /// `DESCRIBE_TOKENS` (14) included.
+    #[test]
+    fn acl_enums_map_to_kafka_wire_codes() {
+        for (resource_type, wire) in [
+            (ResourceType::Topic, 2_i8),
+            (ResourceType::Group, 3),
+            (ResourceType::Cluster, 4),
+            (ResourceType::TransactionalId, 5),
+            (ResourceType::DelegationToken, 6),
+            (ResourceType::User, 7),
+        ] {
+            check!(
+                (
+                    resource_type_to_wire(resource_type),
+                    resource_type_from_wire(wire).unwrap(),
+                ) == (wire, resource_type)
+            );
+        }
+        for (operation, wire) in [
+            (AclOperation::All, 2_i8),
+            (AclOperation::Read, 3),
+            (AclOperation::Write, 4),
+            (AclOperation::Create, 5),
+            (AclOperation::Delete, 6),
+            (AclOperation::Alter, 7),
+            (AclOperation::Describe, 8),
+            (AclOperation::ClusterAction, 9),
+            (AclOperation::DescribeConfigs, 10),
+            (AclOperation::AlterConfigs, 11),
+            (AclOperation::IdempotentWrite, 12),
+            (AclOperation::CreateTokens, 13),
+            (AclOperation::DescribeTokens, 14),
+            (AclOperation::TwoPhaseCommit, 15),
+        ] {
+            check!(
+                (
+                    operation_to_wire(operation),
+                    operation_from_wire(wire).unwrap()
+                ) == (wire, operation)
+            );
+        }
+        check!(resource_type_from_wire(8).is_err());
+        check!(operation_from_wire(16).is_err());
+    }
+
+    /// KIP-373: `CREATE_TOKENS` and `DESCRIBE_TOKENS` granted on a `USER`
+    /// resource survive the record-to-wire round trip.
+    #[test]
+    fn access_control_entry_user_token_operations_round_trip() {
+        for operation in [AclOperation::CreateTokens, AclOperation::DescribeTokens] {
+            let rec = MetadataRecord::V1AccessControlEntry(AclEntry {
+                resource_type: ResourceType::User,
+                resource_name: "alice".into(),
+                pattern_type: PatternType::Literal,
+                principal: "User:token-requester".into(),
+                host: "*".into(),
+                operation,
+                permission_type: PermissionType::Allow,
+            });
+            let value = to_kraft_values(&rec, &img()).unwrap().remove(0);
+            check!(from_kraft_value(&value, &img()).unwrap() == rec);
+            let KraftMetadataRecord::AccessControlEntry(wire) = to_kraft(&rec, &img()).unwrap()
+            else {
+                panic!("expected an access control entry");
+            };
+            check!((wire.resource_type, wire.operation) == (7, operation_to_wire(operation)));
+        }
     }
 
     #[test]

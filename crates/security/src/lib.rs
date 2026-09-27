@@ -65,7 +65,8 @@ pub use plain::verify_plain;
 pub use principal::{AuthError, AuthMethod, KafkaPrincipal, Principal};
 pub use reload::DynamicServerConfig;
 pub use scram::{
-    ScramClientExchange, ScramCredential, ScramServerExchange, StepResult, derive_keys_from_salted,
+    ScramClientExchange, ScramClientFirst, ScramCredential, ScramServerExchange, StepResult,
+    TOKEN_AUTH_EXTENSION, decode_saslname, derive_keys_from_salted, encode_saslname,
     hash_scram_password, pbkdf2_salted, scram_hash_len,
 };
 pub use tls::{ClientAuthMode, TlsConfig, TlsError};

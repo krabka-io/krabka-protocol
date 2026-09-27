@@ -1,0 +1,6 @@
+api_key = 94
+version = 0
+direction = "request"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "UnregisterControllerRequest v0 (KIP-1312) hand-constructed for ControllerId 3000; the 4.3.0 oracle predates api_key 94"

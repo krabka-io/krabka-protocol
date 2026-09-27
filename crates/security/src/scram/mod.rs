@@ -3,11 +3,13 @@
 use std::{fmt, str::FromStr};
 
 mod client;
+mod messages;
 mod pg_verifier;
 mod server;
 
 pub use client::ScramClientExchange;
 use hmac::{Hmac, KeyInit, Mac};
+pub use messages::{ScramClientFirst, TOKEN_AUTH_EXTENSION, decode_saslname, encode_saslname};
 pub use pg_verifier::{PgScramVerifier, ScramError};
 use refined_type::rule::MinMaxI32;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -707,5 +709,225 @@ mod tests {
             StepResult::Failed(crate::AuthError::MalformedMessage) => {}
             other => panic!("expected MalformedMessage for wrong channel binding, got {other:?}"),
         }
+    }
+
+    /// Drive a server exchange for `alice` by hand with the given GS2 header
+    /// and extensions in client-first, and the given header base64-encoded as
+    /// the client-final `c=`. Returns the principal on success, or the first
+    /// failure from either round.
+    fn handshake_with_header(
+        gs2_header: &str,
+        extensions: &str,
+        channel_binding_header: &str,
+    ) -> Result<crate::Principal, crate::AuthError> {
+        let password: Vec<u8> = (b'a'..=b'z').collect();
+        let salt: Vec<u8> = (0..16).collect();
+        let cred = hash_scram_password_with_salt(
+            &password,
+            SaslMechanism::ScramSha256,
+            4096,
+            salt.clone(),
+        );
+        let server = ScramServerExchange::new("alice".to_string(), cred);
+
+        let bare = format!("n=alice,r=client-nonce{extensions}");
+        let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
+            StepResult::Continue(server_first, next) => (server_first, next),
+            StepResult::Failed(e) => return Err(e),
+            StepResult::Done(..) => panic!("server finished on client-first"),
+        };
+        let server_first = String::from_utf8(server_first).unwrap();
+        let combined_nonce = server_first
+            .strip_prefix("r=")
+            .and_then(|rest| rest.split(',').next())
+            .unwrap();
+
+        let client_final_no_proof = format!(
+            "c={},r={combined_nonce}",
+            B64.encode(channel_binding_header.as_bytes())
+        );
+        let auth_message = format!("{bare},{server_first},{client_final_no_proof}");
+        let (proof, _) =
+            client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes()).unwrap();
+        match server.step(format!("{client_final_no_proof},p={}", B64.encode(proof)).as_bytes()) {
+            StepResult::Done(principal, _) => Ok(principal),
+            StepResult::Failed(e) => Err(e),
+            StepResult::Continue(..) => panic!("server continued past client-final"),
+        }
+    }
+
+    /// Broker issue #764: the server accepts a GS2 header carrying an
+    /// authorization id, as Kafka's `ScramSaslServer` does, and checks the
+    /// client-final `c=` against the header the client actually sent rather
+    /// than the literal `biws`.
+    #[test]
+    fn scram_server_checks_the_gs2_header_the_client_sent() {
+        let alice = Ok(crate::Principal {
+            name: "alice".into(),
+            auth_method: crate::AuthMethod::SaslScramSha256,
+            groups: vec![],
+        });
+        for (case, gs2_header, extensions, channel_binding_header, want) in [
+            ("plain header", "n,,", "", "n,,", alice.clone()),
+            (
+                "authzid naming the user",
+                "n,a=alice,",
+                "",
+                "n,a=alice,",
+                alice.clone(),
+            ),
+            (
+                "token extension",
+                "n,,",
+                ",tokenauth=true",
+                "n,,",
+                alice.clone(),
+            ),
+            (
+                "authzid with extension",
+                "n,a=alice,",
+                ",tokenauth=true",
+                "n,a=alice,",
+                alice.clone(),
+            ),
+            (
+                "authzid naming another user",
+                "n,a=bob,",
+                "",
+                "n,a=bob,",
+                Err(crate::AuthError::AuthorizationIdMismatch),
+            ),
+            (
+                "authzid header but biws binding",
+                "n,a=alice,",
+                "",
+                "n,,",
+                Err(crate::AuthError::MalformedMessage),
+            ),
+            (
+                "plain header but authzid binding",
+                "n,,",
+                "",
+                "n,a=alice,",
+                Err(crate::AuthError::MalformedMessage),
+            ),
+            (
+                "channel binding requested",
+                "p=tls-unique,,",
+                "",
+                "p=tls-unique,,",
+                Err(crate::AuthError::MalformedMessage),
+            ),
+            (
+                "client supports binding",
+                "y,,",
+                "",
+                "y,,",
+                Err(crate::AuthError::MalformedMessage),
+            ),
+        ] {
+            check!(
+                handshake_with_header(gs2_header, extensions, channel_binding_header) == want,
+                "case {case}"
+            );
+        }
+    }
+
+    /// The client sends the extensions it is given after the nonce, and the
+    /// server signs them as part of the bare message, so a `tokenauth=true`
+    /// login completes.
+    #[test]
+    fn scram_client_sends_extensions_in_client_first() {
+        let password = b"token-hmac";
+        let cred = hash_scram_password_with_salt(
+            password,
+            SaslMechanism::ScramSha256,
+            4096,
+            (0..16).collect::<Vec<u8>>(),
+        );
+        let server = ScramServerExchange::new("token-id".to_string(), cred);
+        let client = ScramClientExchange::new(
+            "token-id".to_string(),
+            password.to_vec(),
+            SaslMechanism::ScramSha256,
+        )
+        .with_extensions([(TOKEN_AUTH_EXTENSION, "true")])
+        .unwrap();
+
+        let (c1, client) = client.client_first().unwrap();
+        let parsed = ScramClientFirst::parse(&c1).unwrap();
+        check!(
+            (
+                parsed.gs2_header.as_str(),
+                parsed.username.as_str(),
+                parsed.extensions.clone(),
+                parsed.token_authenticated(),
+            ) == (
+                "n,,",
+                "token-id",
+                vec![(TOKEN_AUTH_EXTENSION.to_string(), "true".to_string())],
+                true,
+            )
+        );
+        let StepResult::Continue(s1, server) = server.step(&c1) else {
+            panic!("server step 1 must continue");
+        };
+        let (c2, client) = client.step(&s1).unwrap();
+        let StepResult::Done(principal, s2) = server.step(&c2) else {
+            panic!("server step 2 must finish");
+        };
+        check!(principal.name == "token-id");
+        check!(client.verify_server_final(&s2).is_ok());
+    }
+
+    #[test]
+    fn scram_client_rejects_extensions_kafka_cannot_parse() {
+        for (case, key, value) in [
+            ("empty key", "", "true"),
+            ("non-alphabetic key", "token_auth", "true"),
+            ("empty value", "tokenauth", ""),
+            ("comma in value", "tokenauth", "a,b"),
+            ("non-ASCII value", "tokenauth", "\u{e9}"),
+        ] {
+            let client = ScramClientExchange::new(
+                "alice".to_string(),
+                b"pw".to_vec(),
+                SaslMechanism::ScramSha256,
+            );
+            check!(
+                client.with_extensions([(key, value)]).map(|_| ())
+                    == Err(crate::AuthError::MalformedMessage),
+                "case {case}"
+            );
+        }
+    }
+
+    /// A username holding `,` or `=` is sent as an escaped `saslname` and the
+    /// server authenticates it under its decoded name.
+    #[test]
+    fn scram_round_trip_escapes_the_username() {
+        let password = b"pw";
+        let cred = hash_scram_password_with_salt(
+            password,
+            SaslMechanism::ScramSha256,
+            4096,
+            (0..16).collect::<Vec<u8>>(),
+        );
+        let server = ScramServerExchange::new("a,b=c".to_string(), cred);
+        let client = ScramClientExchange::new(
+            "a,b=c".to_string(),
+            password.to_vec(),
+            SaslMechanism::ScramSha256,
+        );
+        let (c1, client) = client.client_first().unwrap();
+        check!(c1.starts_with(b"n,,n=a=2Cb=3Dc,r="));
+        let StepResult::Continue(s1, server) = server.step(&c1) else {
+            panic!("server step 1 must continue");
+        };
+        let (c2, _client) = client.step(&s1).unwrap();
+        let StepResult::Done(principal, _) = server.step(&c2) else {
+            panic!("server step 2 must finish");
+        };
+        check!(principal.name == "a,b=c");
     }
 }

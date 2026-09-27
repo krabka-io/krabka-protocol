@@ -139,7 +139,10 @@ impl Feature for TransactionVersionFeature {
 
 /// `share.version` (KIP-932). A plain integer feature that gates share-group
 /// membership. The default stays at the supported min, 0, which is disabled,
-/// until the bootstrap metadata.version reaches the KIP-932 GA level.
+/// until the bootstrap metadata.version reaches `4.2-IV0`, where Kafka's
+/// `ShareVersion.SV_1` bootstraps. Kafka's `SV_2` (KIP-1191 dead-letter queues)
+/// bootstraps at `4.4-IV0`, but krabka supports only level 1, so the default
+/// stays at 1 above that.
 pub struct ShareVersionFeature;
 
 impl Feature for ShareVersionFeature {
@@ -152,20 +155,21 @@ impl Feature for ShareVersionFeature {
             crate::metadata_version::SHARE_VERSION_MAX,
         )
     }
-    fn default_level(&self, _bootstrap_mv: i16) -> i16 {
-        // Share groups are opt-in (KIP-932 early access): no released
-        // metadata.version enables share.version by default, so the bootstrap
-        // default stays at the supported min (0, disabled).
-        crate::metadata_version::SHARE_VERSION_MIN
+    fn default_level(&self, bootstrap_mv: i16) -> i16 {
+        if bootstrap_mv >= crate::metadata_version::SHARE_VERSION_DEFAULT_METADATA_LEVEL {
+            crate::metadata_version::SHARE_VERSION_MAX
+        } else {
+            crate::metadata_version::SHARE_VERSION_MIN
+        }
     }
     // dependencies + min_required_floor: inherit the empty/supported-min defaults.
 }
 
 /// `streams.version` (KIP-1071). A plain integer feature that gates the
 /// broker-side Streams rebalance protocol. The default stays at the supported
-/// min, 0, which is disabled. KIP-1071 is early access, so no released
-/// metadata.version enables it by default. An operator opts in through
-/// `UpdateFeatures`.
+/// min, 0, which is disabled, until the bootstrap metadata.version reaches
+/// `4.2-IV1`, where Kafka's `StreamsVersion.SV_1` bootstraps. Below that an
+/// operator opts in through `UpdateFeatures`.
 pub struct StreamsVersionFeature;
 
 impl Feature for StreamsVersionFeature {
@@ -178,8 +182,12 @@ impl Feature for StreamsVersionFeature {
             crate::metadata_version::STREAMS_VERSION_MAX,
         )
     }
-    fn default_level(&self, _bootstrap_mv: i16) -> i16 {
-        crate::metadata_version::STREAMS_VERSION_MIN
+    fn default_level(&self, bootstrap_mv: i16) -> i16 {
+        if bootstrap_mv >= crate::metadata_version::STREAMS_VERSION_DEFAULT_METADATA_LEVEL {
+            crate::metadata_version::STREAMS_VERSION_MAX
+        } else {
+            crate::metadata_version::STREAMS_VERSION_MIN
+        }
     }
     // dependencies + min_required_floor: inherit the empty/supported-min
     // defaults. Streams group state lives in __consumer_offsets, not the
@@ -192,13 +200,12 @@ impl Feature for StreamsVersionFeature {
 /// eligible-leader or last-known-leader set, at level 1 the controller
 /// maintains both.
 ///
-/// `EligibleLeaderReplicasVersion` in apache/kafka 4.3.1 bootstraps `ELRV_1` at
+/// `EligibleLeaderReplicasVersion` in apache/kafka bootstraps `ELRV_1` at
 /// `4.1-IV0` and declares one KIP-1022 dependency, `metadata.version` at
-/// `4.0-IV1`, the level whose `PartitionRecord` carries the ELR fields. Krabka
-/// advertises `metadata.version` up to `4.0-IV3`, which is below `ELRV_1`'s
-/// bootstrap level, so the release default here is 0 at every level krabka
-/// formats with, exactly as Kafka's `Feature.defaultLevel` computes it. An
-/// operator turns the feature on with `kafka-features upgrade`.
+/// `4.0-IV1`, the level whose `PartitionRecord` carries the ELR fields. The
+/// release default is therefore 1 from `4.1-IV0` and 0 below it, exactly as
+/// Kafka's `Feature.defaultLevel` computes it. Below `4.1-IV0` an operator
+/// turns the feature on with `kafka-features upgrade`.
 pub struct ElrVersionFeature;
 
 impl Feature for ElrVersionFeature {
@@ -211,8 +218,12 @@ impl Feature for ElrVersionFeature {
             crate::metadata_version::ELR_VERSION_MAX,
         )
     }
-    fn default_level(&self, _bootstrap_mv: i16) -> i16 {
-        crate::metadata_version::ELR_VERSION_MIN
+    fn default_level(&self, bootstrap_mv: i16) -> i16 {
+        if bootstrap_mv >= crate::metadata_version::ELR_DEFAULT_METADATA_LEVEL {
+            crate::metadata_version::ELR_VERSION_MAX
+        } else {
+            crate::metadata_version::ELR_VERSION_MIN
+        }
     }
     fn dependencies(&self, level: i16) -> &'static [(&'static str, i16)] {
         if level >= 1 {
@@ -388,7 +399,7 @@ mod tests {
     #[test]
     fn registry_contains_metadata_version() {
         let f = feature("metadata.version").expect("registered");
-        assert2::assert!(f.supported_range() == (7, 25));
+        assert2::assert!(f.supported_range() == (7, 32));
         assert2::assert!(feature("not.a.feature").is_none());
     }
 
@@ -396,9 +407,9 @@ mod tests {
     fn metadata_version_default_is_the_bootstrap_level_clamped() {
         let f = feature("metadata.version").unwrap();
         for (_case, bootstrap, want) in [
-            ("maximum bootstrap", 25, 25),
+            ("maximum bootstrap", 32, 32),
             ("minimum bootstrap", 7, 7),
-            ("above maximum", 99, 25),
+            ("above maximum", 99, 32),
             ("below minimum", 1, 7),
         ] {
             assert2::assert!(f.default_level(bootstrap) == want);
@@ -409,9 +420,9 @@ mod tests {
     fn is_supported_level_checks_range() {
         for (name, level, want) in [
             ("metadata.version", 7, true),
-            ("metadata.version", 25, true),
+            ("metadata.version", 32, true),
             ("metadata.version", 6, false),
-            ("metadata.version", 26, false),
+            ("metadata.version", 33, false),
             ("not.a.feature", 1, false),
         ] {
             assert2::assert!(is_supported_level(name, level) == want);
@@ -435,7 +446,8 @@ mod tests {
     fn metadata_version_level_name() {
         let f = feature("metadata.version").unwrap();
         for (_case, level, want) in [
-            ("latest level", 25, Some("4.0-IV3")),
+            ("latest level", 32, Some("4.4-IV1")),
+            ("cordoned log dirs level", 30, Some("4.3-IV0")),
             ("earliest level", 7, Some("3.3-IV3")),
             ("unknown level", 99, None),
         ] {
@@ -453,7 +465,7 @@ mod tests {
     fn registry_feature_contracts_are_pinned() {
         let image = MetadataImage::new(uuid::Uuid::nil());
         let expected = [
-            ("metadata.version", (7, 25), 25, 7),
+            ("metadata.version", (7, 32), 25, 7),
             ("group.version", (0, 1), 1, 0),
             ("transaction.version", (0, 3), 2, 0),
             ("share.version", (0, 1), 0, 0),
@@ -513,23 +525,54 @@ mod tests {
     }
 
     #[test]
-    fn streams_version_registered_opt_in() {
+    fn streams_version_registered_with_no_dependencies() {
         let f = feature("streams.version").expect("registered");
-        // KIP-1071 is early access: never auto-enabled by any release level.
-        check!(
+        check!((f.supported_range(), f.dependencies(1).is_empty()) == ((0, 1), true));
+    }
+
+    /// Kafka's `Feature.defaultLevel`: the highest feature level whose
+    /// bootstrap metadata version is at or below the bootstrap level.
+    #[test]
+    fn opt_in_feature_defaults_follow_kafka_bootstrap_levels() {
+        use crate::metadata_version::{
+            ELR_DEFAULT_METADATA_LEVEL, METADATA_VERSION_MAX, SHARE_VERSION_DEFAULT_METADATA_LEVEL,
+            STREAMS_VERSION_DEFAULT_METADATA_LEVEL,
+        };
+        for (name, bootstrap, want) in [
+            ("eligible.leader.replicas.version", 25, 0),
             (
-                f.supported_range(),
-                f.default_level(25),
-                f.dependencies(1).is_empty(),
-            ) == ((0, 1), 0, true)
-        );
+                "eligible.leader.replicas.version",
+                ELR_DEFAULT_METADATA_LEVEL - 1,
+                0,
+            ),
+            (
+                "eligible.leader.replicas.version",
+                ELR_DEFAULT_METADATA_LEVEL,
+                1,
+            ),
+            ("eligible.leader.replicas.version", METADATA_VERSION_MAX, 1),
+            ("share.version", SHARE_VERSION_DEFAULT_METADATA_LEVEL - 1, 0),
+            ("share.version", SHARE_VERSION_DEFAULT_METADATA_LEVEL, 1),
+            ("share.version", METADATA_VERSION_MAX, 1),
+            (
+                "streams.version",
+                STREAMS_VERSION_DEFAULT_METADATA_LEVEL - 1,
+                0,
+            ),
+            ("streams.version", STREAMS_VERSION_DEFAULT_METADATA_LEVEL, 1),
+            ("streams.version", METADATA_VERSION_MAX, 1),
+        ] {
+            check!(
+                feature(name).unwrap().default_level(bootstrap) == want,
+                "feature {name} at bootstrap level {bootstrap}"
+            );
+        }
     }
 
     #[test]
     fn elr_version_is_opt_in_and_depends_on_the_elr_metadata_level() {
         let f = feature("eligible.leader.replicas.version").expect("registered");
-        // ELRV_1 bootstraps at 4.1-IV0, above the highest metadata.version
-        // krabka advertises, so no bootstrap level enables it by default.
+        // ELRV_1 bootstraps at 4.1-IV0, so the latest level enables it.
         check!(
             (
                 f.supported_range(),
@@ -538,7 +581,7 @@ mod tests {
                 f.dependencies(1),
             ) == (
                 (0, 1),
-                0,
+                1,
                 &[][..],
                 &[(
                     crate::metadata_version::METADATA_VERSION_FEATURE,
@@ -619,7 +662,7 @@ mod tests {
 
     #[test]
     fn bootstrap_omits_level_zero_features() {
-        // share.version / streams.version default to 0 at every release → no
+        // share.version / streams.version / ELR default to 0 at 4.0-IV3 → no
         // record emitted (level 0 = absent = disabled, like Kafka's format).
         let levels = levels_of(&bootstrap_feature_records(25));
         assert2::assert!(
@@ -628,6 +671,24 @@ mod tests {
                     ("metadata.version".to_string(), 25),
                     ("group.version".to_string(), 1),
                     ("transaction.version".to_string(), 2),
+                ])
+        );
+    }
+
+    #[test]
+    fn bootstrap_at_the_latest_level_enables_every_released_feature() {
+        let levels = levels_of(&bootstrap_feature_records(
+            crate::metadata_version::METADATA_VERSION_MAX,
+        ));
+        assert2::assert!(
+            levels
+                == BTreeMap::from([
+                    ("metadata.version".to_string(), 32),
+                    ("group.version".to_string(), 1),
+                    ("transaction.version".to_string(), 2),
+                    ("share.version".to_string(), 1),
+                    ("streams.version".to_string(), 1),
+                    ("eligible.leader.replicas.version".to_string(), 1),
                 ])
         );
     }
@@ -649,7 +710,7 @@ mod tests {
 
     #[test]
     fn bootstrap_override_can_enable_an_opt_in_feature() {
-        // streams.version is 0 by default at any release; an explicit override
+        // streams.version is 0 by default below 4.2-IV1; an explicit override
         // turns it on and earns a record.
         let mut ov = BTreeMap::new();
         ov.insert("streams.version".to_string(), 1i16);
@@ -765,7 +826,7 @@ mod tests {
     #[test]
     fn share_version_accessors() {
         let f = feature("share.version").expect("registered");
-        // Opt-in (KIP-932 early access): never auto-enabled by any release.
+        // Opt-in below 4.2-IV0, where Kafka's SV_1 bootstraps.
         check!(
             (f.name(), f.supported_range(), f.default_level(25)) == ("share.version", (0, 1), 0)
         );

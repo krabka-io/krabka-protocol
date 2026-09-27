@@ -4,14 +4,17 @@
 //! (`[METADATA_VERSION_MIN, METADATA_VERSION_MAX]`). JVM clients call
 //! `MetadataVersion.fromFeatureLevel(N)` and throw on any level their
 //! enum does not know, so the levels and `X.Y-IVn` names here MUST match
-//! upstream exactly. Verify against the cp-kafka 4.0 enum before editing.
+//! upstream exactly. Verify against `MetadataVersion.java` in Kafka's
+//! `server-common` module on trunk before editing: levels are never reused, so
+//! the table must carry every level up to [`METADATA_VERSION_MAX`], reserved
+//! ones included.
 
 /// The `metadata.version` feature name (KIP-584 / KIP-778).
 pub const METADATA_VERSION_FEATURE: &str = "metadata.version";
 
 /// Krabka registration-only marker for KIP-1155 downgrade support. The KIP is
 /// still under discussion and has not assigned its promised capability
-/// `metadata.version` level, so this must not extend the canonical 7..=25
+/// `metadata.version` level, so this must not extend the canonical
 /// metadata-version range or appear in `ApiVersions`. It is carried only in
 /// broker/controller registration feature maps; pre-KIP JVM nodes omit it.
 pub const METADATA_DOWNGRADE_CAPABILITY_FEATURE: &str = "krabka.metadata.downgrade";
@@ -48,8 +51,8 @@ pub const STREAMS_VERSION_MAX: i16 = 1;
 /// Minimum supported level: `3.3-IV3` (`KRaft` GA), the floor that real Kafka
 /// 4.0 supports.
 pub const METADATA_VERSION_MIN: i16 = 7;
-/// Maximum supported level: `4.0-IV3`.
-pub const METADATA_VERSION_MAX: i16 = 25;
+/// Maximum supported level: `4.4-IV1` (KIP-1276 CIDR ACL host patterns).
+pub const METADATA_VERSION_MAX: i16 = 32;
 
 /// Level at which `KRaft` gained SCRAM credentials (`3.5-IV2`).
 pub const SCRAM_MIN_LEVEL: i16 = 11;
@@ -66,6 +69,20 @@ pub const DIRECTORY_ASSIGNMENT_MIN_LEVEL: i16 = 17;
 /// (`4.0-IV1`). It selects the record version Kafka readers expect, and it is
 /// what [`crate::feature::ElrVersionFeature`] depends on at level 1.
 pub const ELR_MIN_LEVEL: i16 = 23;
+/// Level at which `ELRV_1` becomes the bootstrap default (`4.1-IV0`,
+/// `EligibleLeaderReplicasVersion.ELRV_1`'s bootstrap metadata version).
+pub const ELR_DEFAULT_METADATA_LEVEL: i16 = 26;
+/// Level at which `share.version` 1 becomes the bootstrap default (`4.2-IV0`,
+/// `ShareVersion.SV_1`'s bootstrap metadata version, KIP-932 GA).
+pub const SHARE_VERSION_DEFAULT_METADATA_LEVEL: i16 = 28;
+/// Level at which `streams.version` 1 becomes the bootstrap default (`4.2-IV1`,
+/// `StreamsVersion.SV_1`'s bootstrap metadata version, KIP-1071 GA).
+pub const STREAMS_VERSION_DEFAULT_METADATA_LEVEL: i16 = 29;
+/// Level at which `RegisterBrokerRecord` and `BrokerRegistrationChangeRecord`
+/// carry KIP-1066 cordoned log directories (`4.3-IV0`).
+pub const CORDONED_LOG_DIRS_MIN_LEVEL: i16 = 30;
+/// Level at which ACL host patterns may be CIDR blocks (`4.4-IV1`, KIP-1276).
+pub const CIDR_ACL_MIN_LEVEL: i16 = 32;
 
 /// One `metadata.version` level: its integer feature level, canonical
 /// `X.Y-IVn` name, and short `X.Y` form.
@@ -187,6 +204,41 @@ const TABLE: &[MetadataVersion] = &[
         ivn: "4.0-IV3",
         short: "4.0",
     },
+    MetadataVersion {
+        level: 26,
+        ivn: "4.1-IV0",
+        short: "4.1",
+    },
+    MetadataVersion {
+        level: 27,
+        ivn: "4.1-IV1",
+        short: "4.1",
+    },
+    MetadataVersion {
+        level: 28,
+        ivn: "4.2-IV0",
+        short: "4.2",
+    },
+    MetadataVersion {
+        level: 29,
+        ivn: "4.2-IV1",
+        short: "4.2",
+    },
+    MetadataVersion {
+        level: 30,
+        ivn: "4.3-IV0",
+        short: "4.3",
+    },
+    MetadataVersion {
+        level: 31,
+        ivn: "4.4-IV0",
+        short: "4.4",
+    },
+    MetadataVersion {
+        level: 32,
+        ivn: "4.4-IV1",
+        short: "4.4",
+    },
 ];
 
 /// Look up a level by integer feature level. `None` if outside the
@@ -233,8 +285,17 @@ mod tests {
                 METADATA_VERSION_MAX,
                 TABLE.first().unwrap().level,
                 TABLE.last().unwrap().level,
-            ) == (7, 25, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
+            ) == (7, 32, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
         );
+    }
+
+    /// Kafka never reuses or skips a level, so the table must be every level
+    /// from the minimum to the maximum, in order.
+    #[test]
+    fn table_is_contiguous_and_ordered() {
+        let levels: Vec<i16> = TABLE.iter().map(|m| m.level).collect();
+        let want: Vec<i16> = (METADATA_VERSION_MIN..=METADATA_VERSION_MAX).collect();
+        check!(levels == want);
     }
 
     #[test]
@@ -283,8 +344,24 @@ mod tests {
                     short: "4.0",
                 }),
             ),
+            (
+                30,
+                Some(MetadataVersion {
+                    level: 30,
+                    ivn: "4.3-IV0",
+                    short: "4.3",
+                }),
+            ),
+            (
+                32,
+                Some(MetadataVersion {
+                    level: 32,
+                    ivn: "4.4-IV1",
+                    short: "4.4",
+                }),
+            ),
             (6, None),
-            (26, None),
+            (33, None),
         ] {
             assert2::assert!(from_feature_level(level) == want);
         }
@@ -307,6 +384,9 @@ mod tests {
         for (_case, s, want) in [
             ("known 3.5 IV", "3.5-IV2", Some(11)),
             ("known 4.0 IV", "4.0-IV3", Some(25)),
+            ("known 4.3 IV", "4.3-IV0", Some(30)),
+            ("known 4.4 IV", "4.4-IV1", Some(32)),
+            ("reserved 4.4 IV", "4.4-IV2", None),
             ("unknown IV", "3.5-IV9", None),
         ] {
             assert2::assert!(
@@ -320,6 +400,9 @@ mod tests {
         for (_case, s, want) in [
             ("known 3.7 minor", "3.7", Some(19)),
             ("known 4.0 minor", "4.0", Some(25)),
+            ("known 4.1 minor", "4.1", Some(27)),
+            ("known 4.2 minor", "4.2", Some(29)),
+            ("known 4.3 minor", "4.3", Some(30)),
             ("unsupported minor", "2.8", None),
         ] {
             assert2::assert!(
@@ -332,9 +415,9 @@ mod tests {
     fn in_supported_range_predicate() {
         for (_case, level, want) in [
             ("minimum", 7, true),
-            ("maximum", 25, true),
+            ("maximum", 32, true),
             ("below minimum", 6, false),
-            ("above maximum", 26, false),
+            ("above maximum", 33, false),
         ] {
             assert2::assert!(is_supported_level(level) == want);
         }
@@ -349,6 +432,34 @@ mod tests {
                 DELEGATION_TOKEN_MIN_LEVEL,
                 "3.6-IV2",
             ),
+            (
+                "controller registration gate",
+                ONLINE_DOWNGRADE_MIN_LEVEL,
+                "3.7-IV0",
+            ),
+            (
+                "directory assignment gate",
+                DIRECTORY_ASSIGNMENT_MIN_LEVEL,
+                "3.7-IV2",
+            ),
+            ("ELR record gate", ELR_MIN_LEVEL, "4.0-IV1"),
+            ("ELRV_1 bootstrap", ELR_DEFAULT_METADATA_LEVEL, "4.1-IV0"),
+            (
+                "SV_1 bootstrap",
+                SHARE_VERSION_DEFAULT_METADATA_LEVEL,
+                "4.2-IV0",
+            ),
+            (
+                "streams SV_1 bootstrap",
+                STREAMS_VERSION_DEFAULT_METADATA_LEVEL,
+                "4.2-IV1",
+            ),
+            (
+                "cordoned log dirs gate",
+                CORDONED_LOG_DIRS_MIN_LEVEL,
+                "4.3-IV0",
+            ),
+            ("CIDR ACL gate", CIDR_ACL_MIN_LEVEL, "4.4-IV1"),
         ] {
             check!(
                 from_feature_level(level).unwrap().ivn() == expected_ivn,

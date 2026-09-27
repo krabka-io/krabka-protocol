@@ -15,7 +15,7 @@ use crate::{
 };
 pub const API_KEY: i16 = 28;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 5;
+pub const MAX_VERSION: i16 = 6;
 pub const FLEXIBLE_MIN: i16 = 3;
 #[inline]
 #[must_use]
@@ -121,18 +121,22 @@ impl TxnOffsetCommitResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TxnOffsetCommitResponseTopic {
     pub name: String,
+    pub topic_id: crate::primitives::uuid::Uuid,
     pub partitions: Vec<TxnOffsetCommitResponsePartition>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for TxnOffsetCommitResponseTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 3;
-        if version >= 0 {
+        if (0..=5).contains(&version) {
             if flex {
                 let () = put_compact_string(buf, &self.name);
             } else {
                 let () = put_string(buf, &self.name);
             }
+        }
+        if version >= 6 {
+            crate::primitives::uuid::put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
@@ -151,12 +155,15 @@ impl Encode for TxnOffsetCommitResponseTopic {
     fn encoded_len(&self, version: i16) -> usize {
         let flex = version >= 3;
         let mut n: usize = 0;
-        if version >= 0 {
+        if (0..=5).contains(&version) {
             n += if flex {
                 compact_string_len(&self.name)
             } else {
                 string_len(&self.name)
             };
+        }
+        if version >= 6 {
+            n += 16;
         }
         if version >= 0 {
             n += {
@@ -180,12 +187,15 @@ impl Decode<'_> for TxnOffsetCommitResponseTopic {
     fn decode<B: Buf>(buf: &mut B, version: i16) -> Result<Self, ProtocolError> {
         let flex = version >= 3;
         let mut out = Self::default();
-        if version >= 0 {
+        if (0..=5).contains(&version) {
             out.name = if flex {
                 get_compact_string_owned(buf)?
             } else {
                 get_string_owned(buf)?
             };
+        }
+        if version >= 6 {
+            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
@@ -208,8 +218,11 @@ impl TxnOffsetCommitResponseTopic {
     #[must_use]
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
-        if version >= 0 {
+        if (0..=5).contains(&version) {
             m.name = "x".to_string();
+        }
+        if version >= 6 {
+            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![TxnOffsetCommitResponsePartition::populated(version)];

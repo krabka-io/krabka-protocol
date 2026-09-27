@@ -1,0 +1,6 @@
+api_key = 94
+version = 0
+direction = "response"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "UnregisterControllerResponse v0 (KIP-1312) hand-constructed success with a null ErrorMessage; the 4.3.0 oracle predates api_key 94"
