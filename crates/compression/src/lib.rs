@@ -308,9 +308,7 @@ fn zstd_decompress(_: &[u8], _: usize) -> Result<Bytes, CompressionError> {
 
 #[cfg(test)]
 mod tests {
-    use krabka_units::{
-        bytes, convert::ByteSizeExt as _, fraction, gibibytes, kibibytes, mebibytes,
-    };
+    use krabka_units::{bytes, fraction, gibibytes, kibibytes, mebibytes};
 
     use super::*;
 
