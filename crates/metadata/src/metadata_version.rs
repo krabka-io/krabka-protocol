@@ -85,12 +85,13 @@ pub const CORDONED_LOG_DIRS_MIN_LEVEL: i16 = 30;
 pub const CIDR_ACL_MIN_LEVEL: i16 = 32;
 
 /// One `metadata.version` level: its integer feature level, canonical
-/// `X.Y-IVn` name, and short `X.Y` form.
+/// `X.Y-IVn` name, short `X.Y` form, and Kafka's `didMetadataChange` flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MetadataVersion {
     level: i16,
     ivn: &'static str,
     short: &'static str,
+    did_metadata_change: bool,
 }
 
 impl MetadataVersion {
@@ -106,6 +107,12 @@ impl MetadataVersion {
     pub fn short(self) -> &'static str {
         self.short
     }
+    /// Kafka's `MetadataVersion.didMetadataChange`: whether this level changed
+    /// the metadata record format, so a downgrade across it can lose data.
+    #[must_use]
+    pub fn did_metadata_change(self) -> bool {
+        self.did_metadata_change
+    }
 }
 
 const TABLE: &[MetadataVersion] = &[
@@ -113,131 +120,157 @@ const TABLE: &[MetadataVersion] = &[
         level: 7,
         ivn: "3.3-IV3",
         short: "3.3",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 8,
         ivn: "3.4-IV0",
         short: "3.4",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 9,
         ivn: "3.5-IV0",
         short: "3.5",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 10,
         ivn: "3.5-IV1",
         short: "3.5",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 11,
         ivn: "3.5-IV2",
         short: "3.5",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 12,
         ivn: "3.6-IV0",
         short: "3.6",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 13,
         ivn: "3.6-IV1",
         short: "3.6",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 14,
         ivn: "3.6-IV2",
         short: "3.6",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 15,
         ivn: "3.7-IV0",
         short: "3.7",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 16,
         ivn: "3.7-IV1",
         short: "3.7",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 17,
         ivn: "3.7-IV2",
         short: "3.7",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 18,
         ivn: "3.7-IV3",
         short: "3.7",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 19,
         ivn: "3.7-IV4",
         short: "3.7",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 20,
         ivn: "3.8-IV0",
         short: "3.8",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 21,
         ivn: "3.9-IV0",
         short: "3.9",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 22,
         ivn: "4.0-IV0",
         short: "4.0",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 23,
         ivn: "4.0-IV1",
         short: "4.0",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 24,
         ivn: "4.0-IV2",
         short: "4.0",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 25,
         ivn: "4.0-IV3",
         short: "4.0",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 26,
         ivn: "4.1-IV0",
         short: "4.1",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 27,
         ivn: "4.1-IV1",
         short: "4.1",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 28,
         ivn: "4.2-IV0",
         short: "4.2",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 29,
         ivn: "4.2-IV1",
         short: "4.2",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 30,
         ivn: "4.3-IV0",
         short: "4.3",
+        did_metadata_change: true,
     },
     MetadataVersion {
         level: 31,
         ivn: "4.4-IV0",
         short: "4.4",
+        did_metadata_change: false,
     },
     MetadataVersion {
         level: 32,
         ivn: "4.4-IV1",
         short: "4.4",
+        did_metadata_change: true,
     },
 ];
 
@@ -271,11 +304,110 @@ pub fn is_supported_level(level: i16) -> bool {
     (METADATA_VERSION_MIN..=METADATA_VERSION_MAX).contains(&level)
 }
 
+/// Kafka's `didMetadataChange` flag for `level`, or `None` for a level outside
+/// the supported table. Levels up to `4.3-IV0` (30) follow Kafka 4.3.1 and
+/// `4.4-IV0` (31) and `4.4-IV1` (32) follow Kafka trunk.
+#[must_use]
+pub fn did_metadata_change(level: i16) -> Option<bool> {
+    from_feature_level(level).map(MetadataVersion::did_metadata_change)
+}
+
+/// Kafka's `MetadataVersion.checkIfMetadataChanged`: whether moving between
+/// `from` and `to`, in either direction, crosses a level that changed the
+/// metadata record format. Equal levels never do.
+///
+/// Kafka walks down from the higher level and answers false only when it
+/// reaches the lower level without passing a changing level. The lower level
+/// itself does not count, because a cluster already at it has its records. A
+/// level outside the supported table counts as changing, so a range that
+/// leaves the table answers true, as Kafka does when it runs out of
+/// predecessors.
+#[must_use]
+pub fn metadata_changed_between(from: i16, to: i16) -> bool {
+    let (low, high) = if from <= to { (from, to) } else { (to, from) };
+    ((low + 1)..=high).any(|level| did_metadata_change(level).unwrap_or(true))
+}
+
 #[cfg(test)]
 mod tests {
     use assert2::check;
 
     use super::*;
+
+    /// Kafka's `didMetadataChange` flag per level: `MetadataVersion.java` at
+    /// 4.3.1 for 7-30, at trunk for 31 (`4.4-IV0`) and 32 (`4.4-IV1`).
+    const KAFKA_DID_METADATA_CHANGE: [(i16, bool); 26] = [
+        (7, true),
+        (8, true),
+        (9, false),
+        (10, false),
+        (11, true),
+        (12, false),
+        (13, true),
+        (14, true),
+        (15, true),
+        (16, false),
+        (17, true),
+        (18, false),
+        (19, false),
+        (20, false),
+        (21, false),
+        (22, false),
+        (23, true),
+        (24, false),
+        (25, false),
+        (26, false),
+        (27, false),
+        (28, false),
+        (29, false),
+        (30, true),
+        (31, false),
+        (32, true),
+    ];
+
+    #[test]
+    fn did_metadata_change_matches_kafka() {
+        let table: Vec<(i16, bool)> = (METADATA_VERSION_MIN..=METADATA_VERSION_MAX)
+            .map(|level| (level, did_metadata_change(level).expect("supported level")))
+            .collect();
+        check!(table == KAFKA_DID_METADATA_CHANGE);
+        check!(
+            (did_metadata_change(6), did_metadata_change(33)) == (None, None),
+            "levels outside the table"
+        );
+    }
+
+    /// Cases worked through Kafka's `checkIfMetadataChangedOrdered` by hand:
+    /// walk down from the higher level while the current level did not change
+    /// metadata and is not the lower level; the answer is whether the walk
+    /// stopped before reaching the lower level.
+    #[test]
+    fn metadata_changed_between_matches_kafka() {
+        for (case, from, to, want) in [
+            ("same level", 25, 25, false),
+            ("same changing level", 30, 30, false),
+            ("4.0-IV3 to 4.2-IV1 changes nothing", 25, 29, false),
+            ("4.2-IV1 down to 4.0-IV3 changes nothing", 29, 25, false),
+            ("up into 4.3-IV0 cordoned log dirs", 29, 30, true),
+            ("down out of 4.3-IV0", 30, 29, true),
+            ("4.3-IV0 to 4.4-IV0 changes nothing", 30, 31, false),
+            ("4.4-IV0 down to 4.3-IV0 changes nothing", 31, 30, false),
+            ("down out of 4.4-IV1 CIDR ACLs", 32, 31, true),
+            ("down across ELR records at 4.0-IV1", 25, 22, true),
+            ("down to 4.0-IV1 itself", 25, 23, false),
+            ("3.5-IV0 to 3.5-IV1", 9, 10, false),
+            ("3.5-IV1 up to SCRAM at 3.5-IV2", 10, 11, true),
+            ("3.7-IV2 to 3.7-IV4", 17, 19, false),
+            ("3.7-IV0 to 3.7-IV1", 15, 16, false),
+            ("3.7-IV1 up to JBOD at 3.7-IV2", 16, 17, true),
+            ("minimum to 3.4-IV0", 7, 8, true),
+            ("whole table", 7, 32, true),
+            ("below the table", 6, 7, true),
+            ("above the table", 32, 33, true),
+        ] {
+            check!(metadata_changed_between(from, to) == want, "{case}");
+        }
+    }
 
     #[test]
     fn min_max_levels() {
@@ -334,6 +466,7 @@ mod tests {
                     level: 7,
                     ivn: "3.3-IV3",
                     short: "3.3",
+                    did_metadata_change: true,
                 }),
             ),
             (
@@ -342,6 +475,7 @@ mod tests {
                     level: 25,
                     ivn: "4.0-IV3",
                     short: "4.0",
+                    did_metadata_change: false,
                 }),
             ),
             (
@@ -350,6 +484,7 @@ mod tests {
                     level: 30,
                     ivn: "4.3-IV0",
                     short: "4.3",
+                    did_metadata_change: true,
                 }),
             ),
             (
@@ -358,6 +493,7 @@ mod tests {
                     level: 32,
                     ivn: "4.4-IV1",
                     short: "4.4",
+                    did_metadata_change: true,
                 }),
             ),
             (6, None),

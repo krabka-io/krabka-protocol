@@ -31,6 +31,7 @@ use crate::{
         remove_topic_record::RemoveTopicRecord,
         remove_user_scram_credential_record::RemoveUserScramCredentialRecord,
         topic_record::TopicRecord, unregister_broker_record::UnregisterBrokerRecord,
+        unregister_controller_record::UnregisterControllerRecord,
         user_scram_credential_record::UserScramCredentialRecord,
     },
     records::metadata::envelope::{decode_value_header, encode_value},
@@ -62,6 +63,7 @@ pub enum KraftMetadataRecord {
     EndTransaction(EndTransactionRecord),           // apiKey 24
     RemoveDelegationToken(RemoveDelegationTokenRecord), // apiKey 26
     RegisterController(RegisterControllerRecord),   // apiKey 27
+    UnregisterController(UnregisterControllerRecord), // apiKey 29
     /// A record this build does not model. Body is the post-envelope bytes.
     Unknown {
         api_key: u32,
@@ -105,6 +107,7 @@ impl KraftMetadataRecord {
             Self::BeginTransaction(_) => 23,
             Self::EndTransaction(_) => 24,
             Self::RegisterController(_) => 27,
+            Self::UnregisterController(_) => 29,
             Self::UnregisterBroker(_) => 1,
             Self::Config(_) => 4,
             Self::DelegationToken(_) => 10,
@@ -142,6 +145,7 @@ impl KraftMetadataRecord {
             Self::EndTransaction(r) => r.encode(&mut body, v)?,
             Self::NoOp(r) => r.encode(&mut body, v)?,
             Self::RegisterController(r) => r.encode(&mut body, v)?,
+            Self::UnregisterController(r) => r.encode(&mut body, v)?,
             Self::BrokerRegistrationChange(r) => r.encode(&mut body, v)?,
             Self::FeatureLevel(r) => r.encode(&mut body, v)?,
             Self::UnregisterBroker(r) => r.encode(&mut body, v)?,
@@ -191,6 +195,7 @@ impl KraftMetadataRecord {
             23 => Self::BeginTransaction(BeginTransactionRecord::decode(&mut cur, v)?),
             24 => Self::EndTransaction(EndTransactionRecord::decode(&mut cur, v)?),
             27 => Self::RegisterController(RegisterControllerRecord::decode(&mut cur, v)?),
+            29 => Self::UnregisterController(UnregisterControllerRecord::decode(&mut cur, v)?),
             1 => Self::UnregisterBroker(UnregisterBrokerRecord::decode(&mut cur, v)?),
             4 => Self::Config(ConfigRecord::decode(&mut cur, v)?),
             10 => Self::DelegationToken(DelegationTokenRecord::decode(&mut cur, v)?),
@@ -252,6 +257,20 @@ mod tests {
         check!(decoded.encode_value(ver).expect("re-encode") == value);
     }
 
+    /// KIP-1312 `UnregisterControllerRecord` is metadata apiKey 29, version 0,
+    /// flexible from 0: frame version 1, apiKey 29, version 0, `ControllerId`
+    /// int32, then an empty tagged-field section.
+    #[test]
+    fn unregister_controller_record_value_is_byte_exact() {
+        let rec = KraftMetadataRecord::UnregisterController(UnregisterControllerRecord {
+            controller_id: 3000,
+            ..Default::default()
+        });
+        let wire = [0x01, 0x1d, 0x00, 0x00, 0x00, 0x0b, 0xb8, 0x00];
+        check!(rec.encode_value(0).expect("encode").as_ref() == wire);
+        check!(KraftMetadataRecord::decode_value(&wire).expect("decode") == (rec, 0));
+    }
+
     #[test]
     fn unknown_api_key_decodes_to_unknown_arm() {
         use crate::records::metadata::envelope::encode_value;
@@ -290,6 +309,7 @@ mod tests {
             remove_delegation_token_record::RemoveDelegationTokenRecord,
             remove_user_scram_credential_record::RemoveUserScramCredentialRecord,
             unregister_broker_record::UnregisterBrokerRecord,
+            unregister_controller_record::UnregisterControllerRecord,
             user_scram_credential_record::UserScramCredentialRecord,
         };
         let cases = [
@@ -337,6 +357,10 @@ mod tests {
             (
                 KraftMetadataRecord::RemoveDelegationToken(RemoveDelegationTokenRecord::default()),
                 26,
+            ),
+            (
+                KraftMetadataRecord::UnregisterController(UnregisterControllerRecord::default()),
+                29,
             ),
         ];
         for (rec, want) in cases {

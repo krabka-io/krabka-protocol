@@ -104,11 +104,11 @@ impl Feature for GroupVersionFeature {
     // declares no hard `UpdateFeatures` dependency for group.version.
 }
 
-/// `transaction.version` (KIP-890 and KIP-939). The default jumps to 2 once the
-/// bootstrap metadata.version reaches 4.0-IV2. Level 3 remains opt-in until a
-/// released metadata.version selects it. The downgrade floor is the supported
-/// min, because in-flight txn state lives in the `__transaction_state` log and
-/// not in the [`MetadataImage`], so this module computes no image-derived floor.
+/// `transaction.version` (KIP-890). The default jumps to 2 once the bootstrap
+/// metadata.version reaches 4.0-IV2, and 2 is the highest level Kafka defines.
+/// The downgrade floor is the supported min, because in-flight txn state lives
+/// in the `__transaction_state` log and not in the [`MetadataImage`], so this
+/// module computes no image-derived floor.
 pub struct TransactionVersionFeature;
 
 impl Feature for TransactionVersionFeature {
@@ -423,6 +423,9 @@ mod tests {
             ("metadata.version", 32, true),
             ("metadata.version", 6, false),
             ("metadata.version", 33, false),
+            // Kafka's TransactionVersion has TV_0 to TV_2 only (broker #784).
+            ("transaction.version", 2, true),
+            ("transaction.version", 3, false),
             ("not.a.feature", 1, false),
         ] {
             assert2::assert!(is_supported_level(name, level) == want);
@@ -467,7 +470,7 @@ mod tests {
         let expected = [
             ("metadata.version", (7, 32), 25, 7),
             ("group.version", (0, 1), 1, 0),
-            ("transaction.version", (0, 3), 2, 0),
+            ("transaction.version", (0, 2), 2, 0),
             ("share.version", (0, 1), 0, 0),
             ("streams.version", (0, 1), 0, 0),
             ("eligible.leader.replicas.version", (0, 1), 0, 0),
@@ -521,7 +524,7 @@ mod tests {
     #[test]
     fn transaction_version_registered() {
         let f = feature("transaction.version").expect("registered");
-        assert2::assert!(f.supported_range() == (0, 3));
+        assert2::assert!(f.supported_range() == (0, 2));
     }
 
     #[test]
@@ -632,7 +635,7 @@ mod tests {
     #[test]
     fn transaction_version_declares_no_hard_dependencies() {
         let f = feature("transaction.version").unwrap();
-        for level in [0, 1, 2, 3] {
+        for level in [0, 1, 2] {
             assert2::assert!(f.dependencies(level).is_empty());
         }
     }

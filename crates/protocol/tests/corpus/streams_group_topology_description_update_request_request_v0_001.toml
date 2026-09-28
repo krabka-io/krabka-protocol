@@ -1,0 +1,6 @@
+api_key = 93
+version = 0
+direction = "request"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "StreamsGroupTopologyDescriptionUpdateRequest v0 (KIP-1331) hand-constructed for group g, member m, topology epoch 7, one source node; the 4.3.0 oracle predates api_key 93"

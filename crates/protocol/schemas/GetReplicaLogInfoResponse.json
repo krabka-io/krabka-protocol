@@ -1,5 +1,7 @@
 {
-  "apiKey": 93,
+  // Kafka trunk assigns 93 to StreamsGroupTopologyDescriptionUpdate (KIP-1331),
+  // so this krabka-only RPC sits in the krabka-private range at 1000 and above.
+  "apiKey": 1020,
   "type": "response",
   "internal": true,
   "name": "GetReplicaLogInfoResponse",

@@ -1,8 +1,9 @@
 // Bespoke tests for the borrowed GetReplicaLogInfo wrappers. GetReplicaLogInfo
-// is a krabka-internal RPC (api_key 93) excluded from the JVM differential
-// sweep, so its generated borrowed codecs need direct populated round-trip
-// coverage here — the generated min/max wrapper tests only exercise default
-// (empty) messages and skip the nested-element loops and nullable-string path.
+// is a krabka-internal RPC (api_key 1020, in the krabka-private range) excluded
+// from the JVM differential sweep, so its generated borrowed codecs need direct
+// populated round-trip coverage here — the generated min/max wrapper tests only
+// exercise default (empty) messages and skip the nested-element loops and
+// nullable-string path.
 
 use bytes::BytesMut;
 use krabka_protocol::{

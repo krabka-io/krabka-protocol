@@ -14,7 +14,7 @@ use crate::{
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
-pub const API_KEY: i16 = 93;
+pub const API_KEY: i16 = 1020;
 pub const MIN_VERSION: i16 = 0;
 pub const MAX_VERSION: i16 = 0;
 pub const FLEXIBLE_MIN: i16 = 0;

@@ -6,7 +6,7 @@ use crate::{
     primitives::fixed::{get_i32, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
-pub const API_KEY: i16 = 93;
+pub const API_KEY: i16 = 1020;
 pub const MIN_VERSION: i16 = 0;
 pub const MAX_VERSION: i16 = 0;
 pub const LATEST_STABLE_VERSION: i16 = 0;

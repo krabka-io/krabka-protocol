@@ -150,12 +150,15 @@ fn oracle_supports(name: &str, version: i16) -> bool {
         // ApiVersions. It silently encodes a v5 request as v4, and it cannot
         // size a v5 response that holds supported features.
         "ApiVersionsRequest" | "ApiVersionsResponse" => version < 5,
-        // KIP-1312's api key 94 postdates 4.3.0, which has no class for it.
+        // KIP-1312's api key 94 and KIP-1331's api key 93 postdate 4.3.0, which
+        // has no class for either.
         // KIP-1331 renamed v0's `AcceptableRecoveryLag` to
         // `AcceptableRecoveryLagLegacy`, so 4.3.0's JSON converter cannot read
         // the v0 fixture, and v1 postdates it.
         "UnregisterControllerRequest"
         | "UnregisterControllerResponse"
+        | "StreamsGroupTopologyDescriptionUpdateRequest"
+        | "StreamsGroupTopologyDescriptionUpdateResponse"
         | "StreamsGroupHeartbeatResponse" => false,
         // KIP-1319 renamed `GenerationId` to `GenerationIdOrMemberEpoch` from
         // v3, which 4.3.0's JSON converter cannot read, and added v6.
@@ -179,6 +182,8 @@ fn kafka_430_oracle_excludes_what_it_cannot_express() {
         ("FetchRequest", 5, true),
         ("UnregisterControllerRequest", 0, false),
         ("UnregisterControllerResponse", 0, false),
+        ("StreamsGroupTopologyDescriptionUpdateRequest", 0, false),
+        ("StreamsGroupTopologyDescriptionUpdateResponse", 0, false),
         ("TxnOffsetCommitRequest", 2, true),
         ("TxnOffsetCommitRequest", 3, false),
         ("TxnOffsetCommitResponse", 5, true),
