@@ -32,6 +32,12 @@
 //! Named constants hold the sentinel values that carry Kafka meaning:
 //! [`Offset::ZERO`], [`ProducerId::NONE`], and [`LeaderEpoch::UNKNOWN`].
 //!
+//! # Kafka `Uuid`
+//!
+//! [`KafkaUuid`] is the 128-bit cluster, topic, and log-directory id. It is not
+//! a transparent newtype: its string form, and so its serde form, is Kafka's
+//! 22-character base64url string, not the hyphenated hex of [`uuid::Uuid`].
+//!
 //! See `docs/newtype-safety-rollout.md` and the code style guide's
 //! "Newtypes for Domain Values" section.
 
@@ -42,6 +48,10 @@ use core::{
 
 use derive_more::{Display, From, Into};
 use serde::{Deserialize, Serialize};
+
+pub use self::kafka_uuid::{KafkaUuid, KafkaUuidError};
+
+mod kafka_uuid;
 
 /// A record offset within a topic partition's log. KIP wire type: `int64`.
 ///
