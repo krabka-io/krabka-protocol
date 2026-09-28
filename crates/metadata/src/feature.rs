@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn registry_contains_metadata_version() {
         let f = feature("metadata.version").expect("registered");
-        assert2::assert!(f.supported_range() == (7, 32));
+        assert2::assert!(f.supported_range() == (7, 33));
         assert2::assert!(feature("not.a.feature").is_none());
     }
 
@@ -407,9 +407,9 @@ mod tests {
     fn metadata_version_default_is_the_bootstrap_level_clamped() {
         let f = feature("metadata.version").unwrap();
         for (_case, bootstrap, want) in [
-            ("maximum bootstrap", 32, 32),
+            ("maximum bootstrap", 33, 33),
             ("minimum bootstrap", 7, 7),
-            ("above maximum", 99, 32),
+            ("above maximum", 99, 33),
             ("below minimum", 1, 7),
         ] {
             assert2::assert!(f.default_level(bootstrap) == want);
@@ -420,9 +420,9 @@ mod tests {
     fn is_supported_level_checks_range() {
         for (name, level, want) in [
             ("metadata.version", 7, true),
-            ("metadata.version", 32, true),
+            ("metadata.version", 33, true),
             ("metadata.version", 6, false),
-            ("metadata.version", 33, false),
+            ("metadata.version", 34, false),
             // Kafka's TransactionVersion has TV_0 to TV_2 only (broker #784).
             ("transaction.version", 2, true),
             ("transaction.version", 3, false),
@@ -449,7 +449,8 @@ mod tests {
     fn metadata_version_level_name() {
         let f = feature("metadata.version").unwrap();
         for (_case, level, want) in [
-            ("latest level", 32, Some("4.4-IV1")),
+            ("latest level", 33, Some("4.4-IV2")),
+            ("CIDR ACL level", 32, Some("4.4-IV1")),
             ("cordoned log dirs level", 30, Some("4.3-IV0")),
             ("earliest level", 7, Some("3.3-IV3")),
             ("unknown level", 99, None),
@@ -468,7 +469,7 @@ mod tests {
     fn registry_feature_contracts_are_pinned() {
         let image = MetadataImage::new(uuid::Uuid::nil());
         let expected = [
-            ("metadata.version", (7, 32), 25, 7),
+            ("metadata.version", (7, 33), 25, 7),
             ("group.version", (0, 1), 1, 0),
             ("transaction.version", (0, 2), 2, 0),
             ("share.version", (0, 1), 0, 0),
@@ -686,7 +687,7 @@ mod tests {
         assert2::assert!(
             levels
                 == BTreeMap::from([
-                    ("metadata.version".to_string(), 32),
+                    ("metadata.version".to_string(), 33),
                     ("group.version".to_string(), 1),
                     ("transaction.version".to_string(), 2),
                     ("share.version".to_string(), 1),
