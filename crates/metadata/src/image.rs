@@ -98,6 +98,8 @@ fn record_variant(rec: &MetadataRecord) -> &'static str {
         MetadataRecord::V1PartitionElr(_) => "V1PartitionElr",
         MetadataRecord::V1PartitionRecovery(_) => "V1PartitionRecovery",
         MetadataRecord::V1PartitionUpdate(_) => "V1PartitionUpdate",
+        MetadataRecord::V1BrokerRegistrationChange(_) => "V1BrokerRegistrationChange",
+        MetadataRecord::V1UnregisterController(_) => "V1UnregisterController",
     }
 }
 
@@ -714,6 +716,8 @@ impl MetadataImage {
             }
             (projected != *broker).then_some(MetadataRecord::V1BrokerRegistration(projected))
         }));
+        // Below `3.7-IV2` a partition record carries no directories, and Kafka
+        // reads it back as every replica `MIGRATING`.
         if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
             for partition in self.all_partitions() {
                 records.extend(
@@ -721,14 +725,14 @@ impl MetadataImage {
                         .replicas
                         .iter()
                         .zip(&partition.directories)
-                        .filter(|(_, directory)| !directory.is_nil())
+                        .filter(|(_, directory)| **directory != crate::directory_id::MIGRATING)
                         .map(|(replica, _)| {
                             MetadataRecord::V1PartitionDirAssignment(
                                 crate::records::PartitionDirAssignmentRecord {
                                     topic: partition.topic.clone(),
                                     partition: partition.partition,
                                     replica: *replica,
-                                    directory: uuid::Uuid::nil(),
+                                    directory: crate::directory_id::MIGRATING,
                                 },
                             )
                         }),
@@ -772,8 +776,15 @@ impl MetadataImage {
             MetadataRecord::V1BrokerRegistration(b) => {
                 self.brokers.insert(b.node_id, b.clone());
             }
+            MetadataRecord::V1BrokerRegistrationChange(change) => {
+                self.apply_registration_change(change);
+            }
+            MetadataRecord::V1UnregisterBroker(rec) => self.apply_unregister_broker(rec),
             MetadataRecord::V1ControllerRegistration(c) => {
                 self.controllers.insert(c.node_id, c.clone());
+            }
+            MetadataRecord::V1UnregisterController(rec) => {
+                self.controllers.remove(&rec.node_id);
             }
             MetadataRecord::V1DeleteTopic(d) => {
                 if let Some(prev) = self.topics.get(&d.name) {
@@ -883,11 +894,6 @@ impl MetadataImage {
             MetadataRecord::V1DeleteDelegationToken(rec) => {
                 self.delegation_tokens.remove(&rec.token_id);
             }
-            MetadataRecord::V1UnregisterBroker(rec) => {
-                // Idempotent: applying against an unknown `node_id` is
-                // a no-op.
-                self.brokers.remove(&rec.node_id);
-            }
             MetadataRecord::V1KRaftVersion(r) => {
                 self.kraft_version = r.kraft_version;
             }
@@ -937,8 +943,11 @@ impl MetadataImage {
                     .and_then(|parts| parts.get_mut(&r.partition))
                     && let Some(slot) = pr.replicas.iter().position(|n| *n == r.replica)
                 {
+                    // An empty list is every replica `MIGRATING`, as Kafka's
+                    // `PartitionRegistration.defaultToMigrating` reads it.
                     if pr.directories.len() < pr.replicas.len() {
-                        pr.directories.resize(pr.replicas.len(), uuid::Uuid::nil());
+                        pr.directories
+                            .resize(pr.replicas.len(), crate::directory_id::MIGRATING);
                     }
                     pr.directories[slot] = r.directory;
                 }
@@ -966,6 +975,29 @@ impl MetadataImage {
             MetadataRecord::V1DeleteBreakGlassProposal(id) => {
                 self.break_glass.remove(id);
             }
+        }
+    }
+
+    /// Kafka's `ClusterControlManager.replayRegistrationChange` applies the
+    /// change only to the registration at the record's epoch. An unknown
+    /// broker or another epoch is a no-op.
+    fn apply_registration_change(
+        &mut self,
+        change: &crate::records::BrokerRegistrationChangeRecord,
+    ) {
+        if let Some(broker) = self.brokers.get_mut(&change.node_id)
+            && broker.broker_epoch == change.broker_epoch
+        {
+            *broker = change.applied_to(broker);
+        }
+    }
+
+    /// Kafka's `ClusterControlManager.replay(UnregisterBrokerRecord)` removes
+    /// only the registration at the record's epoch. An unknown broker or
+    /// another epoch is a no-op.
+    fn apply_unregister_broker(&mut self, rec: &crate::records::UnregisterBrokerRecord) {
+        if self.broker_epoch(rec.node_id) == Some(rec.broker_epoch) {
+            self.brokers.remove(&rec.node_id);
         }
     }
 
@@ -1365,6 +1397,35 @@ impl MetadataImage {
                 }
                 Ok(())
             }
+            // Kafka's `ClusterControlManager` refuses to replay a registration
+            // change or an unregistration unless the broker is registered at
+            // the record's epoch, and a controller unregistration unless the
+            // controller is registered. Apply treats those as no-ops, so they
+            // are refused here, where the submitter still learns of it.
+            MetadataRecord::V1BrokerRegistrationChange(change) => {
+                if self.broker_epoch(change.node_id) != Some(change.broker_epoch) {
+                    return Err(MetadataError::InvalidRecord(
+                        "broker registration change for an epoch the broker is not registered at",
+                    ));
+                }
+                Ok(())
+            }
+            MetadataRecord::V1UnregisterBroker(rec) => {
+                if self.broker_epoch(rec.node_id) != Some(rec.broker_epoch) {
+                    return Err(MetadataError::InvalidRecord(
+                        "broker unregistration for an epoch the broker is not registered at",
+                    ));
+                }
+                Ok(())
+            }
+            MetadataRecord::V1UnregisterController(rec) => {
+                if !self.controllers.contains_key(&rec.node_id) {
+                    return Err(MetadataError::InvalidRecord(
+                        "controller unregistration for a controller that is not registered",
+                    ));
+                }
+                Ok(())
+            }
             MetadataRecord::V1BrokerRegistration(_)
             | MetadataRecord::V1ControllerRegistration(_)
             | MetadataRecord::V1ScramCredential(_)
@@ -1379,10 +1440,6 @@ impl MetadataImage {
             // image-level validate is unconditional Ok.
             | MetadataRecord::V1DelegationToken(_)
             | MetadataRecord::V1DeleteDelegationToken(_)
-            // UnregisterBroker (KIP-919 / api_key 64). The handler-side
-            // existence check + Cluster:Alter ACL gate provide all the
-            // pre-validation we need; image-level apply is idempotent.
-            | MetadataRecord::V1UnregisterBroker(_)
             // KIP-853: voter-set / kraft.version records are validated by
             // the reconfiguration coordinator before submission; the
             // image-level apply is an unconditional replacement.
@@ -1530,6 +1587,136 @@ mod tests {
         // about the node that is missing.
         check!(image.controller(NodeId(3)).map(|c| c.incarnation_id) == Some(Uuid::from_u128(7)));
         check!(image.controller(NodeId(99)).is_none());
+    }
+
+    fn registered_broker(node_id: u64, broker_epoch: i64) -> BrokerRegistrationRecord {
+        BrokerRegistrationRecord {
+            node_id: NodeId(node_id),
+            broker_epoch,
+            incarnation_id: Uuid::from_u128(u128::from(node_id)),
+            host: format!("broker-{node_id}"),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![],
+            fenced: true,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
+            features: BTreeMap::new(),
+        }
+    }
+
+    /// Kafka's `ClusterControlManager` replays a `BrokerRegistrationChangeRecord`
+    /// or an `UnregisterBrokerRecord` only against the registration at the
+    /// record's epoch. Validate refuses the others and apply ignores them.
+    #[test]
+    fn registration_change_and_unregister_apply_only_at_the_registered_epoch() {
+        use crate::records::{
+            BrokerRegistrationChangeRecord, FencingChange, UnregisterBrokerRecord,
+        };
+
+        let registered = registered_broker(4, 12);
+        let unfenced = BrokerRegistrationRecord {
+            fenced: false,
+            ..registered.clone()
+        };
+        let unfence = |node_id, broker_epoch| {
+            MetadataRecord::V1BrokerRegistrationChange(BrokerRegistrationChangeRecord {
+                fenced: FencingChange::Unfence,
+                ..BrokerRegistrationChangeRecord::no_change(NodeId(node_id), broker_epoch)
+            })
+        };
+        let unregister = |node_id, broker_epoch| {
+            MetadataRecord::V1UnregisterBroker(UnregisterBrokerRecord {
+                node_id: NodeId(node_id),
+                broker_epoch,
+            })
+        };
+        let stale_change = Err(MetadataError::InvalidRecord(
+            "broker registration change for an epoch the broker is not registered at",
+        ));
+        let stale_unregister = Err(MetadataError::InvalidRecord(
+            "broker unregistration for an epoch the broker is not registered at",
+        ));
+        for (case, record, want_validate, want_broker) in [
+            (
+                "unfence at the epoch",
+                unfence(4, 12),
+                Ok(()),
+                Some(unfenced),
+            ),
+            (
+                "unfence at a stale epoch",
+                unfence(4, 11),
+                stale_change.clone(),
+                Some(registered.clone()),
+            ),
+            (
+                "unfence an unknown broker",
+                unfence(5, 12),
+                stale_change,
+                Some(registered.clone()),
+            ),
+            ("unregister at the epoch", unregister(4, 12), Ok(()), None),
+            (
+                "unregister at a stale epoch",
+                unregister(4, 11),
+                stale_unregister.clone(),
+                Some(registered.clone()),
+            ),
+            (
+                "unregister an unknown broker",
+                unregister(5, 12),
+                stale_unregister,
+                Some(registered.clone()),
+            ),
+        ] {
+            let mut image = MetadataImage::new(Uuid::nil());
+            image.apply(&MetadataRecord::V1BrokerRegistration(registered.clone()));
+            check!(image.validate(&record) == want_validate, "{case}");
+            image.apply(&record);
+            check!(image.broker(NodeId(4)).cloned() == want_broker, "{case}");
+        }
+    }
+
+    /// KIP-1312: `UnregisterControllerRecord` removes the controller's
+    /// registration. Kafka refuses to replay it for an unregistered id.
+    #[test]
+    fn unregister_controller_removes_the_registration() {
+        use crate::records::{ControllerRegistrationRecord, UnregisterControllerRecord};
+
+        let mut image = MetadataImage::new(Uuid::nil());
+        for node_id in [3000, 3001] {
+            image.apply(&MetadataRecord::V1ControllerRegistration(
+                ControllerRegistrationRecord {
+                    node_id: NodeId(node_id),
+                    incarnation_id: Uuid::from_u128(u128::from(node_id)),
+                    zk_migration_ready: false,
+                    endpoints: Vec::new(),
+                    features: BTreeMap::new(),
+                },
+            ));
+        }
+        let unregister = |node_id| {
+            MetadataRecord::V1UnregisterController(UnregisterControllerRecord {
+                node_id: NodeId(node_id),
+            })
+        };
+
+        check!(image.validate(&unregister(3000)) == Ok(()));
+        image.apply(&unregister(3000));
+        let ids: Vec<_> = image.controllers().map(|c| c.node_id).collect();
+        check!(ids == vec![NodeId(3001)]);
+
+        check!(
+            image.validate(&unregister(3000))
+                == Err(MetadataError::InvalidRecord(
+                    "controller unregistration for a controller that is not registered",
+                ))
+        );
+        image.apply(&unregister(3000));
+        let ids: Vec<_> = image.controllers().map(|c| c.node_id).collect();
+        check!(ids == vec![NodeId(3001)]);
     }
 
     /// Deleting a topic drops that topic's offset sequencer state and leaves
@@ -1827,6 +2014,7 @@ mod tests {
             }),
             MetadataRecord::V1UnregisterBroker(crate::records::UnregisterBrokerRecord {
                 node_id: NodeId(2),
+                broker_epoch: 0,
             }),
             MetadataRecord::V1BrokerConfig(BrokerConfigRecord {
                 node_id: NodeId(1),
@@ -3611,7 +3799,7 @@ mod tests {
             leader: NodeId(1),
             replicas: vec![NodeId(1), NodeId(2)],
             isr: vec![NodeId(1), NodeId(2)],
-            directories: vec![directory, Uuid::nil()],
+            directories: vec![directory, crate::directory_id::MIGRATING],
             ..Default::default()
         }));
 
@@ -3632,7 +3820,7 @@ mod tests {
                             topic: "orders".into(),
                             partition: 0,
                             replica: NodeId(1),
-                            directory: Uuid::nil(),
+                            directory: crate::directory_id::MIGRATING,
                         },
                     ),
                 ]
@@ -3643,7 +3831,7 @@ mod tests {
         }
         assert2::assert!(
             image.partition("orders", 0).expect("partition").directories
-                == vec![Uuid::nil(), Uuid::nil()]
+                == vec![crate::directory_id::MIGRATING; 2]
         );
         assert2::assert!(image.broker(NodeId(1)).expect("broker").log_dirs.is_empty());
     }
@@ -3827,8 +4015,9 @@ mod tests {
     fn dir_assignment_resizes_directories_to_replica_count() {
         // KIP-858: a dir-assignment delta for a partition whose `directories`
         // vec is shorter than `replicas` must grow it (to `replicas.len()`,
-        // nil-padded) before writing the reporting replica's slot. Without the
-        // resize the slot write would index out of bounds.
+        // padded with `MIGRATING`, which is how Kafka reads an empty list)
+        // before writing the reporting replica's slot. Without the resize the
+        // slot write would index out of bounds.
         let mut image = MetadataImage::new(Uuid::nil());
         image.apply(&MetadataRecord::V1Partition(PartitionRecord {
             topic: "t".into(),
@@ -3849,8 +4038,8 @@ mod tests {
             },
         ));
         let pr = image.partition("t", 0).expect("partition present");
-        // Replica 10 is slot 0; replica 20 still unassigned.
-        assert2::assert!(pr.directories == vec![dir, Uuid::nil()]);
+        // Replica 10 is slot 0; replica 20 stays `MIGRATING`.
+        assert2::assert!(pr.directories == vec![dir, crate::directory_id::MIGRATING]);
     }
 
     #[test]

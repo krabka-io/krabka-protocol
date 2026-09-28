@@ -38,11 +38,17 @@ pub struct PartitionRecord {
     /// no reassignment in flight. KIP-455.
     pub removing_replicas: Vec<NodeId>,
     /// KIP-858: the log-directory UUID that hosts each replica, parallel to
-    /// [`Self::replicas`] in the same index order. `Uuid::nil()` is
-    /// `DirectoryId.UNASSIGNED`: the owning broker has not yet reported
-    /// its `AssignReplicasToDirs` for this replica. The controller matches
-    /// this against the replica slot of a broker to map the failed-dir UUID
-    /// of that broker to the partitions it must fail over.
+    /// [`Self::replicas`] in the same index order. The reserved ids are
+    /// Kafka's `DirectoryId` sentinels (see [`crate::directory_id`]):
+    /// [`MIGRATING`](crate::directory_id::MIGRATING), the nil UUID, is a
+    /// replica placed before `3.7-IV2` or on a broker with no log-dir ids,
+    /// and [`UNASSIGNED`](crate::directory_id::UNASSIGNED) is a replica the
+    /// controller placed on a multi-dir broker that has not yet reported its
+    /// `AssignReplicasToDirs`. An empty list reads as every replica
+    /// `MIGRATING`, as Kafka's `PartitionRegistration` reads it. The
+    /// controller matches this against the replica slot of a broker to map
+    /// the failed-dir UUID of that broker to the partitions it must fail
+    /// over.
     pub directories: Vec<Uuid>,
     /// KIP-631: per-partition state epoch. It increments on every state
     /// change, such as a leader election, an ISR change, or a reassignment.
@@ -162,11 +168,13 @@ pub struct BrokerRegistrationRecord {
     /// Empty at metadata versions before `3.7-IV2` and in legacy snapshots.
     #[serde(default)]
     pub log_dirs: Vec<uuid::Uuid>,
-    /// KIP-631 fencing state. Krabka's own brokers register unfenced and have
-    /// no fence lifecycle; a registration a JVM controller wrote carries its
-    /// real value, and a `BrokerRegistrationChangeRecord` updates it.
+    /// KIP-631 fencing state. Kafka writes a new registration fenced (the
+    /// `RegisterBrokerRecord` schema default) and unfences it with a
+    /// [`BrokerRegistrationChangeRecord`] once the broker catches up.
     pub fenced: bool,
-    /// KIP-841: the broker is in controlled shutdown.
+    /// KIP-841: the broker is in controlled shutdown. Only a
+    /// [`BrokerRegistrationChangeRecord`] sets it; only a new registration
+    /// clears it.
     pub in_controlled_shutdown: bool,
     /// KIP-1066 cordoned log directories. `None` until the broker first
     /// reports them in a heartbeat, as in Kafka's `BrokerRegistration`. Only
@@ -199,16 +207,134 @@ pub struct DeleteTopicRecord {
     pub name: String,
 }
 
-/// KIP-919 / `UnregisterBroker` (`api_key` 64). Marks a broker as
+/// KIP-919 / `UnregisterBroker` (`api_key` 64), Kafka's
+/// `UnregisterBrokerRecord` (metadata apiKey 1). Marks a broker as
 /// permanently unregistered: the admin operator confirms that the broker is
 /// gone for good and asks the cluster to drop its registration entry
 /// from the metadata image. Later `Metadata` responses no longer
 /// advertise the endpoints of the broker, and clients stop routing to it.
 ///
-/// The record is idempotent. A second apply, or an apply against an unknown
-/// `node_id`, does nothing.
+/// As in `ClusterControlManager.replay(UnregisterBrokerRecord)`, the record
+/// removes the registration only when `broker_epoch` is the epoch of the
+/// current registration. An apply against an unknown `node_id` or another
+/// epoch does nothing, so a second apply is a no-op.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnregisterBrokerRecord {
+    pub node_id: NodeId,
+    /// The epoch of the registration this record removes.
+    pub broker_epoch: i64,
+}
+
+/// A change to the fencing state of a broker registration, as Kafka's
+/// `BrokerRegistrationFencingChange` encodes it in
+/// `BrokerRegistrationChangeRecord.Fenced`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FencingChange {
+    /// `-1`: the broker has been unfenced.
+    Unfence,
+    /// `0`: no change.
+    None,
+    /// `1`: the broker has been fenced.
+    Fence,
+}
+
+impl FencingChange {
+    /// The `Fenced` byte Kafka writes for this change.
+    #[must_use]
+    pub fn wire_value(self) -> i8 {
+        match self {
+            Self::Unfence => -1,
+            Self::None => 0,
+            Self::Fence => 1,
+        }
+    }
+
+    /// Reads a `Fenced` byte, or `None` for a value Kafka does not define.
+    #[must_use]
+    pub fn from_wire(value: i8) -> Option<Self> {
+        match value {
+            -1 => Some(Self::Unfence),
+            0 => Some(Self::None),
+            1 => Some(Self::Fence),
+            _ => None,
+        }
+    }
+
+    /// The fenced state after this change applies to `fenced`.
+    #[must_use]
+    pub fn apply(self, fenced: bool) -> bool {
+        match self {
+            Self::Unfence => false,
+            Self::None => fenced,
+            Self::Fence => true,
+        }
+    }
+}
+
+/// Kafka's `BrokerRegistrationChangeRecord` (metadata apiKey 17): a delta on
+/// the registration of one broker.
+///
+/// As in `ClusterControlManager.replay(BrokerRegistrationChangeRecord)`, the
+/// image applies it only when `broker_epoch` is the epoch of the current
+/// registration; against an unknown broker or another epoch it does nothing.
+/// `in_controlled_shutdown` true is Kafka's `IN_CONTROLLED_SHUTDOWN` (`1`) and
+/// false is `NONE` (`0`); Kafka has no change that leaves controlled shutdown,
+/// only a new registration does. An empty `log_dirs` and a `None`
+/// `cordoned_log_dirs` mean no change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrokerRegistrationChangeRecord {
+    pub node_id: NodeId,
+    pub broker_epoch: i64,
+    pub fenced: FencingChange,
+    pub in_controlled_shutdown: bool,
+    /// KIP-858: the broker's online log directories after the change.
+    pub log_dirs: Vec<Uuid>,
+    /// KIP-1066: the broker's cordoned log directories after the change.
+    pub cordoned_log_dirs: Option<Vec<Uuid>>,
+}
+
+impl BrokerRegistrationChangeRecord {
+    /// A change that updates nothing, for `node_id` at `broker_epoch`. Set the
+    /// fields to change on the result.
+    #[must_use]
+    pub fn no_change(node_id: NodeId, broker_epoch: i64) -> Self {
+        Self {
+            node_id,
+            broker_epoch,
+            fenced: FencingChange::None,
+            in_controlled_shutdown: false,
+            log_dirs: Vec::new(),
+            cordoned_log_dirs: None,
+        }
+    }
+
+    /// The registration after this change applies to `current`, as Kafka's
+    /// `BrokerRegistration.cloneWith` builds it. The caller checks the epoch.
+    #[must_use]
+    pub fn applied_to(&self, current: &BrokerRegistrationRecord) -> BrokerRegistrationRecord {
+        BrokerRegistrationRecord {
+            fenced: self.fenced.apply(current.fenced),
+            in_controlled_shutdown: current.in_controlled_shutdown || self.in_controlled_shutdown,
+            log_dirs: if self.log_dirs.is_empty() {
+                current.log_dirs.clone()
+            } else {
+                self.log_dirs.clone()
+            },
+            cordoned_log_dirs: self
+                .cordoned_log_dirs
+                .clone()
+                .or_else(|| current.cordoned_log_dirs.clone()),
+            ..current.clone()
+        }
+    }
+}
+
+/// KIP-1312 `UnregisterController` (`api_key` 94), Kafka trunk's
+/// `UnregisterControllerRecord` (metadata apiKey 29). Removes the
+/// registration of one controller. An apply against an unknown `node_id`
+/// does nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnregisterControllerRecord {
     pub node_id: NodeId,
 }
 
@@ -427,6 +553,12 @@ pub enum MetadataRecord {
     V1PartitionRecovery(PartitionRecoveryRecord),
     /// Atomic standard-KRaft partition update decoded from a combined delta.
     V1PartitionUpdate(PartitionUpdateRecord),
+    /// Kafka's `BrokerRegistrationChangeRecord`: a fencing, controlled-shutdown
+    /// or log-dir delta on one broker registration, applied only at the
+    /// registration's epoch.
+    V1BrokerRegistrationChange(BrokerRegistrationChangeRecord),
+    /// KIP-1312 controller unregistration.
+    V1UnregisterController(UnregisterControllerRecord),
 }
 
 #[cfg(test)]
@@ -590,8 +722,122 @@ mod tests {
     fn unregister_broker_round_trip() {
         let r = MetadataRecord::V1UnregisterBroker(UnregisterBrokerRecord {
             node_id: NodeId(42),
+            broker_epoch: 17,
         });
         assert2::assert!(round_trip(&r) == r);
+    }
+
+    #[test]
+    fn broker_registration_change_and_unregister_controller_round_trip() {
+        for r in [
+            MetadataRecord::V1BrokerRegistrationChange(BrokerRegistrationChangeRecord {
+                node_id: NodeId(4),
+                broker_epoch: 12,
+                fenced: FencingChange::Unfence,
+                in_controlled_shutdown: true,
+                log_dirs: vec![Uuid::from_u128(0xD1)],
+                cordoned_log_dirs: Some(vec![]),
+            }),
+            MetadataRecord::V1UnregisterController(UnregisterControllerRecord {
+                node_id: NodeId(3000),
+            }),
+        ] {
+            assert2::assert!(round_trip(&r) == r);
+        }
+    }
+
+    /// `FencingChange` is Kafka's `BrokerRegistrationFencingChange`: -1
+    /// unfences, 0 leaves the state alone and 1 fences.
+    #[test]
+    fn fencing_change_matches_kafka() {
+        for (change, wire, from_false, from_true) in [
+            (FencingChange::Unfence, -1, false, false),
+            (FencingChange::None, 0, false, true),
+            (FencingChange::Fence, 1, true, true),
+        ] {
+            assert2::check!(
+                (
+                    change.wire_value(),
+                    FencingChange::from_wire(wire),
+                    change.apply(false),
+                    change.apply(true),
+                ) == (wire, Some(change), from_false, from_true)
+            );
+        }
+        for undefined in [-2, 2, i8::MIN, i8::MAX] {
+            assert2::check!(FencingChange::from_wire(undefined) == None);
+        }
+    }
+
+    /// `applied_to` is Kafka's `BrokerRegistration.cloneWith`: each field of
+    /// the change either leaves the registration's value or replaces it, and
+    /// controlled shutdown can only turn on.
+    #[test]
+    fn registration_change_applies_like_clone_with() {
+        let (d1, d2) = (Uuid::from_u128(0xD1), Uuid::from_u128(0xD2));
+        let current = BrokerRegistrationRecord {
+            node_id: NodeId(4),
+            broker_epoch: 12,
+            incarnation_id: Uuid::from_u128(4),
+            host: "broker-4".into(),
+            port: 9092,
+            rack: None,
+            endpoints: vec![],
+            log_dirs: vec![d1],
+            fenced: true,
+            in_controlled_shutdown: false,
+            cordoned_log_dirs: None,
+            features: std::collections::BTreeMap::new(),
+        };
+        let base = BrokerRegistrationChangeRecord::no_change(NodeId(4), 12);
+        let with = |edit: fn(&mut BrokerRegistrationRecord)| {
+            let mut want = current.clone();
+            edit(&mut want);
+            want
+        };
+        for (case, change, want) in [
+            ("no change", base.clone(), current.clone()),
+            (
+                "unfence",
+                BrokerRegistrationChangeRecord {
+                    fenced: FencingChange::Unfence,
+                    ..base.clone()
+                },
+                with(|b| b.fenced = false),
+            ),
+            (
+                "controlled shutdown",
+                BrokerRegistrationChangeRecord {
+                    in_controlled_shutdown: true,
+                    ..base.clone()
+                },
+                with(|b| b.in_controlled_shutdown = true),
+            ),
+            (
+                "new log dirs",
+                BrokerRegistrationChangeRecord {
+                    log_dirs: vec![d2],
+                    ..base.clone()
+                },
+                with(|b| b.log_dirs = vec![Uuid::from_u128(0xD2)]),
+            ),
+            (
+                "uncordon every dir",
+                BrokerRegistrationChangeRecord {
+                    cordoned_log_dirs: Some(vec![]),
+                    ..base.clone()
+                },
+                with(|b| b.cordoned_log_dirs = Some(vec![])),
+            ),
+        ] {
+            assert2::check!(change.applied_to(&current) == want, "{case}");
+        }
+
+        let shutting_down = BrokerRegistrationRecord {
+            in_controlled_shutdown: true,
+            ..current.clone()
+        };
+        assert2::check!(base.applied_to(&shutting_down) == shutting_down);
     }
 
     #[test]

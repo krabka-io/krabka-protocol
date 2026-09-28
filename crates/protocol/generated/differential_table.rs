@@ -3415,6 +3415,18 @@ pub const CASES: &[Case] = &[
         kind: Kind::Response,
     },
     Case {
+        name: "StreamsGroupTopologyDescriptionUpdateRequest",
+        api_key: 93,
+        version: 0,
+        kind: Kind::Request,
+    },
+    Case {
+        name: "StreamsGroupTopologyDescriptionUpdateResponse",
+        api_key: 93,
+        version: 0,
+        kind: Kind::Response,
+    },
+    Case {
         name: "SyncGroupRequest",
         api_key: 14,
         version: 0,
@@ -4869,6 +4881,18 @@ fn encode_default_20(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        "StreamsGroupTopologyDescriptionUpdateRequest" => {
+            let msg = krabka_protocol::owned::streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest::default();
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
+        "StreamsGroupTopologyDescriptionUpdateResponse" => {
+            let msg = krabka_protocol::owned::streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse::default();
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
         "SyncGroupRequest" => {
             let msg = krabka_protocol::owned::sync_group_request::SyncGroupRequest::default();
             let mut buf = BytesMut::new();
@@ -4881,6 +4905,11 @@ fn encode_default_20(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
+    Some(match name {
         "TxnOffsetCommitRequest" => {
             let msg =
                 krabka_protocol::owned::txn_offset_commit_request::TxnOffsetCommitRequest::default(
@@ -4895,11 +4924,6 @@ fn encode_default_20(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
-    Some(match name {
         "UnregisterBrokerRequest" => {
             let msg =
                 krabka_protocol::owned::unregister_broker_request::UnregisterBrokerRequest::default(
@@ -4940,6 +4964,11 @@ fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn encode_default_22(name: &str, version: i16) -> Option<Vec<u8>> {
+    Some(match name {
         "UpdateRaftVoterRequest" => {
             let msg =
                 krabka_protocol::owned::update_raft_voter_request::UpdateRaftVoterRequest::default(
@@ -4954,11 +4983,6 @@ fn encode_default_21(name: &str, version: i16) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn encode_default_22(name: &str, version: i16) -> Option<Vec<u8>> {
-    Some(match name {
         "VoteRequest" => {
             let msg = krabka_protocol::owned::vote_request::VoteRequest::default();
             let mut buf = BytesMut::new();
@@ -5477,6 +5501,16 @@ fn default_json_for_2(name: &str, version: i16) -> Option<::serde_json::Value> {
         "StreamsGroupHeartbeatResponse" => {
             krabka_protocol::owned::streams_group_heartbeat_response::default_json(version)
         }
+        "StreamsGroupTopologyDescriptionUpdateRequest" => {
+            krabka_protocol::owned::streams_group_topology_description_update_request::default_json(
+                version,
+            )
+        }
+        "StreamsGroupTopologyDescriptionUpdateResponse" => {
+            krabka_protocol::owned::streams_group_topology_description_update_response::default_json(
+                version,
+            )
+        }
         "SyncGroupRequest" => krabka_protocol::owned::sync_group_request::default_json(version),
         "SyncGroupResponse" => krabka_protocol::owned::sync_group_response::default_json(version),
         "TxnOffsetCommitRequest" => {
@@ -5511,17 +5545,17 @@ fn default_json_for_2(name: &str, version: i16) -> Option<::serde_json::Value> {
         }
         "VoteRequest" => krabka_protocol::owned::vote_request::default_json(version),
         "VoteResponse" => krabka_protocol::owned::vote_response::default_json(version),
+        _ => return None,
+    })
+}
+fn default_json_for_3(name: &str, version: i16) -> Option<::serde_json::Value> {
+    Some(match name {
         "WriteShareGroupStateRequest" => {
             krabka_protocol::owned::write_share_group_state_request::default_json(version)
         }
         "WriteShareGroupStateResponse" => {
             krabka_protocol::owned::write_share_group_state_response::default_json(version)
         }
-        _ => return None,
-    })
-}
-fn default_json_for_3(name: &str, version: i16) -> Option<::serde_json::Value> {
-    Some(match name {
         "WriteTxnMarkersRequest" => {
             krabka_protocol::owned::write_txn_markers_request::default_json(version)
         }
@@ -8034,6 +8068,22 @@ fn roundtrip_27(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        "StreamsGroupTopologyDescriptionUpdateRequest" => {
+            let mut cur = bytes;
+            let msg = krabka_protocol::owned::streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest::decode(&mut cur, version).unwrap();
+            assert!(cur.is_empty());
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
+        "StreamsGroupTopologyDescriptionUpdateResponse" => {
+            let mut cur = bytes;
+            let msg = krabka_protocol::owned::streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse::decode(&mut cur, version).unwrap();
+            assert!(cur.is_empty());
+            let mut buf = BytesMut::new();
+            msg.encode(&mut buf, version).unwrap();
+            buf.to_vec()
+        }
         "SyncGroupRequest" => {
             let mut cur = bytes;
             let msg = krabka_protocol::owned::sync_group_request::SyncGroupRequest::decode(
@@ -8056,6 +8106,12 @@ fn roundtrip_27(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
+    use krabka_protocol::Decode;
+    Some(match name {
         "TxnOffsetCommitRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8076,12 +8132,6 @@ fn roundtrip_27(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
-    use krabka_protocol::Decode;
-    Some(match name {
         "UnregisterBrokerRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8118,6 +8168,12 @@ fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
+    use krabka_protocol::Decode;
+    Some(match name {
         "UpdateFeaturesRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8142,12 +8198,6 @@ fn roundtrip_28(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
-    use krabka_protocol::Decode;
-    Some(match name {
         "UpdateRaftVoterRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8187,6 +8237,12 @@ fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
+        _ => return None,
+    })
+}
+fn roundtrip_30(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
+    use krabka_protocol::Decode;
+    Some(match name {
         "WriteShareGroupStateRequest" => {
             let mut cur = bytes;
             let msg = krabka_protocol::owned::write_share_group_state_request::WriteShareGroupStateRequest::decode(&mut cur, version).unwrap();
@@ -8203,12 +8259,6 @@ fn roundtrip_29(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
             msg.encode(&mut buf, version).unwrap();
             buf.to_vec()
         }
-        _ => return None,
-    })
-}
-fn roundtrip_30(name: &str, version: i16, bytes: &[u8]) -> Option<Vec<u8>> {
-    use krabka_protocol::Decode;
-    Some(match name {
         "WriteTxnMarkersRequest" => {
             let mut cur = bytes;
             let msg =
@@ -8353,6 +8403,7 @@ const REQUEST_FLEX_MIN: &[(&str, i16)] = &[
     ("ShareGroupHeartbeatRequest", 0),
     ("StreamsGroupDescribeRequest", 0),
     ("StreamsGroupHeartbeatRequest", 0),
+    ("StreamsGroupTopologyDescriptionUpdateRequest", 0),
     ("SyncGroupRequest", 4),
     ("TxnOffsetCommitRequest", 3),
     ("UnregisterBrokerRequest", 0),
@@ -8444,6 +8495,7 @@ const RESPONSE_FLEX_MIN: &[(&str, i16)] = &[
     ("ShareGroupHeartbeatResponse", 0),
     ("StreamsGroupDescribeResponse", 0),
     ("StreamsGroupHeartbeatResponse", 0),
+    ("StreamsGroupTopologyDescriptionUpdateResponse", 0),
     ("SyncGroupResponse", 4),
     ("TxnOffsetCommitResponse", 3),
     ("UnregisterBrokerResponse", 0),

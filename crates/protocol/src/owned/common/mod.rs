@@ -11,3 +11,4 @@ pub mod share_group_heartbeat_response;
 pub mod streams_group_describe_response;
 pub mod streams_group_heartbeat_request;
 pub mod streams_group_heartbeat_response;
+pub mod streams_group_topology_description_update_request;

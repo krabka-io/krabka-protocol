@@ -46,6 +46,7 @@
 
 pub mod acl;
 pub mod break_glass;
+pub mod directory_id;
 mod error;
 mod feature;
 pub mod group_version;
@@ -75,15 +76,15 @@ pub use kraft_translate::{
     TranslateError, from_kraft, from_kraft_value, to_kraft, to_kraft_records, to_kraft_values,
 };
 pub use records::{
-    BrokerConfigRecord, BrokerEndpoint, BrokerRegistrationRecord, ClientMetricsConfigRecord,
-    ClientQuotaRecord, ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID,
-    DelegationTokenRecord, DeleteDelegationTokenRecord, DeleteScramCredentialRecord,
-    DeleteTopicRecord, FeatureLevelRecord, FeaturesEpochRecord, GroupConfigRecord,
-    KRaftVersionRecord, LeaderEpoch, LeaderRecoveryState, MetadataRecord, NodeId,
-    PartitionDirAssignmentRecord, PartitionElrRecord, PartitionOffsetAdvanceRecord,
-    PartitionRecord, PartitionRecoveryRecord, PartitionUpdateRecord, ProducerIdsRecord,
-    QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord,
-    VotersRecord,
+    BrokerConfigRecord, BrokerEndpoint, BrokerRegistrationChangeRecord, BrokerRegistrationRecord,
+    ClientMetricsConfigRecord, ClientQuotaRecord, ControllerRegistrationRecord,
+    DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord, DeleteDelegationTokenRecord,
+    DeleteScramCredentialRecord, DeleteTopicRecord, FeatureLevelRecord, FeaturesEpochRecord,
+    FencingChange, GroupConfigRecord, KRaftVersionRecord, LeaderEpoch, LeaderRecoveryState,
+    MetadataRecord, NodeId, PartitionDirAssignmentRecord, PartitionElrRecord,
+    PartitionOffsetAdvanceRecord, PartitionRecord, PartitionRecoveryRecord, PartitionUpdateRecord,
+    ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord,
+    UnregisterBrokerRecord, UnregisterControllerRecord, VotersRecord,
 };
 pub use voters::{KRaftVersionRange, Voter, VoterEndpoint, VoterSet};
 pub use write_freeze::TopicFreezeRecord;
