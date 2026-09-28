@@ -51,8 +51,8 @@ pub const STREAMS_VERSION_MAX: i16 = 1;
 /// Minimum supported level: `3.3-IV3` (`KRaft` GA), the floor that real Kafka
 /// 4.0 supports.
 pub const METADATA_VERSION_MIN: i16 = 7;
-/// Maximum supported level: `4.4-IV1` (KIP-1276 CIDR ACL host patterns).
-pub const METADATA_VERSION_MAX: i16 = 32;
+/// Maximum supported level: `4.4-IV2` (KIP-1312 controller unregistration).
+pub const METADATA_VERSION_MAX: i16 = 33;
 
 /// Level at which `KRaft` gained SCRAM credentials (`3.5-IV2`).
 pub const SCRAM_MIN_LEVEL: i16 = 11;
@@ -83,6 +83,9 @@ pub const STREAMS_VERSION_DEFAULT_METADATA_LEVEL: i16 = 29;
 pub const CORDONED_LOG_DIRS_MIN_LEVEL: i16 = 30;
 /// Level at which ACL host patterns may be CIDR blocks (`4.4-IV1`, KIP-1276).
 pub const CIDR_ACL_MIN_LEVEL: i16 = 32;
+/// Level at which a controller may be unregistered (`4.4-IV2`, KIP-1312):
+/// Kafka's `MetadataVersion.isControllerUnregistrationSupported`.
+pub const CONTROLLER_UNREGISTRATION_MIN_LEVEL: i16 = 33;
 
 /// One `metadata.version` level: its integer feature level, canonical
 /// `X.Y-IVn` name, short `X.Y` form, and Kafka's `didMetadataChange` flag.
@@ -272,6 +275,12 @@ const TABLE: &[MetadataVersion] = &[
         short: "4.4",
         did_metadata_change: true,
     },
+    MetadataVersion {
+        level: 33,
+        ivn: "4.4-IV2",
+        short: "4.4",
+        did_metadata_change: true,
+    },
 ];
 
 /// Look up a level by integer feature level. `None` if outside the
@@ -305,8 +314,8 @@ pub fn is_supported_level(level: i16) -> bool {
 }
 
 /// Kafka's `didMetadataChange` flag for `level`, or `None` for a level outside
-/// the supported table. Levels up to `4.3-IV0` (30) follow Kafka 4.3.1 and
-/// `4.4-IV0` (31) and `4.4-IV1` (32) follow Kafka trunk.
+/// the supported table. Levels up to `4.3-IV0` (30) follow Kafka 4.3.1, and
+/// `4.4-IV0` (31) to `4.4-IV2` (33) follow Kafka trunk.
 #[must_use]
 pub fn did_metadata_change(level: i16) -> Option<bool> {
     from_feature_level(level).map(MetadataVersion::did_metadata_change)
@@ -335,8 +344,8 @@ mod tests {
     use super::*;
 
     /// Kafka's `didMetadataChange` flag per level: `MetadataVersion.java` at
-    /// 4.3.1 for 7-30, at trunk for 31 (`4.4-IV0`) and 32 (`4.4-IV1`).
-    const KAFKA_DID_METADATA_CHANGE: [(i16, bool); 26] = [
+    /// 4.3.1 for 7-30, at trunk for 31 (`4.4-IV0`) to 33 (`4.4-IV2`).
+    const KAFKA_DID_METADATA_CHANGE: [(i16, bool); 27] = [
         (7, true),
         (8, true),
         (9, false),
@@ -363,6 +372,7 @@ mod tests {
         (30, true),
         (31, false),
         (32, true),
+        (33, true),
     ];
 
     #[test]
@@ -372,7 +382,7 @@ mod tests {
             .collect();
         check!(table == KAFKA_DID_METADATA_CHANGE);
         check!(
-            (did_metadata_change(6), did_metadata_change(33)) == (None, None),
+            (did_metadata_change(6), did_metadata_change(34)) == (None, None),
             "levels outside the table"
         );
     }
@@ -401,9 +411,15 @@ mod tests {
             ("3.7-IV0 to 3.7-IV1", 15, 16, false),
             ("3.7-IV1 up to JBOD at 3.7-IV2", 16, 17, true),
             ("minimum to 3.4-IV0", 7, 8, true),
-            ("whole table", 7, 32, true),
+            (
+                "down out of 4.4-IV2 controller unregistration",
+                33,
+                32,
+                true,
+            ),
+            ("whole table", 7, 33, true),
             ("below the table", 6, 7, true),
-            ("above the table", 32, 33, true),
+            ("above the table", 33, 34, true),
         ] {
             check!(metadata_changed_between(from, to) == want, "{case}");
         }
@@ -417,7 +433,7 @@ mod tests {
                 METADATA_VERSION_MAX,
                 TABLE.first().unwrap().level,
                 TABLE.last().unwrap().level,
-            ) == (7, 32, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
+            ) == (7, 33, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
         );
     }
 
@@ -496,8 +512,17 @@ mod tests {
                     did_metadata_change: true,
                 }),
             ),
+            (
+                33,
+                Some(MetadataVersion {
+                    level: 33,
+                    ivn: "4.4-IV2",
+                    short: "4.4",
+                    did_metadata_change: true,
+                }),
+            ),
             (6, None),
-            (33, None),
+            (34, None),
         ] {
             assert2::assert!(from_feature_level(level) == want);
         }
@@ -522,7 +547,8 @@ mod tests {
             ("known 4.0 IV", "4.0-IV3", Some(25)),
             ("known 4.3 IV", "4.3-IV0", Some(30)),
             ("known 4.4 IV", "4.4-IV1", Some(32)),
-            ("reserved 4.4 IV", "4.4-IV2", None),
+            ("latest 4.4 IV", "4.4-IV2", Some(33)),
+            ("reserved 4.4 IV", "4.4-IV3", None),
             ("unknown IV", "3.5-IV9", None),
         ] {
             assert2::assert!(
@@ -551,9 +577,9 @@ mod tests {
     fn in_supported_range_predicate() {
         for (_case, level, want) in [
             ("minimum", 7, true),
-            ("maximum", 32, true),
+            ("maximum", 33, true),
             ("below minimum", 6, false),
-            ("above maximum", 33, false),
+            ("above maximum", 34, false),
         ] {
             assert2::assert!(is_supported_level(level) == want);
         }
@@ -596,6 +622,11 @@ mod tests {
                 "4.3-IV0",
             ),
             ("CIDR ACL gate", CIDR_ACL_MIN_LEVEL, "4.4-IV1"),
+            (
+                "controller unregistration gate",
+                CONTROLLER_UNREGISTRATION_MIN_LEVEL,
+                "4.4-IV2",
+            ),
         ] {
             check!(
                 from_feature_level(level).unwrap().ivn() == expected_ivn,
