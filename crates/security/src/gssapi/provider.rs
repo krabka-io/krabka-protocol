@@ -233,7 +233,7 @@ impl SspiInitiator {
     /// This function reads `keytab_path` and extracts the aes256 key for the
     /// first component of `client_principal`. It then builds an sspi client
     /// that authenticates as `client_principal`, for example
-    /// `"alice@CRABKA.TEST"` or `"kafka/host@CRABKA.TEST"`.
+    /// `"alice@KRABKA.TEST"` or `"kafka/host@KRABKA.TEST"`.
     ///
     /// `target_spn` is the service SPN without the realm, for example
     /// `"kafka/localhost"`. `kdc_url` is the KDC endpoint, for example
@@ -392,13 +392,13 @@ mod tests {
 
     #[test]
     fn keytab_upn_uses_a_kerberos_principal_name() {
-        let principal = keytab_username("alice@CRABKA.TEST").unwrap();
-        check!(principal.inner() == "CRABKA.TEST\\alice");
+        let principal = keytab_username("alice@KRABKA.TEST").unwrap();
+        check!(principal.inner() == "KRABKA.TEST\\alice");
     }
 
     #[test]
     fn keytab_down_level_name_is_unchanged() {
-        let principal = keytab_username("CRABKA.TEST\\alice").unwrap();
-        check!(principal.inner() == "CRABKA.TEST\\alice");
+        let principal = keytab_username("KRABKA.TEST\\alice").unwrap();
+        check!(principal.inner() == "KRABKA.TEST\\alice");
     }
 }
