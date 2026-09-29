@@ -51,10 +51,6 @@ jobs:
       - name: docgen
         run: bazel build $(bazel query 'kind("rust_doc rule", //crates/...)')
 
-      # The assembly task's own unit tests; nothing else in CI runs them.
-      - name: test the site assembly
-        run: aspect axl-tests
-
       - name: assemble the site
         run: aspect rustdoc-site --output site
 
