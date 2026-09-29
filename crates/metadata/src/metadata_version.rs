@@ -51,8 +51,9 @@ pub const STREAMS_VERSION_MAX: i16 = 1;
 /// Minimum supported level: `3.3-IV3` (`KRaft` GA), the floor that real Kafka
 /// 4.0 supports.
 pub const METADATA_VERSION_MIN: i16 = 7;
-/// Maximum supported level: `4.4-IV2` (KIP-1312 controller unregistration).
-pub const METADATA_VERSION_MAX: i16 = 33;
+/// Maximum supported level: `4.5-IV0`, Kafka trunk's `latestTesting` (the
+/// Kafka 4.5.0 release level, which changes no metadata record format).
+pub const METADATA_VERSION_MAX: i16 = 34;
 
 /// Level at which `KRaft` gained SCRAM credentials (`3.5-IV2`).
 pub const SCRAM_MIN_LEVEL: i16 = 11;
@@ -281,6 +282,12 @@ const TABLE: &[MetadataVersion] = &[
         short: "4.4",
         did_metadata_change: true,
     },
+    MetadataVersion {
+        level: 34,
+        ivn: "4.5-IV0",
+        short: "4.5",
+        did_metadata_change: false,
+    },
 ];
 
 /// Look up a level by integer feature level. `None` if outside the
@@ -315,7 +322,7 @@ pub fn is_supported_level(level: i16) -> bool {
 
 /// Kafka's `didMetadataChange` flag for `level`, or `None` for a level outside
 /// the supported table. Levels up to `4.3-IV0` (30) follow Kafka 4.3.1, and
-/// `4.4-IV0` (31) to `4.4-IV2` (33) follow Kafka trunk.
+/// `4.4-IV0` (31) to `4.5-IV0` (34) follow Kafka trunk.
 #[must_use]
 pub fn did_metadata_change(level: i16) -> Option<bool> {
     from_feature_level(level).map(MetadataVersion::did_metadata_change)
@@ -344,8 +351,8 @@ mod tests {
     use super::*;
 
     /// Kafka's `didMetadataChange` flag per level: `MetadataVersion.java` at
-    /// 4.3.1 for 7-30, at trunk for 31 (`4.4-IV0`) to 33 (`4.4-IV2`).
-    const KAFKA_DID_METADATA_CHANGE: [(i16, bool); 27] = [
+    /// 4.3.1 for 7-30, at trunk for 31 (`4.4-IV0`) to 34 (`4.5-IV0`).
+    const KAFKA_DID_METADATA_CHANGE: [(i16, bool); 28] = [
         (7, true),
         (8, true),
         (9, false),
@@ -373,6 +380,7 @@ mod tests {
         (31, false),
         (32, true),
         (33, true),
+        (34, false),
     ];
 
     #[test]
@@ -382,7 +390,7 @@ mod tests {
             .collect();
         check!(table == KAFKA_DID_METADATA_CHANGE);
         check!(
-            (did_metadata_change(6), did_metadata_change(34)) == (None, None),
+            (did_metadata_change(6), did_metadata_change(35)) == (None, None),
             "levels outside the table"
         );
     }
@@ -417,9 +425,12 @@ mod tests {
                 32,
                 true,
             ),
-            ("whole table", 7, 33, true),
+            ("4.4-IV2 to 4.5-IV0 changes nothing", 33, 34, false),
+            ("4.5-IV0 down to 4.4-IV2 changes nothing", 34, 33, false),
+            ("4.5-IV0 down through 4.4-IV2", 34, 32, true),
+            ("whole table", 7, 34, true),
             ("below the table", 6, 7, true),
-            ("above the table", 33, 34, true),
+            ("above the table", 34, 35, true),
         ] {
             check!(metadata_changed_between(from, to) == want, "{case}");
         }
@@ -433,7 +444,7 @@ mod tests {
                 METADATA_VERSION_MAX,
                 TABLE.first().unwrap().level,
                 TABLE.last().unwrap().level,
-            ) == (7, 33, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
+            ) == (7, 34, METADATA_VERSION_MIN, METADATA_VERSION_MAX)
         );
     }
 
@@ -521,8 +532,17 @@ mod tests {
                     did_metadata_change: true,
                 }),
             ),
+            (
+                34,
+                Some(MetadataVersion {
+                    level: 34,
+                    ivn: "4.5-IV0",
+                    short: "4.5",
+                    did_metadata_change: false,
+                }),
+            ),
             (6, None),
-            (34, None),
+            (35, None),
         ] {
             assert2::assert!(from_feature_level(level) == want);
         }
@@ -547,8 +567,10 @@ mod tests {
             ("known 4.0 IV", "4.0-IV3", Some(25)),
             ("known 4.3 IV", "4.3-IV0", Some(30)),
             ("known 4.4 IV", "4.4-IV1", Some(32)),
-            ("latest 4.4 IV", "4.4-IV2", Some(33)),
+            ("last 4.4 IV", "4.4-IV2", Some(33)),
             ("reserved 4.4 IV", "4.4-IV3", None),
+            ("latest 4.5 IV", "4.5-IV0", Some(34)),
+            ("reserved 4.5 IV", "4.5-IV1", None),
             ("unknown IV", "3.5-IV9", None),
         ] {
             assert2::assert!(
@@ -565,7 +587,10 @@ mod tests {
             ("known 4.1 minor", "4.1", Some(27)),
             ("known 4.2 minor", "4.2", Some(29)),
             ("known 4.3 minor", "4.3", Some(30)),
+            ("known 4.4 minor", "4.4", Some(33)),
+            ("known 4.5 minor", "4.5", Some(34)),
             ("unsupported minor", "2.8", None),
+            ("unreleased minor", "4.6", None),
         ] {
             assert2::assert!(
                 from_version_string(s).map(super::MetadataVersion::feature_level) == want
@@ -577,9 +602,9 @@ mod tests {
     fn in_supported_range_predicate() {
         for (_case, level, want) in [
             ("minimum", 7, true),
-            ("maximum", 33, true),
+            ("maximum", 34, true),
             ("below minimum", 6, false),
-            ("above maximum", 34, false),
+            ("above maximum", 35, false),
         ] {
             assert2::assert!(is_supported_level(level) == want);
         }
