@@ -89,7 +89,7 @@ pub enum ApiKey {
     ExpireDelegationToken = 40,
     /// `DescribeDelegationTokenRequest` (versions 1–3).
     DescribeDelegationToken = 41,
-    /// `DeleteGroupsRequest` (versions 0–2).
+    /// `DeleteGroupsRequest` (versions 0–3).
     DeleteGroups = 42,
     /// `ElectLeadersRequest` (versions 0–2).
     ElectLeaders = 43,

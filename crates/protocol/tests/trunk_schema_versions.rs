@@ -1,6 +1,7 @@
 //! Byte-exact coverage for the schema versions vendored from Kafka trunk ahead
 //! of the 4.3.0 pin: `TxnOffsetCommit` v6 (KIP-1319 topic ids),
-//! `StreamsGroupHeartbeat` v1 and `StreamsGroupDescribe` v1 (KIP-1331).
+//! `StreamsGroupHeartbeat` v1, `StreamsGroupDescribe` v1 and `DeleteGroups` v3
+//! (KIP-1331).
 //!
 //! The vendored JVM oracle is Kafka 4.3.0, which predates these versions, so
 //! the differential sweep cannot check them. Each case here is a frame encoded
@@ -11,6 +12,8 @@ use bytes::BytesMut;
 use krabka_protocol::{
     Decode, Encode, UnknownTaggedFields,
     owned::{
+        delete_groups_request::DeleteGroupsRequest,
+        delete_groups_response::{DeletableGroupResult, DeleteGroupsResponse},
         streams_group_describe_request::StreamsGroupDescribeRequest,
         streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
         txn_offset_commit_request::{
@@ -212,5 +215,96 @@ fn streams_group_describe_request_frames() {
         (0, msg(false), vec![0x02, 0x02, b'g', 0x01, 0x00]),
     ] {
         check_frame(&message, version, &wire);
+    }
+}
+
+fn delete_groups_result(group_id: &str, error_message: Option<&str>) -> DeletableGroupResult {
+    DeletableGroupResult {
+        group_id: group_id.into(),
+        error_code: 69,
+        error_message: error_message.map(Into::into),
+        unknown_tagged_fields: UnknownTaggedFields::default(),
+    }
+}
+
+fn delete_groups_response(results: Vec<DeletableGroupResult>) -> DeleteGroupsResponse {
+    DeleteGroupsResponse {
+        throttle_time_ms: 7,
+        results,
+        unknown_tagged_fields: UnknownTaggedFields::default(),
+    }
+}
+
+/// KIP-1331: v3 adds a nullable `ErrorMessage` to each per-group result. v2 is
+/// already flexible, so v3 writes it compact, and v2 and below do not write it
+/// at all.
+///
+/// Each case encodes the same message, checks the bytes, then decodes them and
+/// expects `received`. Below v3 the message is not on the wire, so it reads
+/// back as null.
+#[test]
+fn delete_groups_response_error_message_frames() {
+    let sent = delete_groups_response(vec![
+        delete_groups_result("g", Some("nope")),
+        delete_groups_result("h", None),
+    ]);
+    let without_message = delete_groups_response(vec![
+        delete_groups_result("g", None),
+        delete_groups_result("h", None),
+    ]);
+    let head = [0, 0, 0, 7]; // ThrottleTimeMs 7
+    let v3 = [
+        &head[..],
+        &[0x03],                                                  // two results
+        &[0x02, b'g', 0, 69, 0x05, b'n', b'o', b'p', b'e', 0x00], // "g", code 69, "nope", tags
+        &[0x02, b'h', 0, 69, 0x00, 0x00], // "h", code 69, null message, tags
+        &[0x00],                          // response tagged fields
+    ]
+    .concat();
+    let v2 = [
+        &head[..],
+        &[0x03],                    // two results
+        &[0x02, b'g', 0, 69, 0x00], // "g", code 69, tags
+        &[0x02, b'h', 0, 69, 0x00], // "h", code 69, tags
+        &[0x00],                    // response tagged fields
+    ]
+    .concat();
+    let legacy = [
+        &head[..],
+        &[0, 0, 0, 2],        // two results
+        &[0, 1, b'g', 0, 69], // "g", code 69
+        &[0, 1, b'h', 0, 69], // "h", code 69
+    ]
+    .concat();
+
+    for (version, wire, received) in [
+        (3, v3, &sent),
+        (2, v2, &without_message),
+        (1, legacy.clone(), &without_message),
+        (0, legacy, &without_message),
+    ] {
+        assert2::assert!(encode(&sent, version) == wire, "v{version} encode");
+        assert2::assert!(
+            decode::<DeleteGroupsResponse>(&wire, version) == *received,
+            "v{version} decode"
+        );
+    }
+}
+
+/// KIP-1331: the request body shape is unchanged at v3, so it is v2 byte for
+/// byte.
+#[test]
+fn delete_groups_request_v3_is_v2() {
+    let msg = DeleteGroupsRequest {
+        groups_names: vec!["g".into(), "h".into()],
+        unknown_tagged_fields: UnknownTaggedFields::default(),
+    };
+    let flexible = vec![0x03, 0x02, b'g', 0x02, b'h', 0x00];
+    for (version, wire) in [
+        (3, flexible.clone()),
+        (2, flexible),
+        (1, vec![0, 0, 0, 2, 0, 1, b'g', 0, 1, b'h']),
+    ] {
+        check_frame(&msg, version, &wire);
     }
 }

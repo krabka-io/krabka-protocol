@@ -1,0 +1,6 @@
+api_key = 42
+version = 3
+direction = "response"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "DeleteGroupsResponse v3 (KIP-1331) hand-constructed frame with one group result that carries an ErrorMessage; the 4.3.0 oracle predates v3"

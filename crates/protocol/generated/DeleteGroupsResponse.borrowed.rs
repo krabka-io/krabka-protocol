@@ -5,14 +5,21 @@ use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
-        string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
-        string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        string_bytes::{
+            compact_nullable_string_len, compact_string_len, nullable_string_len,
+            put_compact_nullable_string, put_compact_string, put_nullable_string, put_string,
+            string_len,
+        },
+        string_bytes_borrowed::{
+            get_compact_nullable_string_borrowed, get_compact_string_borrowed,
+            get_nullable_string_borrowed, get_string_borrowed,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 42;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 2;
+pub const MAX_VERSION: i16 = 3;
 pub const FLEXIBLE_MIN: i16 = 2;
 #[inline]
 #[must_use]
@@ -138,6 +145,7 @@ impl DeleteGroupsResponse<'_> {
 pub struct DeletableGroupResult<'a> {
     pub group_id: &'a str,
     pub error_code: i16,
+    pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeletableGroupResult<'_> {
@@ -149,6 +157,7 @@ impl DeletableGroupResult<'_> {
         crate::owned::delete_groups_response::DeletableGroupResult {
             group_id: (self.group_id).to_string(),
             error_code: (self.error_code),
+            error_message: (self.error_message).map(std::string::ToString::to_string),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -165,6 +174,13 @@ impl Encode for DeletableGroupResult<'_> {
         }
         if version >= 0 {
             put_i16(buf, self.error_code);
+        }
+        if version >= 3 {
+            if flex {
+                let () = put_compact_nullable_string(buf, self.error_message);
+            } else {
+                let () = put_nullable_string(buf, self.error_message);
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
@@ -184,6 +200,13 @@ impl Encode for DeletableGroupResult<'_> {
         }
         if version >= 0 {
             n += 2;
+        }
+        if version >= 3 {
+            n += if flex {
+                compact_nullable_string_len(self.error_message)
+            } else {
+                nullable_string_len(self.error_message)
+            };
         }
         if flex {
             let known_pairs: Vec<(u32, usize)> = Vec::new();
@@ -206,6 +229,13 @@ impl<'de> DecodeBorrow<'de> for DeletableGroupResult<'de> {
         if version >= 0 {
             out.error_code = get_i16(buf)?;
         }
+        if version >= 3 {
+            out.error_message = if flex {
+                get_compact_nullable_string_borrowed(buf)?
+            } else {
+                get_nullable_string_borrowed(buf)?
+            };
+        }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
         }
@@ -222,6 +252,9 @@ impl DeletableGroupResult<'_> {
         }
         if version >= 0 {
             m.error_code = 1i16;
+        }
+        if version >= 3 {
+            m.error_message = Some("x");
         }
         m
     }
