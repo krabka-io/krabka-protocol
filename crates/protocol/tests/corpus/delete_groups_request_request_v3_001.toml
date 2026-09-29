@@ -1,0 +1,6 @@
+api_key = 42
+version = 3
+direction = "request"
+source_kafka_version = "4.4.0"
+synthetic = true
+description = "DeleteGroupsRequest v3 (KIP-1331) hand-constructed frame naming one group, the same body as v2; the 4.3.0 oracle predates v3"

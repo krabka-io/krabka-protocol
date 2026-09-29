@@ -7,15 +7,17 @@ use crate::{
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
-            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-            put_string, string_len,
+            compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
+            get_compact_string_owned, get_nullable_string_owned, get_string_owned,
+            nullable_string_len, put_compact_nullable_string, put_compact_string,
+            put_nullable_string, put_string, string_len,
         },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 42;
 pub const MIN_VERSION: i16 = 0;
-pub const MAX_VERSION: i16 = 2;
+pub const MAX_VERSION: i16 = 3;
 pub const FLEXIBLE_MIN: i16 = 2;
 #[inline]
 #[must_use]
@@ -125,6 +127,7 @@ impl DeleteGroupsResponse {
 pub struct DeletableGroupResult {
     pub group_id: String,
     pub error_code: i16,
+    pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for DeletableGroupResult {
@@ -139,6 +142,13 @@ impl Encode for DeletableGroupResult {
         }
         if version >= 0 {
             put_i16(buf, self.error_code);
+        }
+        if version >= 3 {
+            if flex {
+                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+            } else {
+                let () = put_nullable_string(buf, self.error_message.as_deref());
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
@@ -158,6 +168,13 @@ impl Encode for DeletableGroupResult {
         }
         if version >= 0 {
             n += 2;
+        }
+        if version >= 3 {
+            n += if flex {
+                compact_nullable_string_len(self.error_message.as_deref())
+            } else {
+                nullable_string_len(self.error_message.as_deref())
+            };
         }
         if flex {
             let known_pairs: Vec<(u32, usize)> = Vec::new();
@@ -180,6 +197,13 @@ impl Decode<'_> for DeletableGroupResult {
         if version >= 0 {
             out.error_code = get_i16(buf)?;
         }
+        if version >= 3 {
+            out.error_message = if flex {
+                get_compact_nullable_string_owned(buf)?
+            } else {
+                get_nullable_string_owned(buf)?
+            };
+        }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
         }
@@ -196,6 +220,9 @@ impl DeletableGroupResult {
         }
         if version >= 0 {
             m.error_code = 1i16;
+        }
+        if version >= 3 {
+            m.error_message = Some("x".to_string());
         }
         m
     }

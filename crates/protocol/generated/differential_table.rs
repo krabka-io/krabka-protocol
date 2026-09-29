@@ -853,6 +853,12 @@ pub const CASES: &[Case] = &[
         kind: Kind::Request,
     },
     Case {
+        name: "DeleteGroupsRequest",
+        api_key: 42,
+        version: 3,
+        kind: Kind::Request,
+    },
+    Case {
         name: "DeleteGroupsResponse",
         api_key: 42,
         version: 0,
@@ -868,6 +874,12 @@ pub const CASES: &[Case] = &[
         name: "DeleteGroupsResponse",
         api_key: 42,
         version: 2,
+        kind: Kind::Response,
+    },
+    Case {
+        name: "DeleteGroupsResponse",
+        api_key: 42,
+        version: 3,
         kind: Kind::Response,
     },
     Case {

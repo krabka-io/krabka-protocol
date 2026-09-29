@@ -162,7 +162,9 @@ fn oracle_supports(name: &str, version: i16) -> bool {
         | "StreamsGroupHeartbeatResponse" => false,
         // KIP-1319 renamed `GenerationId` to `GenerationIdOrMemberEpoch` from
         // v3, which 4.3.0's JSON converter cannot read, and added v6.
-        "TxnOffsetCommitRequest" => version < 3,
+        // KIP-1331 added v3 of DeleteGroups (a per-group `ErrorMessage`), which
+        // 4.3.0 rejects as an unsupported version.
+        "TxnOffsetCommitRequest" | "DeleteGroupsRequest" | "DeleteGroupsResponse" => version < 3,
         "TxnOffsetCommitResponse" => version < 6,
         // KIP-1331 added v1, which 4.3.0 silently encodes as v0.
         "StreamsGroupHeartbeatRequest"
@@ -195,6 +197,10 @@ fn kafka_430_oracle_excludes_what_it_cannot_express() {
         ("StreamsGroupDescribeRequest", 1, false),
         ("StreamsGroupDescribeResponse", 0, true),
         ("StreamsGroupDescribeResponse", 1, false),
+        ("DeleteGroupsRequest", 2, true),
+        ("DeleteGroupsRequest", 3, false),
+        ("DeleteGroupsResponse", 2, true),
+        ("DeleteGroupsResponse", 3, false),
     ];
     for (name, version, supported) in cases {
         assert2::assert!(
