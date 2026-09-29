@@ -35,7 +35,7 @@ pub type EntityKey = Vec<(String, Option<String>)>;
 pub struct DelegationToken {
     pub token_id: String,
     pub owner: KafkaPrincipal,
-    pub hmac: Vec<u8>,
+    pub requester: KafkaPrincipal,
     pub issue_timestamp_ms: i64,
     pub expiry_timestamp_ms: i64,
     pub max_timestamp_ms: i64,
@@ -48,12 +48,35 @@ impl DelegationToken {
         Self {
             token_id: rec.token_id.clone(),
             owner: rec.owner.clone(),
-            hmac: rec.hmac.clone(),
+            requester: rec.requester.clone(),
             issue_timestamp_ms: rec.issue_timestamp_ms,
             expiry_timestamp_ms: rec.expiry_timestamp_ms,
             max_timestamp_ms: rec.max_timestamp_ms,
             renewers: rec.renewers.clone(),
         }
+    }
+
+    /// The record that recreates this token.
+    #[must_use]
+    pub fn to_record(&self) -> DelegationTokenRecord {
+        DelegationTokenRecord {
+            token_id: self.token_id.clone(),
+            owner: self.owner.clone(),
+            requester: self.requester.clone(),
+            issue_timestamp_ms: self.issue_timestamp_ms,
+            expiry_timestamp_ms: self.expiry_timestamp_ms,
+            max_timestamp_ms: self.max_timestamp_ms,
+            renewers: self.renewers.clone(),
+        }
+    }
+
+    /// Kafka's `TokenInformation.ownerOrRenewer`: whether `principal` is the
+    /// token's owner, the principal that created it, or a listed renewer.
+    #[must_use]
+    pub fn owner_or_renewer(&self, principal: &KafkaPrincipal) -> bool {
+        &self.owner == principal
+            || &self.requester == principal
+            || self.renewers.contains(principal)
     }
 }
 
@@ -567,8 +590,8 @@ impl MetadataImage {
     }
 
     /// Tokens that `principal` may see through `DescribeDelegationToken`
-    /// without `DescribeToken` permission, either as the owner or as a listed
-    /// renewer (KIP-48). Order is unspecified.
+    /// without `DescribeToken` permission: those it owns, created or may
+    /// renew ([`DelegationToken::owner_or_renewer`]). Order is unspecified.
     #[must_use]
     pub fn delegation_tokens_visible_to(
         &self,
@@ -576,7 +599,7 @@ impl MetadataImage {
     ) -> Vec<&DelegationToken> {
         self.delegation_tokens
             .values()
-            .filter(|t| &t.owner == principal || t.renewers.iter().any(|r| r == principal))
+            .filter(|t| t.owner_or_renewer(principal))
             .collect()
     }
 
@@ -587,16 +610,22 @@ impl MetadataImage {
         self.delegation_tokens.values()
     }
 
-    /// KIP-48: lookup a delegation token by its HMAC bytes.
-    /// `RenewDelegationToken` and `ExpireDelegationToken` identify a token
-    /// by HMAC on the wire and not by `token_id`, and the SCRAM
-    /// delegation-token fallback needs the same lookup at
-    /// the auth path. The implementation is a linear scan over the small
-    /// per-broker, in-memory token map. It keeps clarity over an explicit
-    /// `HMAC→token_id` index until cardinality justifies one.
+    /// KIP-48: the delegation token whose HMAC under `secret_key` is `hmac`.
+    ///
+    /// `RenewDelegationToken` and `ExpireDelegationToken` identify a token by
+    /// HMAC on the wire and not by `token_id`. The image keeps no HMAC, as
+    /// Kafka's metadata does not, so each token's HMAC is recomputed with
+    /// [`krabka_security::compute_token_hmac`]. The scan is linear over the
+    /// small in-memory token map.
     #[must_use]
-    pub fn delegation_token_by_hmac(&self, hmac: &[u8]) -> Option<&DelegationToken> {
-        self.delegation_tokens.values().find(|t| t.hmac == hmac)
+    pub fn delegation_token_by_hmac(
+        &self,
+        secret_key: &[u8],
+        hmac: &[u8],
+    ) -> Option<&DelegationToken> {
+        self.delegation_tokens
+            .values()
+            .find(|t| krabka_security::compute_token_hmac(secret_key, &t.token_id) == hmac)
     }
 
     /// KIP-584: finalized feature levels, keyed by feature name. Empty
@@ -1212,7 +1241,7 @@ impl MetadataImage {
             out.push(MetadataRecord::V1DelegationToken(DelegationTokenRecord {
                 token_id: tok.token_id.clone(),
                 owner: tok.owner.clone(),
-                hmac: tok.hmac.clone(),
+                requester: tok.requester.clone(),
                 issue_timestamp_ms: tok.issue_timestamp_ms,
                 expiry_timestamp_ms: tok.expiry_timestamp_ms,
                 max_timestamp_ms: tok.max_timestamp_ms,
@@ -2214,8 +2243,8 @@ mod tests {
         };
         image.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
             token_id: "tok-1".into(),
-            owner: alice,
-            hmac: vec![0x42; 32],
+            owner: alice.clone(),
+            requester: alice,
             issue_timestamp_ms: 1_000,
             expiry_timestamp_ms: 5_000,
             max_timestamp_ms: 10_000,
@@ -2223,8 +2252,8 @@ mod tests {
         }));
         image.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
             token_id: "tok-2".into(),
-            owner: bob,
-            hmac: vec![0x43; 32],
+            owner: bob.clone(),
+            requester: bob,
             issue_timestamp_ms: 1_000,
             expiry_timestamp_ms: 5_000,
             max_timestamp_ms: 10_000,
@@ -3346,8 +3375,8 @@ mod tests {
     ) -> MetadataRecord {
         MetadataRecord::V1DelegationToken(DelegationTokenRecord {
             token_id: token_id.into(),
-            owner,
-            hmac: vec![0x42; 32],
+            owner: owner.clone(),
+            requester: owner,
             issue_timestamp_ms: 1_000,
             expiry_timestamp_ms,
             max_timestamp_ms: 10_000,
@@ -3390,41 +3419,31 @@ mod tests {
     }
 
     #[test]
-    fn delegation_token_by_hmac_finds_token_by_hmac_bytes() {
+    fn delegation_token_by_hmac_recomputes_each_tokens_hmac() {
         let mut img = MetadataImage::new(uuid::Uuid::nil());
-        let alice = principal("User", "alice");
-        let bob = principal("User", "bob");
+        img.apply(&dt_record(
+            "tok-a",
+            principal("User", "alice"),
+            5_000,
+            vec![],
+        ));
+        img.apply(&dt_record("tok-b", principal("User", "bob"), 5_000, vec![]));
+        let hmac_b = krabka_security::compute_token_hmac(b"key", "tok-b");
 
-        let hmac_a = vec![0xAA; 32];
-        let hmac_b = vec![0xBB; 32];
-        img.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
-            token_id: "tok-a".into(),
-            owner: alice,
-            hmac: hmac_a.clone(),
-            issue_timestamp_ms: 1_000,
-            expiry_timestamp_ms: 5_000,
-            max_timestamp_ms: 10_000,
-            renewers: vec![],
-        }));
-        img.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
-            token_id: "tok-b".into(),
-            owner: bob,
-            hmac: hmac_b.clone(),
-            issue_timestamp_ms: 1_000,
-            expiry_timestamp_ms: 5_000,
-            max_timestamp_ms: 10_000,
-            renewers: vec![],
-        }));
-
-        let found_a = img
-            .delegation_token_by_hmac(&hmac_a)
-            .expect("hmac_a present");
-        let found_b = img
-            .delegation_token_by_hmac(&hmac_b)
-            .expect("hmac_b present");
-        assert2::assert!(found_a.token_id.as_str() == "tok-a");
-        assert2::assert!(found_b.token_id.as_str() == "tok-b");
-        assert2::assert!(img.delegation_token_by_hmac(&[0xCC; 32]).is_none());
+        // (secret key, presented hmac, token found)
+        let cases: [(&[u8], &[u8], Option<&str>); 3] = [
+            (b"key", &hmac_b, Some("tok-b")),
+            // The same HMAC under another key names no token.
+            (b"other", &hmac_b, None),
+            (b"key", &[0xCC; 64], None),
+        ];
+        for (secret_key, hmac, expected) in cases {
+            check!(
+                img.delegation_token_by_hmac(secret_key, hmac)
+                    .map(|t| t.token_id.as_str())
+                    == expected
+            );
+        }
     }
 
     #[test]
@@ -3456,6 +3475,39 @@ mod tests {
         let mut ids: Vec<&str> = bob_visible.iter().map(|t| t.token_id.as_str()).collect();
         ids.sort_unstable();
         assert2::assert!(ids == vec!["a-2", "b-1"]);
+    }
+
+    /// Kafka's `TokenInformation.ownerOrRenewer` counts the requester too, so
+    /// an administrator sees a token it created on another owner's behalf.
+    #[test]
+    fn delegation_tokens_are_visible_to_their_requester() {
+        let mut img = MetadataImage::new(uuid::Uuid::nil());
+        let alice = principal("User", "alice");
+        let admin = principal("User", "admin");
+        img.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
+            requester: admin.clone(),
+            ..match dt_record("a-1", alice.clone(), 5_000, vec![]) {
+                MetadataRecord::V1DelegationToken(record) => record,
+                _ => unreachable!("dt_record builds a token record"),
+            }
+        }));
+        img.apply(&dt_record("a-2", alice.clone(), 5_000, vec![]));
+
+        // (principal, visible token ids)
+        let cases = [
+            (&admin, vec!["a-1"]),
+            (&alice, vec!["a-1", "a-2"]),
+            (&principal("User", "carol"), vec![]),
+        ];
+        for (who, expected) in cases {
+            let mut ids: Vec<&str> = img
+                .delegation_tokens_visible_to(who)
+                .iter()
+                .map(|t| t.token_id.as_str())
+                .collect();
+            ids.sort_unstable();
+            check!(ids == expected, "{who}");
+        }
     }
 
     #[test]
@@ -3687,7 +3739,10 @@ mod tests {
                     principal_type: "User".into(),
                     name: "alice".into(),
                 },
-                hmac: vec![0x42; 32],
+                requester: KafkaPrincipal {
+                    principal_type: "User".into(),
+                    name: "alice".into(),
+                },
                 issue_timestamp_ms: 1,
                 expiry_timestamp_ms: 5,
                 max_timestamp_ms: 10,
@@ -3724,7 +3779,10 @@ mod tests {
                 principal_type: "User".into(),
                 name: "alice".into(),
             },
-            hmac: vec![4; 32],
+            requester: KafkaPrincipal {
+                principal_type: "User".into(),
+                name: "alice".into(),
+            },
             issue_timestamp_ms: 1,
             expiry_timestamp_ms: 5,
             max_timestamp_ms: 10,

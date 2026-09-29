@@ -3,7 +3,7 @@
 
 use bytes::Bytes;
 use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
+use sha2::Sha512;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct SecretBytes(Bytes);
@@ -33,12 +33,18 @@ impl std::fmt::Debug for SecretBytes {
     }
 }
 
-#[must_use]
+/// A delegation token's HMAC: `HmacSHA512` over the token id's UTF-8 bytes,
+/// keyed with the secret key's bytes, as Kafka's
+/// `DelegationTokenManager.createHmac` computes it. The result is 64 bytes,
+/// and its base64 is the SCRAM password a client authenticates with.
+///
 /// # Panics
-/// Panics if validated key material has an impossible size or synchronized credential state is poisoned.
+///
+/// Never: HMAC accepts a key of any length.
+#[must_use]
 pub fn compute_token_hmac(secret_key: &[u8], token_id: &str) -> Vec<u8> {
     let mut mac =
-        <Hmac<Sha256>>::new_from_slice(secret_key).expect("HMAC-SHA-256 accepts any key length");
+        <Hmac<Sha512>>::new_from_slice(secret_key).expect("HMAC-SHA-512 accepts any key length");
     mac.update(token_id.as_bytes());
     mac.finalize().into_bytes().to_vec()
 }
@@ -62,12 +68,16 @@ mod tests {
         );
     }
 
+    /// The expected bytes are `printf tok-1 | openssl dgst -sha512 -hmac k`,
+    /// which is what Kafka's `Mac.getInstance("HmacSHA512")` produces.
     #[test]
-    fn hmac_is_deterministic_for_same_inputs() {
-        let h1 = compute_token_hmac(b"k", "tok-1");
-        let h2 = compute_token_hmac(b"k", "tok-1");
-        assert2::assert!(&h1 == &h2);
-        assert2::assert!(h1.len() == 32);
+    fn hmac_is_hmac_sha512_of_the_token_id() {
+        let expected = hex::decode(
+            "0e527131aafda6c68f4161e8593b8e6eb591403471ef360854b63c883f5a3247\
+             fde5b7720739ea603cb7226cd209ab14718a27b4d3c1b384da9beb197ee7cb3c",
+        )
+        .expect("valid hex");
+        assert2::assert!(compute_token_hmac(b"k", "tok-1") == expected);
     }
 
     #[test]

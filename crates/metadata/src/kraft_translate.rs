@@ -45,10 +45,8 @@
 //!   `incarnation_id`, `features`, `log_dirs`, `fenced`,
 //!   `in_controlled_shutdown` and `cordoned_log_dirs` are carried; the ZK
 //!   migration flag is dropped.
-//! - `DelegationToken`: KIP-631's record has no `hmac` field. The HMAC is
-//!   hex-encoded into the otherwise-unused `requester` slot so it
-//!   round-trips; `KafkaPrincipal`s map through their `Type:Name` string
-//!   form.
+//! - `DelegationToken`: `KafkaPrincipal`s map through their `Type:Name`
+//!   string form.
 
 use bytes::Bytes;
 use krabka_protocol::{
@@ -349,35 +347,6 @@ fn protocol_from_wire(b: i16) -> Result<ListenerProtocol, TranslateError> {
             detail: format!("unknown wire value {other}"),
         }),
     }
-}
-
-// ----- hex (delegation-token hmac smuggled through `requester`) -----
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(s, "{b:02x}");
-    }
-    s
-}
-
-fn hex_decode(s: &str) -> Result<Vec<u8>, TranslateError> {
-    if !s.len().is_multiple_of(2) {
-        return Err(TranslateError::Invalid {
-            field: "delegation token hmac (hex)",
-            detail: "odd length".into(),
-        });
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| TranslateError::Invalid {
-                field: "delegation token hmac (hex)",
-                detail: e.to_string(),
-            })
-        })
-        .collect()
 }
 
 /// Convert a single [`MetadataRecord`] to its KIP-631 counterpart.
@@ -1248,9 +1217,7 @@ fn client_quota_to_kraft(q: &ClientQuotaRecord) -> KClientQuotaRecord {
 fn delegation_token_to_kraft(t: &DelegationTokenRecord) -> KDelegationTokenRecord {
     KDelegationTokenRecord {
         owner: t.owner.to_string(),
-        // KIP-631 has no hmac field; smuggle it through `requester` (unused
-        // by Krabka) as hex so the round-trip is lossless.
-        requester: hex_encode(&t.hmac),
+        requester: t.requester.to_string(),
         renewers: t.renewers.iter().map(ToString::to_string).collect(),
         issue_timestamp: t.issue_timestamp_ms,
         max_timestamp: t.max_timestamp_ms,
@@ -1794,6 +1761,13 @@ fn delegation_token_from_kraft(
             field: "delegation token owner",
             detail: e,
         })?;
+    let requester = t
+        .requester
+        .parse::<KafkaPrincipal>()
+        .map_err(|e| TranslateError::Invalid {
+            field: "delegation token requester",
+            detail: e,
+        })?;
     let renewers = t
         .renewers
         .iter()
@@ -1808,7 +1782,7 @@ fn delegation_token_from_kraft(
     Ok(DelegationTokenRecord {
         token_id: t.token_id.clone(),
         owner,
-        hmac: hex_decode(&t.requester)?,
+        requester,
         issue_timestamp_ms: t.issue_timestamp,
         expiry_timestamp_ms: t.expiration_timestamp,
         max_timestamp_ms: t.max_timestamp,
@@ -3035,7 +3009,10 @@ mod tests {
                 principal_type: "User".into(),
                 name: "alice".into(),
             },
-            hmac: vec![0xAB; 32],
+            requester: KafkaPrincipal {
+                principal_type: "User".into(),
+                name: "admin".into(),
+            },
             issue_timestamp_ms: 1_700_000_000_000,
             expiry_timestamp_ms: 1_700_000_600_000,
             max_timestamp_ms: 1_700_604_800_000,

@@ -428,15 +428,19 @@ pub struct DeleteScramCredentialRecord {
 /// The record has replacement semantics: a new record with the same
 /// `token_id` overwrites the prior one in the image. Both Create and Renew
 /// use that. Removal goes through
-/// [`DeleteDelegationTokenRecord`]. `hmac` is the 32-byte HMAC-SHA-256
-/// over `token_id` keyed by the broker's master secret key. A client
-/// authenticates with SCRAM-SHA-256 and uses the hex-encoded HMAC as the
-/// password.
+/// [`DeleteDelegationTokenRecord`].
+///
+/// The fields are those of Kafka's `DelegationTokenRecord`. Like Kafka's, the
+/// record carries no HMAC: the token's password is
+/// [`krabka_security::compute_token_hmac`] of `token_id` under the cluster's
+/// secret key, recomputed wherever it is needed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DelegationTokenRecord {
     pub token_id: String,
     pub owner: krabka_security::KafkaPrincipal,
-    pub hmac: Vec<u8>,
+    /// The principal that created the token, which is the owner unless an
+    /// administrator created it on the owner's behalf (KIP-373).
+    pub requester: krabka_security::KafkaPrincipal,
     pub issue_timestamp_ms: i64,
     pub expiry_timestamp_ms: i64,
     /// Issue plus max-lifetime. A renewal cannot push `expiry_timestamp_ms`
@@ -941,7 +945,10 @@ mod tests {
                 principal_type: "User".into(),
                 name: "alice".into(),
             },
-            hmac: vec![0xAB; 32],
+            requester: krabka_security::KafkaPrincipal {
+                principal_type: "User".into(),
+                name: "admin".into(),
+            },
             issue_timestamp_ms: 1_700_000_000_000,
             expiry_timestamp_ms: 1_700_000_600_000,
             max_timestamp_ms: 1_700_604_800_000,
