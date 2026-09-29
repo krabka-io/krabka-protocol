@@ -140,9 +140,10 @@ impl Feature for TransactionVersionFeature {
 /// `share.version` (KIP-932). A plain integer feature that gates share-group
 /// membership. The default stays at the supported min, 0, which is disabled,
 /// until the bootstrap metadata.version reaches `4.2-IV0`, where Kafka's
-/// `ShareVersion.SV_1` bootstraps. Kafka's `SV_2` (KIP-1191 dead-letter queues)
-/// bootstraps at `4.4-IV0`, but krabka supports only level 1, so the default
-/// stays at 1 above that.
+/// `ShareVersion.SV_1` bootstraps. Trunk's `SV_2` (KIP-1191 dead-letter
+/// queues) bootstraps at `4.4-IV0`. The registry lists it; a node supports
+/// level 2 only when it supports unstable feature versions, because Kafka
+/// 4.3.1's latest production level is 1.
 pub struct ShareVersionFeature;
 
 impl Feature for ShareVersionFeature {
@@ -156,10 +157,13 @@ impl Feature for ShareVersionFeature {
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
-        if bootstrap_mv >= crate::metadata_version::SHARE_VERSION_DEFAULT_METADATA_LEVEL {
-            crate::metadata_version::SHARE_VERSION_MAX
-        } else {
-            crate::metadata_version::SHARE_VERSION_MIN
+        use crate::metadata_version::{
+            SHARE_VERSION_2_DEFAULT_METADATA_LEVEL, SHARE_VERSION_DEFAULT_METADATA_LEVEL,
+        };
+        match bootstrap_mv {
+            level if level >= SHARE_VERSION_2_DEFAULT_METADATA_LEVEL => 2,
+            level if level >= SHARE_VERSION_DEFAULT_METADATA_LEVEL => 1,
+            _ => crate::metadata_version::SHARE_VERSION_MIN,
         }
     }
     // dependencies + min_required_floor: inherit the empty/supported-min defaults.
@@ -473,7 +477,7 @@ mod tests {
             ("metadata.version", (7, 34), 25, 7),
             ("group.version", (0, 1), 1, 0),
             ("transaction.version", (0, 2), 2, 0),
-            ("share.version", (0, 1), 0, 0),
+            ("share.version", (0, 2), 0, 0),
             ("streams.version", (0, 1), 0, 0),
             ("eligible.leader.replicas.version", (0, 1), 0, 0),
             // Registered like the rest, though it is finalized by a KRaft
@@ -540,7 +544,8 @@ mod tests {
     #[test]
     fn opt_in_feature_defaults_follow_kafka_bootstrap_levels() {
         use crate::metadata_version::{
-            ELR_DEFAULT_METADATA_LEVEL, METADATA_VERSION_MAX, SHARE_VERSION_DEFAULT_METADATA_LEVEL,
+            ELR_DEFAULT_METADATA_LEVEL, METADATA_VERSION_MAX,
+            SHARE_VERSION_2_DEFAULT_METADATA_LEVEL, SHARE_VERSION_DEFAULT_METADATA_LEVEL,
             STREAMS_VERSION_DEFAULT_METADATA_LEVEL,
         };
         for (name, bootstrap, want) in [
@@ -558,7 +563,13 @@ mod tests {
             ("eligible.leader.replicas.version", METADATA_VERSION_MAX, 1),
             ("share.version", SHARE_VERSION_DEFAULT_METADATA_LEVEL - 1, 0),
             ("share.version", SHARE_VERSION_DEFAULT_METADATA_LEVEL, 1),
-            ("share.version", METADATA_VERSION_MAX, 1),
+            (
+                "share.version",
+                SHARE_VERSION_2_DEFAULT_METADATA_LEVEL - 1,
+                1,
+            ),
+            ("share.version", SHARE_VERSION_2_DEFAULT_METADATA_LEVEL, 2),
+            ("share.version", METADATA_VERSION_MAX, 2),
             (
                 "streams.version",
                 STREAMS_VERSION_DEFAULT_METADATA_LEVEL - 1,
@@ -691,7 +702,7 @@ mod tests {
                     ("metadata.version".to_string(), 34),
                     ("group.version".to_string(), 1),
                     ("transaction.version".to_string(), 2),
-                    ("share.version".to_string(), 1),
+                    ("share.version".to_string(), 2),
                     ("streams.version".to_string(), 1),
                     ("eligible.leader.replicas.version".to_string(), 1),
                 ])
@@ -833,7 +844,7 @@ mod tests {
         let f = feature("share.version").expect("registered");
         // Opt-in below 4.2-IV0, where Kafka's SV_1 bootstraps.
         check!(
-            (f.name(), f.supported_range(), f.default_level(25)) == ("share.version", (0, 1), 0)
+            (f.name(), f.supported_range(), f.default_level(25)) == ("share.version", (0, 2), 0)
         );
     }
 }

@@ -27,8 +27,10 @@ pub const SHARE_VERSION_FEATURE: &str = "share.version";
 pub const KRAFT_VERSION_FEATURE: &str = "kraft.version";
 /// Minimum supported `share.version` level: `0` (feature disabled).
 pub const SHARE_VERSION_MIN: i16 = 0;
-/// Maximum supported `share.version` level: `1` (KIP-932 GA).
-pub const SHARE_VERSION_MAX: i16 = 1;
+/// Maximum supported `share.version` level: `2`, trunk's `ShareVersion.SV_2`
+/// (KIP-1191 dead-letter queues). Kafka 4.3.1 stops at `1` (KIP-932 GA); a node
+/// caps itself there unless it supports unstable feature versions.
+pub const SHARE_VERSION_MAX: i16 = 2;
 
 /// The `eligible.leader.replicas.version` feature name (KIP-966). Gates the
 /// controller's maintenance of eligible leader replicas.
@@ -76,6 +78,9 @@ pub const ELR_DEFAULT_METADATA_LEVEL: i16 = 26;
 /// Level at which `share.version` 1 becomes the bootstrap default (`4.2-IV0`,
 /// `ShareVersion.SV_1`'s bootstrap metadata version, KIP-932 GA).
 pub const SHARE_VERSION_DEFAULT_METADATA_LEVEL: i16 = 28;
+/// Level at which `share.version` 2 becomes the bootstrap default (`4.4-IV0`,
+/// trunk's `ShareVersion.SV_2` bootstrap metadata version, KIP-1191).
+pub const SHARE_VERSION_2_DEFAULT_METADATA_LEVEL: i16 = 31;
 /// Level at which `streams.version` 1 becomes the bootstrap default (`4.2-IV1`,
 /// `StreamsVersion.SV_1`'s bootstrap metadata version, KIP-1071 GA).
 pub const STREAMS_VERSION_DEFAULT_METADATA_LEVEL: i16 = 29;
@@ -461,7 +466,7 @@ mod tests {
     fn share_version_feature_levels() {
         check!(
             (SHARE_VERSION_FEATURE, SHARE_VERSION_MIN, SHARE_VERSION_MAX)
-                == ("share.version", 0, 1)
+                == ("share.version", 0, 2)
         );
     }
 
@@ -635,6 +640,11 @@ mod tests {
                 "SV_1 bootstrap",
                 SHARE_VERSION_DEFAULT_METADATA_LEVEL,
                 "4.2-IV0",
+            ),
+            (
+                "share SV_2 bootstrap",
+                SHARE_VERSION_2_DEFAULT_METADATA_LEVEL,
+                "4.4-IV0",
             ),
             (
                 "streams SV_1 bootstrap",
