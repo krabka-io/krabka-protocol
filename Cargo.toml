@@ -38,6 +38,7 @@ async-trait = "0.1"
 base64 = "0.23"
 bytes = "1"
 crc32c = "0.6"
+crc-fast = { version = "1.10", default-features = false, features = ["std"] }
 # Stable data-driven test harness. Use for file-backed corpora so nextest can
 # schedule each fixture as its own test process.
 datatest-stable = "0.3.3"
