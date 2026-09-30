@@ -9,7 +9,7 @@ use crate::{
     primitives::varint::{get_varint, get_varlong},
     records::{
         RecordsError,
-        crc::{crc32c, crc32c_append},
+        crc::crc32c,
         header::{Attributes, HEADER_LEN, RecordBatchHeader},
     },
 };
@@ -148,13 +148,11 @@ fn decode_borrow_impl<'de>(
         });
     }
     let (raw_body, after) = rest.split_at(body_len);
+    // The covered header and raw body are contiguous in the input batch.
+    let computed = crc32c(&buf[21..HEADER_LEN + body_len]);
     *buf = after;
 
-    // CRC: hash header[21..HEADER_LEN] (attributes through records_count)
-    // then append the raw_body bytes.
     let expected = hdr.crc.get();
-    let mut computed = crc32c(&hdr_slice[21..HEADER_LEN]);
-    computed = crc32c_append(computed, raw_body);
     if computed != expected {
         return Err(RecordsError::CrcMismatch { expected, computed });
     }
@@ -297,8 +295,7 @@ pub fn validate_one_v2_batch(buf: &[u8]) -> Result<ValidatedBatch<'_>, RecordsEr
     let raw_body = &rest[..body_len];
 
     let expected = hdr.crc.get();
-    let mut computed = crc32c(&hdr_slice[21..HEADER_LEN]);
-    computed = crc32c_append(computed, raw_body);
+    let computed = crc32c(&buf[21..HEADER_LEN + body_len]);
     if computed != expected {
         return Err(RecordsError::CrcMismatch { expected, computed });
     }
@@ -810,6 +807,45 @@ mod tests {
             v.validate_records(RecordDecompressionPolicy::default())
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn borrowed_crc_stops_at_the_declared_batch_boundary() {
+        for codec in [CompressionType::None, CompressionType::Lz4] {
+            for value in [Bytes::new(), Bytes::from_static(b"payload")] {
+                let mut owned = super::super::owned::RecordBatch {
+                    records: vec![super::super::owned::Record {
+                        value: Some(value),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                owned.attributes = owned.attributes.with_compression(codec);
+                let mut encoded = encode_owned_then_borrow(&owned);
+                let first_len = encoded.len();
+                encoded.extend_from_within(..);
+                // A corrupt following batch must not affect the first CRC.
+                encoded[first_len + 21] ^= 1;
+
+                let validated = validate_one_v2_batch(&encoded).unwrap();
+                assert2::assert!(validated.total_len == first_len);
+                let mut input = encoded.as_slice();
+                let borrowed = RecordBatch::decode_borrow(&mut input, 0).unwrap();
+                assert2::assert!(borrowed.to_owned().unwrap() == owned);
+                assert2::assert!(input == &encoded[first_len..]);
+                assert2::assert!(matches!(
+                    validate_one_v2_batch(input),
+                    Err(RecordsError::CrcMismatch { .. })
+                ));
+                assert2::assert!(matches!(
+                    RecordBatch::decode_borrow_with_policy(
+                        &mut input,
+                        RecordDecompressionPolicy::default(),
+                    ),
+                    Err(RecordsError::CrcMismatch { .. })
+                ));
+            }
+        }
     }
 
     #[test]
