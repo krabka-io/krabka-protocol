@@ -15,6 +15,7 @@ pub fn put_uvarint<B: BufMut>(buf: &mut B, mut v: u32) {
 
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
+#[inline]
 pub fn get_uvarint<B: Buf>(buf: &mut B) -> Result<u32, ProtocolError> {
     let mut result: u32 = 0;
     let mut shift = 0;
@@ -50,6 +51,7 @@ pub fn put_varint<B: BufMut>(buf: &mut B, v: i32) {
 
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
+#[inline]
 pub fn get_varint<B: Buf>(buf: &mut B) -> Result<i32, ProtocolError> {
     let zz = get_uvarint(buf)?;
     Ok((zz >> 1).cast_signed() ^ -(zz & 1).cast_signed())
@@ -71,6 +73,7 @@ pub fn put_uvarlong<B: BufMut>(buf: &mut B, mut v: u64) {
 
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
+#[inline]
 pub fn get_uvarlong<B: Buf>(buf: &mut B) -> Result<u64, ProtocolError> {
     let mut result: u64 = 0;
     let mut shift = 0;
@@ -97,6 +100,7 @@ pub fn put_varlong<B: BufMut>(buf: &mut B, v: i64) {
 
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
+#[inline]
 pub fn get_varlong<B: Buf>(buf: &mut B) -> Result<i64, ProtocolError> {
     let zz = get_uvarlong(buf)?;
     Ok((zz >> 1).cast_signed() ^ -(zz & 1).cast_signed())
