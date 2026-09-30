@@ -90,28 +90,24 @@ impl Record {
         varlong_len(body_i64) + body
     }
 
-    fn body_len(&self) -> usize {
-        let mut n = 1; // attributes (i8)
-        n += varlong_len(self.timestamp_delta);
-        n += varint_len(self.offset_delta);
-        n += match &self.key {
-            None => varint_len(-1),
-            Some(k) => varint_len(i32::try_from(k.len()).unwrap_or(i32::MAX)) + k.len(),
-        };
-        n += match &self.value {
-            None => varint_len(-1),
-            Some(v) => varint_len(i32::try_from(v.len()).unwrap_or(i32::MAX)) + v.len(),
-        };
-        n += varint_len(i32::try_from(self.headers.len()).unwrap_or(i32::MAX));
-        for h in &self.headers {
-            let key_bytes = h.key.as_bytes();
-            n += varint_len(i32::try_from(key_bytes.len()).unwrap_or(i32::MAX)) + key_bytes.len();
-            n += match &h.value {
-                None => varint_len(-1),
-                Some(v) => varint_len(i32::try_from(v.len()).unwrap_or(i32::MAX)) + v.len(),
-            };
-        }
-        n
+    /// Size of this record's body in bytes: what Kafka's `DefaultRecord` calls
+    /// `sizeOfBodyInBytes`, and what its varlong length prefix declares.
+    ///
+    /// The body is the attributes byte, the two deltas, and the key, the value
+    /// and the headers, each behind its own length prefix. A null key, value or
+    /// header value counts as the one-byte `-1` marker. The length prefix
+    /// itself is not counted: [`Record::encoded_len`] is the prefix and this.
+    #[must_use]
+    pub fn body_len(&self) -> usize {
+        body_len_of(
+            self.timestamp_delta,
+            self.offset_delta,
+            self.key.as_ref().map(Bytes::len),
+            self.value.as_ref().map(Bytes::len),
+            self.headers
+                .iter()
+                .map(|h| (h.key.len(), h.value.as_ref().map(Bytes::len))),
+        )
     }
 
     fn encode_body<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
@@ -248,6 +244,33 @@ impl Record {
     }
 }
 
+/// The body size of a record with these field lengths, shared by the owned and
+/// the borrowed `Record::body_len`. `key` and `value` are `None` for null, and
+/// `headers` yields each header's key length and optional value length.
+pub(crate) fn body_len_of(
+    timestamp_delta: i64,
+    offset_delta: i32,
+    key: Option<usize>,
+    value: Option<usize>,
+    headers: impl ExactSizeIterator<Item = (usize, Option<usize>)>,
+) -> usize {
+    let field = |len: Option<usize>| match len {
+        None => varint_len(-1),
+        Some(len) => varint_len(i32::try_from(len).unwrap_or(i32::MAX)) + len,
+    };
+    let header_count = varint_len(i32::try_from(headers.len()).unwrap_or(i32::MAX));
+    let headers: usize = headers
+        .map(|(key, value)| field(Some(key)) + field(value))
+        .sum();
+    1 // attributes (i8)
+        + varlong_len(timestamp_delta)
+        + varint_len(offset_delta)
+        + field(key)
+        + field(value)
+        + header_count
+        + headers
+}
+
 fn decode_nullable_bytes<B: Buf>(buf: &mut B, label: &str) -> Result<Option<Bytes>, RecordsError> {
     let len =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("{label} length: {e}")))?;
@@ -364,6 +387,72 @@ mod record_tests {
             let mut cur: &[u8] = &buf[..];
             let decoded = Record::decode(&mut cur).unwrap();
             assert2::assert!((decoded, cur.is_empty()) == (record, true));
+        }
+    }
+
+    /// A record with zero deltas, a null key, no headers and a `value_len`-byte
+    /// value has a body of `1 + 1 + 1 + 1 + prefix + value_len + 1` bytes: the
+    /// attributes byte, two one-byte deltas, the one-byte `-1` key, the value
+    /// behind its own zigzag-varint length prefix, and a one-byte header count.
+    /// The record's length prefix is a zigzag varlong too, so it grows with the
+    /// body: one byte up to 63, two bytes from 64 to 8191, three from 8192. The
+    /// value's length prefix grows the same way, one byte up to 63, two from 64
+    /// to 8191 and three from 8192.
+    #[test]
+    fn body_len_is_the_size_the_length_prefix_declares() {
+        for (value_len, body, prefix) in [
+            (0, 6, 1),
+            (57, 63, 1),
+            (58, 64, 2),
+            (63, 69, 2),
+            (64, 71, 2),
+            (8_184, 8_191, 2),
+            (8_185, 8_192, 3),
+            (8_192, 8_200, 3),
+            (70_000, 70_008, 3),
+        ] {
+            let record = Record {
+                value: Some(Bytes::from(vec![7_u8; value_len])),
+                ..Default::default()
+            };
+            let mut buf = BytesMut::new();
+            record.encode(&mut buf).unwrap();
+
+            let mut cur: &[u8] = &buf[..];
+            let declared = get_varlong(&mut cur).unwrap();
+            let case = format!("value_len={value_len}");
+            assert2::check!(record.body_len() == body, "{case}");
+            assert2::check!(record.encoded_len() == prefix + body, "{case}");
+            assert2::check!(buf.len() == prefix + body, "{case}");
+            assert2::check!(declared == i64::try_from(body).unwrap(), "{case}");
+            assert2::check!(buf.len() - cur.len() == prefix, "{case}");
+        }
+    }
+
+    /// Every field counts toward the body, and a null key, value or header
+    /// value counts as its one-byte `-1` marker. The sizes are worked out by
+    /// hand from the fields, and match what `encode` declares.
+    #[test]
+    fn body_len_counts_every_field() {
+        type Fixture<'a> = (&'a str, fn() -> Record, usize);
+        let cases: [Fixture<'_>; 3] = [
+            // attributes, three one-byte deltas and markers, header count
+            ("minimal", fixture_minimal_record, 6),
+            // 1 attributes + 1 timestamp delta + 1 offset delta
+            // + (1 + 7) key + (1 + 11) value + 1 header count
+            // + (1 + 8) + (1 + 3) first header + (1 + 8) + 1 second header
+            ("keyed with headers", fixture_keyed_record, 47),
+            // 1 attributes + 3 timestamp delta + 2 offset delta
+            // + (2 + 128) key + (2 + 4096) value + 1 header count
+            ("large payload", fixture_large_payload_record, 4_235),
+        ];
+        for (case, fixture, body) in cases {
+            let record = fixture();
+            let mut buf = BytesMut::new();
+            record.encode(&mut buf).unwrap();
+            let declared = get_varlong(&mut &buf[..]).unwrap();
+            assert2::check!(record.body_len() == body, "{case}");
+            assert2::check!(declared == i64::try_from(body).unwrap(), "{case}");
         }
     }
 

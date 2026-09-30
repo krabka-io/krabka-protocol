@@ -47,6 +47,29 @@ pub struct RecordHeader<'a> {
     pub value: Option<&'a [u8]>,
 }
 
+impl Record<'_> {
+    /// Size of this record's body in bytes: what Kafka's `DefaultRecord` calls
+    /// `sizeOfBodyInBytes`, and what its varlong length prefix declares.
+    ///
+    /// The body is the attributes byte, the two deltas, and the key, the value
+    /// and the headers, each behind its own length prefix. A null key, value or
+    /// header value counts as the one-byte `-1` marker. The length prefix
+    /// itself is not counted. This is the size the owned
+    /// [`crate::records::Record::body_len`] reports for the same record.
+    #[must_use]
+    pub fn body_len(&self) -> usize {
+        super::owned::body_len_of(
+            self.timestamp_delta,
+            self.offset_delta,
+            self.key.map(<[u8]>::len),
+            self.value.map(<[u8]>::len),
+            self.headers
+                .iter()
+                .map(|h| (h.key.len(), h.value.map(<[u8]>::len))),
+        )
+    }
+}
+
 impl RecordBatch<'_> {
     #[must_use]
     pub fn header(&self) -> &RecordBatchHeader {
@@ -651,6 +674,57 @@ mod tests {
             let back_owned = borrowed.to_owned().unwrap();
             assert2::assert!(back_owned == owned);
         }
+    }
+
+    /// The borrowed record reports the body size the owned record does, for the
+    /// null and the present forms of every field and on both sides of the
+    /// length-prefix width boundary (a body of 63 bytes takes a one-byte
+    /// prefix, one of 64 takes two).
+    #[test]
+    fn borrowed_body_len_matches_the_owned_record() {
+        use super::super::owned::{Record as OwnedRecord, RecordHeader as OwnedHeader};
+
+        let owned = super::super::owned::RecordBatch {
+            records: vec![
+                OwnedRecord::default(),
+                OwnedRecord {
+                    timestamp_delta: 17,
+                    offset_delta: 2,
+                    key: Some(Bytes::from_static(b"the-key")),
+                    value: Some(Bytes::from_static(b"hello kafka")),
+                    headers: vec![
+                        OwnedHeader {
+                            key: "trace-id".to_string(),
+                            value: Some(Bytes::from_static(b"abc")),
+                        },
+                        OwnedHeader {
+                            key: "null-val".to_string(),
+                            value: None,
+                        },
+                    ],
+                    ..Default::default()
+                },
+                OwnedRecord {
+                    value: Some(Bytes::from(vec![7_u8; 57])),
+                    ..Default::default()
+                },
+                OwnedRecord {
+                    value: Some(Bytes::from(vec![7_u8; 58])),
+                    ..Default::default()
+                },
+            ],
+            last_offset_delta: 3,
+            ..Default::default()
+        };
+        let encoded = encode_owned_then_borrow(&owned);
+        let mut cur: &[u8] = &encoded[..];
+        let borrowed = RecordBatch::decode_borrow(&mut cur, 0).unwrap();
+        let records: Vec<_> = borrowed.iter().collect::<Result<_, _>>().unwrap();
+
+        let lens: Vec<usize> = records.iter().map(Record::body_len).collect();
+        assert2::assert!(lens == vec![6, 47, 63, 64]);
+        let owned_lens: Vec<usize> = owned.records.iter().map(OwnedRecord::body_len).collect();
+        assert2::assert!(lens == owned_lens);
     }
 
     #[test]
