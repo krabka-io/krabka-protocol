@@ -209,6 +209,9 @@ fn bench_validate_one_v2_batch(c: &mut Criterion) {
     let mut group = c.benchmark_group("record_batch/validate_one_v2_batch");
 
     for &(label, records, payload) in &[
+        ("1rec_empty", 1, 0),
+        ("1rec_64B", 1, 64),
+        ("1rec_1KiB", 1, 1024),
         ("1rec_100KiB", 1u32, 100 * 1024usize),
         ("1rec_512KiB", 1, 512 * 1024),
         ("10rec_10KiB", 10, 10 * 1024),
