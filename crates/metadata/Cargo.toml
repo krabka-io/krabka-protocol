@@ -22,9 +22,9 @@ wincode = { workspace = true }
 serde-wincode = { workspace = true }
 bytes = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-krabka-protocol = { version = "0.4.0", path = "../protocol", default-features = false }
-krabka-voters = { version = "0.4.0", path = "../voters" }
-krabka-ids = { version = "0.4.0", path = "../ids" }
+krabka-protocol = { version = "0.5.0", path = "../protocol", default-features = false }
+krabka-voters = { version = "0.5.0", path = "../voters" }
+krabka-ids = { version = "0.5.0", path = "../ids" }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 krabka-security = { workspace = true }

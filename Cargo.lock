@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-compression"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "bytes",
@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-hlc"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "derive_more",
@@ -1765,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-ids"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "base64 0.23.1",
@@ -1778,7 +1778,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-kafka-tap"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "krabka-ids",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-metadata"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "bytes",
@@ -1808,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-protocol"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arbitrary",
  "assert2",
@@ -1833,7 +1833,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-protocol-codegen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "prettyplease",
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-security"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arc-swap",
  "assert2",
@@ -1884,7 +1884,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-trace-context"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "crabka-pgparser",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-units"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "num-traits",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-voters"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "krabka-ids",
