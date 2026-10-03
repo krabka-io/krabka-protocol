@@ -242,8 +242,8 @@ fn a_sqlcommenter_tag_changes_no_parsed_statement() {
 
     for sql in statements {
         let tagged = format!("{sql} /*traceparent='{TRACEPARENT}'*/");
-        assert!(let Ok(plain_ast) = crabka_pgparser::parse(sql), "{sql}");
-        assert!(let Ok(tagged_ast) = crabka_pgparser::parse(&tagged), "{sql}");
+        assert!(let Ok(plain_ast) = krabka_pgparser::parse(sql), "{sql}");
+        assert!(let Ok(tagged_ast) = krabka_pgparser::parse(&tagged), "{sql}");
         check!(plain_ast == tagged_ast, "{sql}");
     }
 }

@@ -608,28 +608,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabka-pgparser"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e53999854196432da0fb3d1a1133d4dcbec52ebb5286a72dc99a30f8b51d2c05"
-dependencies = [
- "crabka-pgtypes",
- "thiserror",
-]
-
-[[package]]
-name = "crabka-pgtypes"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25854198fddc0e34251a11362e2e9e3dc6a18b538e605ccd99f267613a70a4fc"
-dependencies = [
- "bigdecimal",
- "dashu-float",
- "jiff",
- "thiserror",
-]
-
-[[package]]
 name = "crc-fast"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,7 +1708,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-compression"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "bytes",
@@ -1752,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-hlc"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "derive_more",
@@ -1765,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-ids"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "base64 0.23.1",
@@ -1778,7 +1756,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-kafka-tap"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "krabka-ids",
@@ -1786,7 +1764,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-metadata"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "bytes",
@@ -1807,8 +1785,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "krabka-pgparser"
+version = "0.4.2"
+source = "git+https://github.com/krabka-io/gres?rev=5c0e1ab04f67de1d4d9d993d935e4eaa054284ed#5c0e1ab04f67de1d4d9d993d935e4eaa054284ed"
+dependencies = [
+ "krabka-pgtypes",
+ "thiserror",
+]
+
+[[package]]
+name = "krabka-pgtypes"
+version = "0.4.2"
+source = "git+https://github.com/krabka-io/gres?rev=5c0e1ab04f67de1d4d9d993d935e4eaa054284ed#5c0e1ab04f67de1d4d9d993d935e4eaa054284ed"
+dependencies = [
+ "bigdecimal",
+ "dashu-float",
+ "jiff",
+ "quick-xml",
+ "thiserror",
+]
+
+[[package]]
 name = "krabka-protocol"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arbitrary",
  "assert2",
@@ -1833,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-protocol-codegen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "prettyplease",
@@ -1847,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-security"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arc-swap",
  "assert2",
@@ -1884,10 +1883,10 @@ dependencies = [
 
 [[package]]
 name = "krabka-trace-context"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
- "crabka-pgparser",
+ "krabka-pgparser",
  "opentelemetry",
  "opentelemetry_sdk",
  "serde",
@@ -1900,7 +1899,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-units"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "num-traits",
@@ -1913,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "krabka-voters"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "assert2",
  "krabka-ids",
@@ -2689,6 +2688,15 @@ name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
+
+[[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "quinn"
@@ -4450,9 +4458,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",

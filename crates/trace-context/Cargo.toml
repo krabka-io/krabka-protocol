@@ -25,7 +25,7 @@ tracing-opentelemetry = { workspace = true }
 
 [dev-dependencies]
 assert2 = { workspace = true }
-crabka-pgparser = "0.4.0"
+krabka-pgparser = { version = "0.4.2", git = "https://github.com/krabka-io/gres", rev = "5c0e1ab04f67de1d4d9d993d935e4eaa054284ed" }
 opentelemetry_sdk = { workspace = true, features = ["trace", "testing"] }
 serde_json = { workspace = true }
 tracing-subscriber = { workspace = true }

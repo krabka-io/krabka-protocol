@@ -21,7 +21,7 @@ workspace = true
 # a record without a link against the wire codec. The carriage stays type-erased
 # over `(&str, impl AsRef<[u8]>)` header pairs, so any header type works.
 [dependencies]
-krabka-ids = { version = "0.4.0", path = "../ids" }
+krabka-ids = { version = "0.5.0", path = "../ids" }
 krabka-units = { workspace = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
