@@ -12,7 +12,7 @@ yanked = "deny"
 ignore = [
     # quick-xml DoS advisories (quadratic duplicate-attribute check and
     # unbounded namespace-declaration allocation). Patched in quick-xml
-    # >= 0.41, which is the version `crabka-pgtypes` pins for the `xml`
+    # >= 0.41, which is the version `krabka-pgtypes` pins for the `xml`
     # type — the one place attacker-controlled XML enters, since any client
     # that can run `SELECT '…'::xml` chooses the document. These ignores
     # cover only the transitive 0.39 copy under polars-io and the S3 XML
@@ -99,6 +99,7 @@ allow-git = [
     # Temporary compatibility pin until testcontainers-modules publishes a
     # release that depends on testcontainers 0.28.
     "https://github.com/testcontainers/testcontainers-rs-modules-community",
+    "https://github.com/krabka-io/gres",
 ]
 
 [[licenses.clarify]]
