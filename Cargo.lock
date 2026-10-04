@@ -1787,7 +1787,7 @@ dependencies = [
 [[package]]
 name = "krabka-pgparser"
 version = "0.4.2"
-source = "git+https://github.com/krabka-io/gres?rev=3bcc8bfa6553c31e8eb7e2e9d66059d4daf79bec#3bcc8bfa6553c31e8eb7e2e9d66059d4daf79bec"
+source = "git+https://github.com/krabka-io/gres?rev=5c0e1ab04f67de1d4d9d993d935e4eaa054284ed#5c0e1ab04f67de1d4d9d993d935e4eaa054284ed"
 dependencies = [
  "krabka-pgtypes",
  "thiserror",
@@ -1796,7 +1796,7 @@ dependencies = [
 [[package]]
 name = "krabka-pgtypes"
 version = "0.4.2"
-source = "git+https://github.com/krabka-io/gres?rev=3bcc8bfa6553c31e8eb7e2e9d66059d4daf79bec#3bcc8bfa6553c31e8eb7e2e9d66059d4daf79bec"
+source = "git+https://github.com/krabka-io/gres?rev=5c0e1ab04f67de1d4d9d993d935e4eaa054284ed#5c0e1ab04f67de1d4d9d993d935e4eaa054284ed"
 dependencies = [
  "bigdecimal",
  "dashu-float",
