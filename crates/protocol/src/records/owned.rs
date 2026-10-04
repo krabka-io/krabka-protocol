@@ -601,34 +601,53 @@ impl RecordBatch {
             });
         }
 
-        // Read the (possibly compressed) body.
-        let mut body = vec![0u8; body_len];
-        buf.copy_to_slice(&mut body);
-
         // CRC is computed over: header bytes 21..HEADER_LEN (attributes through
         // records_count), then the body bytes.
         let expected_crc = hdr.crc.get();
-        let mut computed = crc32c(&hdr_bytes[21..HEADER_LEN]);
-        computed = crc32c_append(computed, &body);
-        if computed != expected_crc {
-            return Err(RecordsError::CrcMismatch {
-                expected: expected_crc,
-                computed,
-            });
-        }
+        let verify_crc = |body: &[u8]| {
+            let computed = crc32c_append(crc32c(&hdr_bytes[21..HEADER_LEN]), body);
+            if computed == expected_crc {
+                Ok(())
+            } else {
+                Err(RecordsError::CrcMismatch {
+                    expected: expected_crc,
+                    computed,
+                })
+            }
+        };
 
         let attributes = Attributes(hdr.attributes.get());
         let codec = attributes.compression();
 
-        // Decompress body if needed.
-        let body_for_records: Bytes = if codec == krabka_compression::CompressionType::None {
-            Bytes::from(body)
-        } else {
-            krabka_compression::decompress(
+        let decompress = |body: &[u8]| -> Result<Bytes, RecordsError> {
+            verify_crc(body)?;
+            Ok(krabka_compression::decompress(
                 codec,
-                &body,
+                body,
                 policy.output_limit(ByteSize::from_bytes(body.len() as u64)),
-            )?
+            )?)
+        };
+
+        // A compressed body can be read directly from contiguous input. The
+        // decoded records own the decompressed output, so they retain no input
+        // buffer. Consume the body even on CRC/decompression errors, as the
+        // original staged read did. Fragmented input still needs staging;
+        // uncompressed records keep their own body instead of a larger frame.
+        let body_for_records = if codec != krabka_compression::CompressionType::None
+            && buf.chunk().len() >= body_len
+        {
+            let decoded = decompress(&buf.chunk()[..body_len]);
+            buf.advance(body_len);
+            decoded?
+        } else {
+            let mut body = vec![0u8; body_len];
+            buf.copy_to_slice(&mut body);
+            if codec == krabka_compression::CompressionType::None {
+                verify_crc(&body)?;
+                Bytes::from(body)
+            } else {
+                decompress(&body)?
+            }
         };
 
         // Parse records.
