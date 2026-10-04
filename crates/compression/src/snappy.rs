@@ -34,19 +34,33 @@ const XERIAL_HEADER: [u8; 16] = [
 const XERIAL_CHUNK: ByteSize = kibibytes(32);
 
 pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
-    let mut out = BytesMut::with_capacity(XERIAL_HEADER.len() + data.len());
+    // Reserve the raw block bounds plus framing once; extending each chunk
+    // into the output must not reallocate just to fit Snappy's worst case.
+    // Each raw block needs at most 32 + input + input/6 bytes, plus its
+    // 4-byte Xerial length prefix.
+    let chunks = data.len().div_ceil(XERIAL_CHUNK.bytes_usize());
+    let capacity = XERIAL_HEADER
+        .len()
+        .saturating_add(data.len())
+        .saturating_add(data.len() / 6)
+        .saturating_add(chunks.saturating_mul(36));
+    let mut out = BytesMut::with_capacity(capacity);
     out.put_slice(&XERIAL_HEADER);
 
     let mut encoder = snap::raw::Encoder::new();
     // `slice::chunks` is a primitive-typed substrate: hand it a raw count.
     for chunk in data.chunks(XERIAL_CHUNK.bytes_usize()) {
         let max = snap::raw::max_compress_len(chunk.len());
-        let mut buf = vec![0u8; max];
+        let header = out.len();
+        out.put_u32(0);
+        let start = out.len();
+        out.resize(start + max, 0);
         let n = encoder
-            .compress(chunk, &mut buf)
+            .compress(chunk, &mut out[start..])
             .map_err(|e| CompressionError::InvalidData(format!("snappy encode: {e}")))?;
-        out.put_u32(u32::try_from(n).expect("chunk size fits u32"));
-        out.put_slice(&buf[..n]);
+        out[header..start]
+            .copy_from_slice(&u32::try_from(n).expect("chunk size fits u32").to_be_bytes());
+        out.truncate(start + n);
     }
     Ok(out.freeze())
 }
@@ -88,14 +102,19 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
         // Reject before allocating this chunk if it would push us past the cap.
         // `decompress_len` reads the block's stored uncompressed size, so this
         // bounds allocation without materializing the oversized output.
-        if out.len().saturating_add(max_out) > max_output {
+        let end = out
+            .len()
+            .checked_add(max_out)
+            .ok_or(CompressionError::TooLarge { limit: max_output })?;
+        if end > max_output {
             return Err(CompressionError::TooLarge { limit: max_output });
         }
-        let mut buf = vec![0u8; max_out];
+        let start = out.len();
+        out.resize(end, 0);
         let n = decoder
-            .decompress(block, &mut buf)
+            .decompress(block, &mut out[start..])
             .map_err(|e| CompressionError::InvalidData(format!("snappy decode: {e}")))?;
-        out.put_slice(&buf[..n]);
+        out.truncate(start + n);
     }
     Ok(out.freeze())
 }

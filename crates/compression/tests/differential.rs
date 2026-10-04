@@ -37,3 +37,40 @@ diff_test!(gzip_differential, "gzip", CompressionType::Gzip);
 diff_test!(snappy_differential, "snappy", CompressionType::Snappy);
 diff_test!(lz4_differential, "lz4", CompressionType::Lz4);
 diff_test!(zstd_differential, "zstd", CompressionType::Zstd);
+
+#[test]
+#[ignore = "requires JVM oracle"]
+fn chunk_boundaries_differential() {
+    let mut oracle = oracle::shared();
+    for (name, codec) in [
+        ("lz4", CompressionType::Lz4),
+        ("snappy", CompressionType::Snappy),
+        ("zstd", CompressionType::Zstd),
+    ] {
+        for size in [
+            0, 32_767, 32_768, 32_769, 65_535, 65_536, 65_537, 131_073, 1_048_576,
+        ] {
+            for random in [false, true] {
+                let mut state = 0xDEAD_BEEF_CAFE_BABE_u64;
+                let input: Vec<u8> = (0..size)
+                    .map(|_| {
+                        state = state
+                            .wrapping_mul(6_364_136_223_846_793_005)
+                            .wrapping_add(1);
+                        if random { state.to_be_bytes()[0] } else { 0xAB }
+                    })
+                    .collect();
+                let encoded = compress(codec, &input).unwrap();
+                assert2::assert!(oracle.decompress(name, &encoded) == input);
+                let encoded = oracle.compress(name, &input);
+                let decoded = decompress(
+                    codec,
+                    &encoded,
+                    krabka_units::convert::ByteSizeExt::from_bytes(u64::try_from(size).unwrap()),
+                )
+                .unwrap();
+                assert2::assert!(decoded.as_ref() == input);
+            }
+        }
+    }
+}
