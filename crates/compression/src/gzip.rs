@@ -100,18 +100,112 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
     if data.is_empty() {
         return Err(CompressionError::InvalidData("empty gzip payload".into()));
     }
-    let decoder = GzDecoder::new(data);
+    let initial_capacity = data.len().saturating_mul(2).min(max_output);
+    // ISIZE is untrusted and wraps at 4 GiB. Use it only as a bounded hint;
+    // the decoder still verifies the complete stream, CRC and actual size.
+    let hint = data
+        .last_chunk::<4>()
+        .filter(|_| {
+            data.len() >= 18
+                && data.starts_with(&[0x1f, 0x8b, 8])
+                && u32::try_from(max_output).is_ok()
+        })
+        .and_then(|size| usize::try_from(u32::from_le_bytes(*size)).ok())
+        .filter(|&size| size <= max_output);
+    if let Some(size) = hint {
+        // Shrinking a reservation cannot exceed the old allocation. Grow a
+        // small reservation only up to 128 KiB; larger output can grow as usual.
+        let mut capacity = if size <= initial_capacity {
+            size
+        } else {
+            initial_capacity.max(size.min(128 * 1024))
+        };
+        // Mid-sized exact allocations can repeatedly trim glibc's heap along
+        // with the decoder workspace. A bounded 128 KiB reservation avoids it.
+        if size > 32 * 1024 {
+            capacity = capacity.max((128 * 1024).min(max_output));
+        }
+        if capacity == initial_capacity {
+            return decode_capped(data, max_output, initial_capacity, None).map(Bytes::from);
+        }
+        if let Ok(mut out) = decode_capped(data, max_output, capacity, Some(size)) {
+            if out.len() < size {
+                // A trailing member can supply the hint. The first member is
+                // already validated; discard spare capacity without decoding it again.
+                let mut trimmed = Vec::new();
+                if trimmed.try_reserve_exact(out.len()).is_ok() {
+                    trimmed.extend_from_slice(&out);
+                    out = trimmed;
+                }
+            }
+            return Ok(Bytes::from(out));
+        }
+        // Preserve the original reader's error ordering after dropping the
+        // failed attempt, including corruption competing with an output cap.
+        return decode_capped(data, max_output, initial_capacity, None).map(Bytes::from);
+    }
+    decode_capped(data, max_output, initial_capacity, None).map(Bytes::from)
+}
+
+fn decode_capped(
+    data: &[u8],
+    max_output: usize,
+    capacity: usize,
+    expected_size: Option<usize>,
+) -> Result<Vec<u8>, CompressionError> {
+    // Allocate output before temporary decoder storage. The opposite order
+    // can make glibc trim and regrow the heap for each 64–128 KiB result.
+    let mut out = if expected_size.is_some() {
+        let mut out = Vec::new();
+        out.try_reserve_exact(capacity)
+            .map_err(|_| CompressionError::Io(std::io::ErrorKind::OutOfMemory.into()))?;
+        out
+    } else {
+        Vec::with_capacity(capacity)
+    };
     // Read at most `max_output + 1` bytes: the extra byte lets us detect that
     // the real output exceeds the cap without ever materializing it.
-    let mut limited = decoder.take((max_output as u64).saturating_add(1));
-    let mut out = Vec::with_capacity(data.len().saturating_mul(2).min(max_output));
+    let mut limited = GzDecoder::new(data).take((max_output as u64).saturating_add(1));
+    if let Some(expected) = expected_size {
+        while out.len() < expected {
+            if out.len() == out.capacity() {
+                // Verify EOF before growing. Retain one probed byte if the
+                // stream continues, then grow geometrically up to ISIZE.
+                let mut probe = [0];
+                let read = loop {
+                    match limited.read(&mut probe) {
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                        result => break result,
+                    }
+                }
+                .map_err(|error| CompressionError::InvalidData(format!("gzip decode: {error}")))?;
+                if read == 0 {
+                    break;
+                }
+                let next = out.capacity().saturating_mul(2).max(1).min(expected);
+                out.try_reserve_exact(next - out.len())
+                    .map_err(|_| CompressionError::Io(std::io::ErrorKind::OutOfMemory.into()))?;
+                out.push(probe[0]);
+            }
+            let chunk = (expected - out.len()).min(out.capacity() - out.len());
+            let before = out.len();
+            limited
+                .by_ref()
+                .take(chunk as u64)
+                .read_to_end(&mut out)
+                .map_err(|error| CompressionError::InvalidData(format!("gzip decode: {error}")))?;
+            if out.len() - before < chunk {
+                break;
+            }
+        }
+    }
     limited
         .read_to_end(&mut out)
         .map_err(|e| CompressionError::InvalidData(format!("gzip decode: {e}")))?;
     if out.len() > max_output {
         return Err(CompressionError::TooLarge { limit: max_output });
     }
-    Ok(Bytes::from(out))
+    Ok(out)
 }
 
 #[cfg(test)]

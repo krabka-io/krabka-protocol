@@ -58,6 +58,82 @@ fn block_boundaries_and_output_limits() {
     }
 }
 
+/// Preserve the original streaming decoder's complete result and error text,
+/// including cases where an untrusted trailer changes buffer/read boundaries.
+#[test]
+fn gzip_capacity_hint_preserves_streaming_results_and_errors() {
+    use std::io::Read as _;
+
+    fn reference(wire: &[u8], limit: usize) -> Result<Vec<u8>, String> {
+        if wire.is_empty() {
+            return Err("invalid compressed data: empty gzip payload".into());
+        }
+        let mut reader = flate2::read::GzDecoder::new(wire)
+            .take(u64::try_from(limit).unwrap().saturating_add(1));
+        let mut output = Vec::with_capacity(wire.len().saturating_mul(2).min(limit));
+        reader
+            .read_to_end(&mut output)
+            .map_err(|error| format!("invalid compressed data: gzip decode: {error}"))?;
+        if output.len() > limit {
+            return Err(format!(
+                "decompressed output exceeds limit of {limit} bytes"
+            ));
+        }
+        Ok(output)
+    }
+
+    let other = compress(CompressionType::Gzip, b"another member").unwrap();
+    for size in [0, 1, 1024, 32_768, 65_536, 131_072, 131_073, 1_048_576] {
+        for random in [false, true] {
+            let wire = compress(CompressionType::Gzip, &payload(size, random)).unwrap();
+            let mut variants = vec![wire.to_vec(), Vec::new()];
+            let mut optional = wire.to_vec();
+            optional[3] = 0x18;
+            optional.splice(10..10, b"filename\0comment\0".iter().copied());
+            variants.push(optional);
+            for length in [1, 9, 10, wire.len() / 2, wire.len() - 1] {
+                variants.push(wire[..length.min(wire.len())].to_vec());
+            }
+            for index in [0, 2, 10, wire.len() / 2, wire.len() - 8] {
+                let mut corrupt = wire.to_vec();
+                corrupt[index] ^= 0xFF;
+                variants.push(corrupt);
+            }
+            for hint in [0_u32, 1, 32_768, 131_072, 131_073, u32::MAX] {
+                let mut forged = wire.to_vec();
+                let end = forged.len();
+                forged[end - 4..].copy_from_slice(&hint.to_le_bytes());
+                variants.push(forged);
+            }
+            let mut members = wire.to_vec();
+            members.extend_from_slice(&other);
+            variants.push(members);
+            let mut trailing = wire.to_vec();
+            trailing.extend_from_slice(&[0; 32]);
+            variants.push(trailing);
+            let mut limits = vec![0, size.saturating_sub(1), size, size + 1, 2 * 1024 * 1024];
+            if let Ok(limit) = usize::try_from(u64::from(u32::MAX) + 1) {
+                limits.push(limit);
+            }
+            for variant in variants {
+                for &limit in &limits {
+                    let actual = decompress(
+                        CompressionType::Gzip,
+                        &variant,
+                        ByteSize::from_bytes(u64::try_from(limit).unwrap()),
+                    )
+                    .map(|bytes| bytes.to_vec())
+                    .map_err(|error| error.to_string());
+                    assert!(
+                        actual == reference(&variant, limit),
+                        "size={size} random={random} limit={limit}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn lz4_matches_streaming_encoder() {
     use std::io::Write as _;
