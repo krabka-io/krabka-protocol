@@ -99,3 +99,38 @@ fn chunk_boundaries_differential() {
         }
     }
 }
+
+#[test]
+#[ignore = "requires JVM oracle"]
+fn gzip_levels_and_frame_sizes_differential() {
+    let mut oracle = oracle::shared();
+    for size in [0_usize, 1, 1024, 131_071, 131_072, 131_073] {
+        for random in [false, true] {
+            let mut state = 0xDEAD_BEEF_CAFE_BABE_u64;
+            let input: Vec<u8> = (0..size)
+                .map(|i| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1);
+                    if random {
+                        state.to_be_bytes()[0]
+                    } else {
+                        i.to_le_bytes()[0]
+                    }
+                })
+                .collect();
+            for level in [1, 6, 9, -1] {
+                for _ in 0..2 {
+                    let wire = krabka_compression::compress_with_level(
+                        CompressionType::Gzip,
+                        &input,
+                        level,
+                    )
+                    .unwrap();
+                    let back = oracle.decompress("gzip", &wire);
+                    assert2::assert!(back == input);
+                }
+            }
+        }
+    }
+}

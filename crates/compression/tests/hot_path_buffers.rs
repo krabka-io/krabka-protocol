@@ -25,6 +25,7 @@ fn payload(size: usize, random: bool) -> Vec<u8> {
 #[test]
 fn block_boundaries_and_output_limits() {
     for codec in [
+        CompressionType::Gzip,
         CompressionType::Lz4,
         CompressionType::Snappy,
         CompressionType::Zstd,
@@ -226,4 +227,101 @@ fn zstd_reuse_preserves_fresh_context_output() {
         .join()
         .unwrap();
     }
+}
+
+#[test]
+fn gzip_reuse_matches_streaming_encoder() {
+    use std::io::Write as _;
+
+    use flate2::{Compression, write::GzEncoder};
+    for size in [
+        0, 1, 10, 13, 1024, 32_767, 32_768, 32_769, 65_535, 65_536, 65_537, 131_071, 131_072,
+        131_073, 1_048_576,
+    ] {
+        for random in [false, true] {
+            let input = payload(size, random);
+            for level in std::iter::once(-1).chain(1..=9) {
+                let compression =
+                    u32::try_from(level).map_or_else(|_| Compression::default(), Compression::new);
+                let mut reference = GzEncoder::new(Vec::new(), compression);
+                reference.write_all(&input).unwrap();
+                let reference = reference.finish().unwrap();
+                for _ in 0..2 {
+                    let wire = compress_with_level(CompressionType::Gzip, &input, level).unwrap();
+                    assert!(
+                        wire.as_ref() == reference,
+                        "{size} bytes, random={random}, level={level}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn gzip_reuse_preserves_independent_frames() {
+    use std::io::Write as _;
+
+    use flate2::{Compression, write::GzEncoder};
+    let threads: Vec<_> = (0..2)
+        .map(|seed| {
+            std::thread::spawn(move || {
+                for level in [6, 6, 1, 1, 9, -1, 6] {
+                    for size in [65_536, 1, 131_073, 131_072, 0, 32_768, 13] {
+                        let mut input = payload(size, seed != 0);
+                        for byte in &mut input {
+                            *byte ^= seed;
+                        }
+                        let compression = u32::try_from(level)
+                            .map_or_else(|_| Compression::default(), Compression::new);
+                        let mut reference = GzEncoder::new(Vec::new(), compression);
+                        reference.write_all(&input).unwrap();
+                        let reference = reference.finish().unwrap();
+                        let wire =
+                            compress_with_level(CompressionType::Gzip, &input, level).unwrap();
+                        assert!(wire.as_ref() == reference);
+                        let back = decompress(
+                            CompressionType::Gzip,
+                            &wire,
+                            ByteSize::from_bytes(u64::try_from(size).unwrap()),
+                        )
+                        .unwrap();
+                        assert!(back.as_ref() == input);
+                    }
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+}
+
+#[test]
+fn gzip_encoding_during_thread_local_drop() {
+    struct EncodeOnDrop;
+    impl Drop for EncodeOnDrop {
+        fn drop(&mut self) {
+            use std::io::Write as _;
+
+            use flate2::{Compression, write::GzEncoder};
+            let input = b"encode after the later thread-local cache has dropped";
+            let mut reference = GzEncoder::new(Vec::new(), Compression::default());
+            reference.write_all(input).unwrap();
+            let reference = reference.finish().unwrap();
+            let wire = compress(CompressionType::Gzip, input).unwrap();
+            assert!(wire.as_ref() == reference);
+        }
+    }
+    thread_local! {
+        static FIRST: EncodeOnDrop = const { EncodeOnDrop };
+    }
+    std::thread::spawn(|| {
+        // Rust drops these in reverse initialization order. FIRST must encode
+        // after the cache initialized by this nonempty compression is gone.
+        FIRST.with(|_| {});
+        compress(CompressionType::Gzip, b"initialize the encoder cache").unwrap();
+    })
+    .join()
+    .unwrap();
 }

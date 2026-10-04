@@ -1,9 +1,12 @@
-//! Gzip (RFC-1952), through `flate2` with the pure-Rust `miniz_oxide` backend.
+//! Gzip (RFC-1952), through the configured `flate2` backend.
 
-use std::io::{Read, Write};
+use std::{
+    cell::RefCell,
+    io::{Read, Write},
+};
 
 use bytes::Bytes;
-use flate2::{Compression as GzipLevel, read::GzDecoder, write::GzEncoder};
+use flate2::{Compression as GzipLevel, Crc, read::GzDecoder, write::DeflateEncoder};
 
 use crate::CompressionError;
 
@@ -19,10 +22,78 @@ pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, Compression
 }
 
 fn compress_at(data: &[u8], level: GzipLevel) -> Result<Bytes, CompressionError> {
-    let mut encoder = GzEncoder::new(Vec::with_capacity(data.len()), level);
+    if data.is_empty() {
+        let mut out = Vec::with_capacity(20);
+        out.extend_from_slice(&frame_header(level));
+        // An empty final fixed-Huffman block, then zero CRC32 and input size.
+        out.extend_from_slice(&[3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        return Ok(Bytes::from(out));
+    }
+    // One encoder per thread, replaced when its level changes. Its window and
+    // staging buffer have fixed sizes; completed output is taken each time.
+    thread_local! {
+        static ENCODER: RefCell<Option<(GzipLevel, DeflateEncoder<Vec<u8>>)>> =
+            const { RefCell::new(None) };
+    }
+    ENCODER
+        .try_with(|cached| {
+            let mut cached = cached.borrow_mut();
+            let result = compress_reused(data, level, &mut cached);
+            if result.is_err() {
+                // Do not reuse a stream that failed before its end mark.
+                cached.take();
+            }
+            result
+        })
+        // A different thread-local destructor may encode after this cache drops.
+        .unwrap_or_else(|_| compress_reused(data, level, &mut None))
+}
+
+fn compress_reused(
+    data: &[u8],
+    level: GzipLevel,
+    cached: &mut Option<(GzipLevel, DeflateEncoder<Vec<u8>>)>,
+) -> Result<Bytes, CompressionError> {
+    // Allow for framing and stored-block overhead. Vec can grow if needed.
+    let capacity = data
+        .len()
+        .saturating_add(data.len().div_ceil(16 * 1024).saturating_mul(5))
+        .saturating_add(20);
+    let out = Vec::with_capacity(capacity);
+    if let Some((cached_level, encoder)) = cached.as_mut()
+        && *cached_level == level
+    {
+        encoder.reset(out)?;
+    } else {
+        // Release the previous workspace before allocating a different level.
+        cached.take();
+        *cached = Some((level, DeflateEncoder::new(out, level)));
+    }
+    let encoder = &mut cached.as_mut().expect("the encoder was initialized").1;
+    encoder.get_mut().extend_from_slice(&frame_header(level));
     encoder.write_all(data)?;
-    let out = encoder.finish()?;
+    encoder.try_finish()?;
+    // Leave the cached encoder finished with an empty writer. Reset it only
+    // when the next frame starts, so drop does not write an empty stream.
+    let mut out = std::mem::take(encoder.get_mut());
+    let mut crc = Crc::new();
+    crc.update(data);
+    out.extend_from_slice(&crc.sum().to_le_bytes());
+    out.extend_from_slice(&crc.amount().to_le_bytes());
     Ok(Bytes::from(out))
+}
+
+fn frame_header(level: GzipLevel) -> [u8; 10] {
+    // GzBuilder defaults: no optional fields, zero mtime, unknown OS. XFL
+    // distinguishes the best and fastest levels.
+    let xfl = if level.level() >= 9 {
+        2
+    } else if level.level() <= 1 {
+        4
+    } else {
+        0
+    };
+    [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, xfl, 255]
 }
 
 pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionError> {
