@@ -743,7 +743,8 @@ impl RecordBatch {
                 .map_err(|_| RecordsError::RecordParse("body length exceeds i32".into()))?;
 
         // 4. Build the CRC-covered header portion (attributes through records_count = 40 bytes).
-        let mut covered = BytesMut::with_capacity(40);
+        let mut covered_head = [0_u8; 40];
+        let mut covered = covered_head.as_mut_slice();
         covered.put_i16(self.attributes.0);
         covered.put_i32(self.last_offset_delta);
         covered.put_i64(self.base_timestamp);
@@ -755,8 +756,6 @@ impl RecordBatch {
             i32::try_from(self.records.len())
                 .map_err(|_| RecordsError::RecordParse("records_count exceeds i32".into()))?,
         );
-        let covered_head = covered.freeze();
-
         // 5. Compute CRC over covered_head then body.
         let mut crc = crc32c(&covered_head);
         crc = crc32c_append(crc, &body);

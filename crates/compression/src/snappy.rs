@@ -79,7 +79,7 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
     // Ignore version fields (bytes 8..16); Kafka never bumped them.
     let mut rest = &data[XERIAL_HEADER.len()..];
 
-    let mut out = BytesMut::with_capacity(data.len().saturating_mul(2).min(max_output));
+    let mut out = BytesMut::new();
     let mut decoder = snap::raw::Decoder::new();
     while !rest.is_empty() {
         if rest.len() < 4 {
@@ -108,6 +108,11 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
             .ok_or(CompressionError::TooLarge { limit: max_output })?;
         if end > max_output {
             return Err(CompressionError::TooLarge { limit: max_output });
+        }
+        if out.capacity() == 0 {
+            // Size the first allocation after its decoded length is checked.
+            // Keep the wire-size hint for incompressible multi-chunk inputs.
+            out = BytesMut::with_capacity(end.max(data.len().saturating_mul(2).min(max_output)));
         }
         let start = out.len();
         out.resize(end, 0);
