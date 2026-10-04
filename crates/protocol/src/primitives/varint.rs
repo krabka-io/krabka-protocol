@@ -6,11 +6,19 @@ const MAX_VARINT_BYTES: usize = 5; // 32-bit
 const MAX_VARLONG_BYTES: usize = 10; // 64-bit
 
 pub fn put_uvarint<B: BufMut>(buf: &mut B, mut v: u32) {
-    while (v & !0x7F) != 0 {
-        buf.put_u8((v & 0x7F).to_le_bytes()[0] | 0x80);
-        v >>= 7;
+    if v < 0x80 {
+        buf.put_u8(v.to_le_bytes()[0]);
+        return;
     }
-    buf.put_u8(v.to_le_bytes()[0]);
+    let mut encoded = [0_u8; MAX_VARINT_BYTES];
+    let mut len = 0;
+    while (v & !0x7F) != 0 {
+        encoded[len] = (v & 0x7F).to_le_bytes()[0] | 0x80;
+        v >>= 7;
+        len += 1;
+    }
+    encoded[len] = v.to_le_bytes()[0];
+    buf.put_slice(&encoded[..=len]);
 }
 
 /// # Errors
@@ -37,7 +45,7 @@ pub fn get_uvarint<B: Buf>(buf: &mut B) -> Result<u32, ProtocolError> {
 
 #[must_use]
 pub fn uvarint_len(v: u32) -> usize {
-    if v == 0 {
+    if v < 0x80 {
         return 1;
     }
     let bits = usize::from((u32::BITS - v.leading_zeros()).to_le_bytes()[0]);
@@ -64,11 +72,19 @@ pub fn varint_len(v: i32) -> usize {
 }
 
 pub fn put_uvarlong<B: BufMut>(buf: &mut B, mut v: u64) {
-    while (v & !0x7F) != 0 {
-        buf.put_u8((v & 0x7F).to_le_bytes()[0] | 0x80);
-        v >>= 7;
+    if v < 0x80 {
+        buf.put_u8(v.to_le_bytes()[0]);
+        return;
     }
-    buf.put_u8(v.to_le_bytes()[0]);
+    let mut encoded = [0_u8; MAX_VARLONG_BYTES];
+    let mut len = 0;
+    while (v & !0x7F) != 0 {
+        encoded[len] = (v & 0x7F).to_le_bytes()[0] | 0x80;
+        v >>= 7;
+        len += 1;
+    }
+    encoded[len] = v.to_le_bytes()[0];
+    buf.put_slice(&encoded[..=len]);
 }
 
 /// # Errors
@@ -108,7 +124,7 @@ pub fn get_varlong<B: Buf>(buf: &mut B) -> Result<i64, ProtocolError> {
 
 #[must_use]
 pub fn uvarlong_len(v: u64) -> usize {
-    if v == 0 {
+    if v < 0x80 {
         return 1;
     }
     let bits = usize::from((u64::BITS - v.leading_zeros()).to_le_bytes()[0]);
@@ -144,10 +160,49 @@ mod tests {
             let mut buf = BytesMut::new();
             put_uvarint(&mut buf, *v);
             assert2::assert!(&buf[..] == *expected);
+            for split in 0..=expected.len() {
+                let mut left = vec![0; split];
+                let mut right = vec![0; expected.len() - split];
+                put_uvarint(&mut BufMut::chain_mut(&mut left[..], &mut right[..]), *v);
+                left.extend_from_slice(&right);
+                assert2::assert!(left.as_slice() == *expected);
+            }
             let mut cur = *expected;
             check!(get_uvarint(&mut cur).unwrap() == *v);
             check!(cur.is_empty());
             check!(uvarint_len(*v) == expected.len());
+        }
+    }
+
+    #[test]
+    fn uvarlong_known_vectors_across_buffer_boundaries() {
+        let cases: &[(u64, &[u8])] = &[
+            (0, &[0]),
+            (127, &[0x7F]),
+            (128, &[0x80, 1]),
+            (16_383, &[0xFF, 0x7F]),
+            (16_384, &[0x80, 0x80, 1]),
+            (
+                u64::MAX,
+                &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1],
+            ),
+        ];
+        for (value, expected) in cases {
+            for split in 0..=expected.len() {
+                let mut left = vec![0; split];
+                let mut right = vec![0; expected.len() - split];
+                put_uvarlong(
+                    &mut BufMut::chain_mut(&mut left[..], &mut right[..]),
+                    *value,
+                );
+                left.extend_from_slice(&right);
+                assert2::assert!(left.as_slice() == *expected);
+            }
+            let mut cursor = *expected;
+            assert2::assert!(
+                (get_uvarlong(&mut cursor).unwrap(), cursor.is_empty()) == (*value, true)
+            );
+            assert2::assert!(uvarlong_len(*value) == expected.len());
         }
     }
 
