@@ -39,6 +39,9 @@ const DEFAULT_LEVEL: i32 = 9;
 /// default of 64 KiB), matched here so HC blocks line up with the fast path.
 const BLOCK_SIZE: usize = 64 * 1024;
 
+/// lz4rip emits only literals below 13 bytes, which cannot shrink a block.
+const MIN_COMPRESSIBLE_BLOCK: usize = 13;
+
 /// The high bit of a block's 4-byte little-endian size that marks it as
 /// stored uncompressed, per the LZ4 frame format.
 const BLOCK_UNCOMPRESSED_BIT: u32 = 0x8000_0000;
@@ -75,7 +78,11 @@ pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
     // Include framing and one block's compression slack so the scratch slice
     // does not double the result allocation for a nearly full block.
     let largest_block = data.len().min(BLOCK_SIZE);
-    let slack = lz4rip::block::get_maximum_output_size(largest_block) - largest_block;
+    let slack = if largest_block < MIN_COMPRESSIBLE_BLOCK {
+        0
+    } else {
+        lz4rip::block::get_maximum_output_size(largest_block) - largest_block
+    };
     let capacity = data
         .len()
         .saturating_add(data.len().div_ceil(BLOCK_SIZE).saturating_mul(4))
@@ -83,6 +90,13 @@ pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
     let mut out = Vec::with_capacity(capacity);
     out.extend_from_slice(frame_header());
     for block in data.chunks(BLOCK_SIZE) {
+        if block.len() < MIN_COMPRESSIBLE_BLOCK {
+            let size = u32::try_from(block.len()).expect("a short block's length fits u32")
+                | BLOCK_UNCOMPRESSED_BIT;
+            out.extend_from_slice(&size.to_le_bytes());
+            out.extend_from_slice(block);
+            continue;
+        }
         let header = out.len();
         out.extend_from_slice(&0u32.to_le_bytes());
         let start = out.len();

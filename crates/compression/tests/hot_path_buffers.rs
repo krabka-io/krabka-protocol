@@ -62,7 +62,9 @@ fn lz4_matches_streaming_encoder() {
     use std::io::Write as _;
 
     use lz4rip::frame::{BlockMode, BlockSize, FrameEncoder, FrameInfo};
-    for size in [0, 1, 65_535, 65_536, 65_537, 1_048_576] {
+    for size in (0..=13).chain([
+        96, 1024, 1025, 65_534, 65_535, 65_536, 65_537, 65_548, 1_048_576,
+    ]) {
         for random in [false, true] {
             let input = payload(size, random);
             let info = FrameInfo::new()
