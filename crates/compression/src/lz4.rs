@@ -11,8 +11,7 @@
 //! `compress_with_level` matches that split. `lz4rip` has only the fast
 //! compressor. Both paths build the same independent-block frame directly;
 //! the HC path uses `lzzzz`'s binding to the reference `liblz4` HC compressor
-//! for the block bytes. The frame header and end mark are identical either way: they
-//! depend only on [`frame_info`], not on which compressor filled the blocks.
+//! for the block bytes. Both paths use [`FRAME_HEADER`] and the same end mark.
 //!
 //! Kafka's level range is `1..=17`, but reference `liblz4`'s HC compressor
 //! caps out at `LZ4HC_CLEVEL_MAX` (12): `lz4hc.h` documents that "values
@@ -24,10 +23,10 @@
 //! explicitly rather than relying on `liblz4`'s internal clamp, so that fact
 //! is visible at the call site instead of buried in the C library.
 
-use std::{cell::RefCell, io::Read, sync::LazyLock};
+use std::{cell::RefCell, io::Read};
 
 use bytes::Bytes;
-use lz4rip::frame::{BlockMode, BlockSize, FrameDecoder, FrameEncoder, FrameInfo};
+use lz4rip::frame::FrameDecoder;
 
 use crate::CompressionError;
 
@@ -46,31 +45,9 @@ const MIN_COMPRESSIBLE_BLOCK: usize = 13;
 /// stored uncompressed, per the LZ4 frame format.
 const BLOCK_UNCOMPRESSED_BIT: u32 = 0x8000_0000;
 
-fn frame_info() -> FrameInfo {
-    FrameInfo::new()
-        .block_size(BlockSize::Max64KB)
-        .block_mode(BlockMode::Independent)
-        .block_checksums(false)
-        .content_checksum(false)
-}
-
-/// The frame header bytes for [`frame_info`]: magic, FLG, BD and the header
-/// checksum. Fixed by `frame_info`'s settings (no content size, no
-/// dictionary), so we derive it once from `lz4rip`'s own encoder run over
-/// empty input, rather than re-deriving the header checksum by hand, and reuse
-/// it for every frame.
-fn frame_header() -> &'static [u8] {
-    static HEADER: LazyLock<Vec<u8>> = LazyLock::new(|| {
-        let encoder = FrameEncoder::with_frame_info(frame_info(), Vec::new());
-        let out = encoder
-            .finish()
-            .expect("an empty lz4 frame always finishes");
-        // `out` is the header followed by the 4-byte end mark (there is no
-        // content checksum): strip the end mark to leave just the header.
-        out[..out.len() - 4].to_vec()
-    });
-    &HEADER
-}
+/// Independent 64 KiB blocks, without block/content checksums, content size or
+/// dictionary. The final byte is the descriptor's header checksum.
+const FRAME_HEADER: &[u8] = &[0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x82];
 
 // Compress borrowed blocks into the result without a streaming source buffer
 // and separate compressed-block buffer.
@@ -86,9 +63,9 @@ pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
     let capacity = data
         .len()
         .saturating_add(data.len().div_ceil(BLOCK_SIZE).saturating_mul(4))
-        .saturating_add(frame_header().len() + 4 + slack);
+        .saturating_add(FRAME_HEADER.len() + 4 + slack);
     let mut out = Vec::with_capacity(capacity);
-    out.extend_from_slice(frame_header());
+    out.extend_from_slice(FRAME_HEADER);
     for block in data.chunks(BLOCK_SIZE) {
         if block.len() < MIN_COMPRESSIBLE_BLOCK {
             let size = u32::try_from(block.len()).expect("a short block's length fits u32")
@@ -152,9 +129,9 @@ pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, Compression
     let capacity = data
         .len()
         .saturating_add(data.len().div_ceil(BLOCK_SIZE).saturating_mul(4))
-        .saturating_add(frame_header().len() + 4 + slack);
+        .saturating_add(FRAME_HEADER.len() + 4 + slack);
     let mut out = Vec::with_capacity(capacity);
-    out.extend_from_slice(frame_header());
+    out.extend_from_slice(FRAME_HEADER);
     // `[T]::chunks` yields no chunks for empty input, matching `compress`,
     // which never writes a block for an empty frame either.
     for block in data.chunks(BLOCK_SIZE) {
@@ -289,16 +266,14 @@ mod tests {
     fn frame_uses_64kib_independent_blocks() {
         // Compress a payload larger than 64 KiB so the block-size choice is
         // observable in the frame header: our explicit `Max64KB` must stay
-        // 64 KiB rather than grow to an auto-selected larger block. This pins
-        // the `frame_info()` settings (a `Default::default()` FrameInfo would
-        // auto-pick a 256 KiB block for a payload this size).
+        // 64 KiB rather than grow to an auto-selected larger block.
         let big = vec![0xCDu8; 128 * 1024];
         let z = compress(&big).unwrap();
         // LZ4 frame layout: [magic:4][FLG][BD]...
         let flg = z[4];
         let bd = z[5];
         // BD bits 4..6 encode the block max size; value 4 == 64 KiB.
-        assert2::assert!(&z[0..4] == &[0x04, 0x22, 0x4D, 0x18][..]);
+        assert2::assert!(&z[..7] == &[0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x82]);
         assert2::assert!(bd >> 4 & 0x7 == 4);
         assert2::assert!(flg >> 5 & 1 == 1);
         assert2::assert!(flg >> 4 & 1 == 0);
@@ -365,7 +340,7 @@ mod tests {
         // single block.
         let incompressible: Vec<u8> = (0..=255u8).collect();
         let out = compress_with_level(&incompressible, 1).unwrap();
-        let block_size = u32::from_le_bytes(out[frame_header().len()..][..4].try_into().unwrap());
+        let block_size = u32::from_le_bytes(out[FRAME_HEADER.len()..][..4].try_into().unwrap());
         assert2::assert!(block_size & BLOCK_UNCOMPRESSED_BIT != 0);
         assert2::assert!((block_size & !BLOCK_UNCOMPRESSED_BIT) as usize == incompressible.len());
         let back = decompress(&out, BIG_CAP).unwrap();
@@ -381,6 +356,6 @@ mod tests {
         let payload = compressible_payload();
         let fast = compress(&payload).unwrap();
         let hc = compress_with_level(&payload, 1).unwrap();
-        assert2::assert!(fast[..frame_header().len()] == hc[..frame_header().len()]);
+        assert2::assert!(fast[..FRAME_HEADER.len()] == hc[..FRAME_HEADER.len()]);
     }
 }
