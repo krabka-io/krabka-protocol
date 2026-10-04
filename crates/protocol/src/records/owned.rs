@@ -111,20 +111,39 @@ impl Record {
     }
 
     fn encode_body<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
-        buf.put_i8(self.attributes);
-        put_varlong(buf, self.timestamp_delta);
-        put_varint(buf, self.offset_delta);
+        // Metadata needs at most 21 bytes. Include short keys in the same write.
+        const SMALL_KEY_LEN: usize = 32;
+        const PREFIX_LEN: usize = 21 + SMALL_KEY_LEN;
+        let mut prefix = [0_u8; PREFIX_LEN];
+        let mut fields = prefix.as_mut_slice();
+        fields.put_i8(self.attributes);
+        put_varlong(&mut fields, self.timestamp_delta);
+        put_varint(&mut fields, self.offset_delta);
         match &self.key {
-            None => put_varint(buf, -1),
+            None => put_varint(&mut fields, -1),
             Some(k) => {
-                put_varint(
-                    buf,
-                    i32::try_from(k.len()).map_err(|_| {
-                        RecordsError::RecordParse("record key length overflow".into())
-                    })?,
-                );
-                buf.put_slice(k);
+                let Ok(len) = i32::try_from(k.len()) else {
+                    // Preserve the fields already written before an invalid key.
+                    let used = PREFIX_LEN - fields.len();
+                    buf.put_slice(&prefix[..used]);
+                    return Err(RecordsError::RecordParse(
+                        "record key length overflow".into(),
+                    ));
+                };
+                put_varint(&mut fields, len);
             }
+        }
+        if let Some(key) = &self.key
+            && key.len() <= SMALL_KEY_LEN
+        {
+            fields.put_slice(key);
+        }
+        let used = PREFIX_LEN - fields.len();
+        buf.put_slice(&prefix[..used]);
+        if let Some(key) = &self.key
+            && key.len() > SMALL_KEY_LEN
+        {
+            buf.put_slice(key);
         }
         match &self.value {
             None => put_varint(buf, -1),
@@ -371,6 +390,71 @@ mod record_tests {
     }
 
     #[test]
+    fn record_prefix_golden_bytes_across_destination_splits() {
+        let mut cases = vec![
+            (Record::default(), vec![0x0c, 0, 0, 0, 1, 1, 0]),
+            (
+                Record {
+                    attributes: i8::MIN,
+                    timestamp_delta: i64::MIN,
+                    offset_delta: i32::MIN,
+                    key: Some(Bytes::from_static(b"k")),
+                    value: Some(Bytes::from_static(b"v")),
+                    headers: vec![],
+                },
+                vec![
+                    0x2a, 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0xff,
+                    0xff, 0xff, 0xff, 0x0f, 0x02, b'k', 0x02, b'v', 0,
+                ],
+            ),
+            (
+                Record {
+                    offset_delta: 129,
+                    key: Some(Bytes::from_static(b"k")),
+                    value: Some(Bytes::from_static(b"v")),
+                    ..Default::default()
+                },
+                vec![0x12, 0, 0, 0x82, 0x02, 0x02, b'k', 0x02, b'v', 0],
+            ),
+        ];
+        // Null and empty keys differ; 32/33 cover the short-key boundary,
+        // and 63/64 cross a zigzag length-prefix boundary.
+        for (len, length_prefix, key_prefix) in [
+            (0, vec![12], vec![0]),
+            (32, vec![76], vec![64]),
+            (33, vec![78], vec![66]),
+            (63, vec![138, 1], vec![126]),
+            (64, vec![142, 1], vec![128, 1]),
+        ] {
+            let mut expected = length_prefix;
+            expected.extend_from_slice(&[0, 0, 0]);
+            expected.extend(key_prefix);
+            expected.extend(std::iter::repeat_n(b'k', len));
+            expected.extend_from_slice(&[1, 0]);
+            cases.push((
+                Record {
+                    key: Some(Bytes::from(vec![b'k'; len])),
+                    ..Default::default()
+                },
+                expected,
+            ));
+        }
+        for (record, expected) in cases {
+            for split in 0..=expected.len() {
+                let mut encoded = vec![0xcd; expected.len()];
+                let (first, second) = encoded.split_at_mut(split);
+                let mut destination = first.chain_mut(second);
+                record.encode(&mut destination).unwrap();
+                assert2::assert!(destination.remaining_mut() == 0);
+                assert2::assert!(encoded == expected);
+                let mut cursor = encoded.as_slice();
+                assert2::assert!(Record::decode(&mut cursor).unwrap() == record);
+                assert2::assert!(cursor.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn record_roundtrip_cases() {
         type TestCase1<'a> = (&'a str, fn() -> Record);
         let cases: [TestCase1<'_>; 3] = [
@@ -601,34 +685,53 @@ impl RecordBatch {
             });
         }
 
-        // Read the (possibly compressed) body.
-        let mut body = vec![0u8; body_len];
-        buf.copy_to_slice(&mut body);
-
         // CRC is computed over: header bytes 21..HEADER_LEN (attributes through
         // records_count), then the body bytes.
         let expected_crc = hdr.crc.get();
-        let mut computed = crc32c(&hdr_bytes[21..HEADER_LEN]);
-        computed = crc32c_append(computed, &body);
-        if computed != expected_crc {
-            return Err(RecordsError::CrcMismatch {
-                expected: expected_crc,
-                computed,
-            });
-        }
+        let verify_crc = |body: &[u8]| {
+            let computed = crc32c_append(crc32c(&hdr_bytes[21..HEADER_LEN]), body);
+            if computed == expected_crc {
+                Ok(())
+            } else {
+                Err(RecordsError::CrcMismatch {
+                    expected: expected_crc,
+                    computed,
+                })
+            }
+        };
 
         let attributes = Attributes(hdr.attributes.get());
         let codec = attributes.compression();
 
-        // Decompress body if needed.
-        let body_for_records: Bytes = if codec == krabka_compression::CompressionType::None {
-            Bytes::from(body)
-        } else {
-            krabka_compression::decompress(
+        let decompress = |body: &[u8]| -> Result<Bytes, RecordsError> {
+            verify_crc(body)?;
+            Ok(krabka_compression::decompress(
                 codec,
-                &body,
+                body,
                 policy.output_limit(ByteSize::from_bytes(body.len() as u64)),
-            )?
+            )?)
+        };
+
+        // A compressed body can be read directly from contiguous input. The
+        // decoded records own the decompressed output, so they retain no input
+        // buffer. Consume the body even on CRC/decompression errors, as the
+        // original staged read did. Fragmented input still needs staging;
+        // uncompressed records keep their own body instead of a larger frame.
+        let body_for_records = if codec != krabka_compression::CompressionType::None
+            && buf.chunk().len() >= body_len
+        {
+            let decoded = decompress(&buf.chunk()[..body_len]);
+            buf.advance(body_len);
+            decoded?
+        } else {
+            let mut body = vec![0u8; body_len];
+            buf.copy_to_slice(&mut body);
+            if codec == krabka_compression::CompressionType::None {
+                verify_crc(&body)?;
+                Bytes::from(body)
+            } else {
+                decompress(&body)?
+            }
         };
 
         // Parse records.
@@ -701,6 +804,29 @@ impl RecordBatch {
         self.encode_with_compression_level(buf, None)
     }
 
+    /// Encode this batch into an owned wire buffer.
+    ///
+    /// Uncompressed records are written directly behind the header, avoiding
+    /// a temporary body buffer and its copy into the output.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same encoding errors as [`Self::encode`].
+    pub fn encode_to_bytes(&self) -> Result<Bytes, RecordsError> {
+        let mut wire = BytesMut::with_capacity(self.encoded_len());
+        if self.attributes.compression() == krabka_compression::CompressionType::None {
+            wire.resize(HEADER_LEN, 0);
+            for record in &self.records {
+                record.encode(&mut wire)?;
+            }
+            let (mut header, body) = wire.split_at_mut(HEADER_LEN);
+            self.encode_header(&mut header, body)?;
+        } else {
+            self.encode(&mut wire)?;
+        }
+        Ok(wire.freeze())
+    }
+
     /// Encode this batch into `buf`, and compress the records at `level`.
     ///
     /// `None` uses the default level of the codec, as [`Self::encode`] does.
@@ -719,8 +845,6 @@ impl RecordBatch {
         buf: &mut B,
         level: Option<i32>,
     ) -> Result<(), RecordsError> {
-        const HEADER_TAIL_LEN: i32 = 49;
-
         // 1. Encode records into a temporary buffer.
         let mut raw_body =
             BytesMut::with_capacity(self.records.iter().map(Record::encoded_len).sum());
@@ -737,13 +861,22 @@ impl RecordBatch {
             None => krabka_compression::compress(codec, &raw_body)?,
         };
 
-        // 3. batch_length = HEADER_TAIL_LEN + body_len
+        self.encode_header(buf, &body)?;
+        buf.put_slice(&body);
+        Ok(())
+    }
+
+    fn encode_header<B: BufMut>(&self, buf: &mut B, body: &[u8]) -> Result<(), RecordsError> {
+        const HEADER_TAIL_LEN: i32 = 49;
+
+        // batch_length = HEADER_TAIL_LEN + body_len
         let batch_length = HEADER_TAIL_LEN
             + i32::try_from(body.len())
                 .map_err(|_| RecordsError::RecordParse("body length exceeds i32".into()))?;
 
-        // 4. Build the CRC-covered header portion (attributes through records_count = 40 bytes).
-        let mut covered = BytesMut::with_capacity(40);
+        // CRC-covered header portion (attributes through records_count = 40 bytes).
+        let mut covered_head = [0_u8; 40];
+        let mut covered = covered_head.as_mut_slice();
         covered.put_i16(self.attributes.0);
         covered.put_i32(self.last_offset_delta);
         covered.put_i64(self.base_timestamp);
@@ -755,20 +888,17 @@ impl RecordBatch {
             i32::try_from(self.records.len())
                 .map_err(|_| RecordsError::RecordParse("records_count exceeds i32".into()))?,
         );
-        let covered_head = covered.freeze();
-
-        // 5. Compute CRC over covered_head then body.
+        // Compute CRC over covered_head then body.
         let mut crc = crc32c(&covered_head);
-        crc = crc32c_append(crc, &body);
+        crc = crc32c_append(crc, body);
 
-        // 6. Emit the full header then body.
+        // Emit the full header.
         buf.put_i64(self.base_offset);
         buf.put_i32(batch_length);
         buf.put_i32(self.partition_leader_epoch);
         buf.put_i8(2); // magic v2
         buf.put_u32(crc);
         buf.put_slice(&covered_head);
-        buf.put_slice(&body);
         Ok(())
     }
 

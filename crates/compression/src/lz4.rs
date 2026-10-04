@@ -9,10 +9,9 @@
 //! compressor by level: the fast compressor at the default level (9), and LZ4
 //! HC (`LZ4Factory.highCompressor(level)`) at every other level in `1..=17`.
 //! `compress_with_level` matches that split. `lz4rip` has only the fast
-//! compressor, so the HC path builds the same independent-block frame by hand,
-//! using `lzzzz`'s binding to the reference `liblz4` HC compressor for the
-//! block bytes. The frame header and end mark are identical either way: they
-//! depend only on [`frame_info`], not on which compressor filled the blocks.
+//! compressor. Both paths build the same independent-block frame directly;
+//! the HC path uses `lzzzz`'s binding to the reference `liblz4` HC compressor
+//! for the block bytes. Both paths use [`FRAME_HEADER`] and the same end mark.
 //!
 //! Kafka's level range is `1..=17`, but reference `liblz4`'s HC compressor
 //! caps out at `LZ4HC_CLEVEL_MAX` (12): `lz4hc.h` documents that "values
@@ -24,13 +23,10 @@
 //! explicitly rather than relying on `liblz4`'s internal clamp, so that fact
 //! is visible at the call site instead of buried in the C library.
 
-use std::{
-    io::{Read, Write},
-    sync::LazyLock,
-};
+use std::{cell::RefCell, io::Read};
 
 use bytes::Bytes;
-use lz4rip::frame::{BlockMode, BlockSize, FrameDecoder, FrameEncoder, FrameInfo};
+use lz4rip::frame::FrameDecoder;
 
 use crate::CompressionError;
 
@@ -42,42 +38,78 @@ const DEFAULT_LEVEL: i32 = 9;
 /// default of 64 KiB), matched here so HC blocks line up with the fast path.
 const BLOCK_SIZE: usize = 64 * 1024;
 
+/// lz4rip emits only literals below 13 bytes, which cannot shrink a block.
+const MIN_COMPRESSIBLE_BLOCK: usize = 13;
+
 /// The high bit of a block's 4-byte little-endian size that marks it as
 /// stored uncompressed, per the LZ4 frame format.
 const BLOCK_UNCOMPRESSED_BIT: u32 = 0x8000_0000;
 
-fn frame_info() -> FrameInfo {
-    FrameInfo::new()
-        .block_size(BlockSize::Max64KB)
-        .block_mode(BlockMode::Independent)
-        .block_checksums(false)
-        .content_checksum(false)
-}
+/// Independent 64 KiB blocks, without block/content checksums, content size or
+/// dictionary. The final byte is the descriptor's header checksum.
+const FRAME_HEADER: &[u8] = &[0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x82];
 
-/// The frame header bytes for [`frame_info`]: magic, FLG, BD and the header
-/// checksum. Fixed by `frame_info`'s settings (no content size, no
-/// dictionary), so we derive it once from `lz4rip`'s own encoder run over
-/// empty input, rather than re-deriving the header checksum by hand, and reuse
-/// it for every HC frame.
-fn frame_header() -> &'static [u8] {
-    static HEADER: LazyLock<Vec<u8>> = LazyLock::new(|| {
-        let encoder = FrameEncoder::with_frame_info(frame_info(), Vec::new());
-        let out = encoder
-            .finish()
-            .expect("an empty lz4 frame always finishes");
-        // `out` is the header followed by the 4-byte end mark (there is no
-        // content checksum): strip the end mark to leave just the header.
-        out[..out.len() - 4].to_vec()
-    });
-    &HEADER
-}
-
+// Compress borrowed blocks into the result without a streaming source buffer
+// and separate compressed-block buffer.
 pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
-    let mut encoder = FrameEncoder::with_frame_info(frame_info(), Vec::with_capacity(data.len()));
-    encoder.write_all(data)?;
-    let out = encoder
-        .finish()
-        .map_err(|e| CompressionError::InvalidData(format!("lz4 finish: {e}")))?;
+    // Include framing and one block's compression slack so the scratch slice
+    // does not double the result allocation for a nearly full block.
+    let largest_block = data.len().min(BLOCK_SIZE);
+    let slack = if largest_block < MIN_COMPRESSIBLE_BLOCK {
+        0
+    } else {
+        lz4rip::block::get_maximum_output_size(largest_block) - largest_block
+    };
+    let capacity = data
+        .len()
+        .saturating_add(data.len().div_ceil(BLOCK_SIZE).saturating_mul(4))
+        .saturating_add(FRAME_HEADER.len() + 4 + slack);
+    let mut out = Vec::with_capacity(capacity);
+    out.extend_from_slice(FRAME_HEADER);
+    for block in data.chunks(BLOCK_SIZE) {
+        if block.len() < MIN_COMPRESSIBLE_BLOCK {
+            let size = u32::try_from(block.len()).expect("a short block's length fits u32")
+                | BLOCK_UNCOMPRESSED_BIT;
+            out.extend_from_slice(&size.to_le_bytes());
+            out.extend_from_slice(block);
+            continue;
+        }
+        let header = out.len();
+        out.extend_from_slice(&0u32.to_le_bytes());
+        let start = out.len();
+        out.resize(
+            start + lz4rip::block::get_maximum_output_size(block.len()),
+            0,
+        );
+        // At 65,535 bytes the stateless encoder switches to the u32 table.
+        // Reuse that same table; CompressorRef clears it for these large inputs.
+        let compressed = if block.len() >= usize::from(u16::MAX) {
+            thread_local! {
+                static COMPRESSOR: RefCell<lz4rip::block::CompressorRef> =
+                    RefCell::new(lz4rip::block::CompressorRef::new());
+            }
+            COMPRESSOR.with(|compressor| {
+                compressor
+                    .borrow_mut()
+                    .compress_into(block, &mut out[start..])
+            })
+        } else {
+            lz4rip::block::compress_into(block, &mut out[start..])
+        };
+        let n =
+            compressed.map_err(|e| CompressionError::InvalidData(format!("lz4 compress: {e}")))?;
+        let size = if n < block.len() {
+            out.truncate(start + n);
+            u32::try_from(n).expect("a 64 KiB block's compressed length fits u32")
+        } else {
+            out.truncate(start + block.len());
+            out[start..].copy_from_slice(block);
+            u32::try_from(block.len()).expect("a 64 KiB block's length fits u32")
+                | BLOCK_UNCOMPRESSED_BIT
+        };
+        out[header..start].copy_from_slice(&size.to_le_bytes());
+    }
+    out.extend_from_slice(&0u32.to_le_bytes());
     Ok(Bytes::from(out))
 }
 
@@ -88,8 +120,18 @@ pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, Compression
     if level == DEFAULT_LEVEL {
         return compress(data);
     }
-    let mut out = Vec::with_capacity(data.len());
-    out.extend_from_slice(frame_header());
+    let largest_block = data.len().min(BLOCK_SIZE);
+    let slack = if largest_block < MIN_COMPRESSIBLE_BLOCK {
+        0
+    } else {
+        lzzzz::lz4::max_compressed_size(largest_block) - largest_block
+    };
+    let capacity = data
+        .len()
+        .saturating_add(data.len().div_ceil(BLOCK_SIZE).saturating_mul(4))
+        .saturating_add(FRAME_HEADER.len() + 4 + slack);
+    let mut out = Vec::with_capacity(capacity);
+    out.extend_from_slice(FRAME_HEADER);
     // `[T]::chunks` yields no chunks for empty input, matching `compress`,
     // which never writes a block for an empty frame either.
     for block in data.chunks(BLOCK_SIZE) {
@@ -108,22 +150,32 @@ const LIBLZ4_HC_CLEVEL_MAX: i32 = 12;
 /// HC at `level`. Falls back to storing the block uncompressed, exactly as
 /// the LZ4 frame format allows, when HC does not shrink it.
 fn write_hc_block(out: &mut Vec<u8>, block: &[u8], level: i32) -> Result<(), CompressionError> {
-    let level = level.min(LIBLZ4_HC_CLEVEL_MAX);
-    let mut buf = vec![0u8; lzzzz::lz4::max_compressed_size(block.len())];
-    let comp_len = lzzzz::lz4_hc::compress(block, &mut buf, level)
-        .map_err(|e| CompressionError::InvalidData(format!("lz4 hc compress: {e}")))?;
-    // `block` is at most `BLOCK_SIZE` (64 KiB), so both lengths always fit in
-    // a `u32`.
-    if comp_len < block.len() {
-        let size = u32::try_from(comp_len).expect("a 64 KiB block's compressed length fits u32");
-        out.extend_from_slice(&size.to_le_bytes());
-        out.extend_from_slice(&buf[..comp_len]);
-    } else {
-        let size = u32::try_from(block.len()).expect("a 64 KiB block's length fits u32")
+    if block.len() < MIN_COMPRESSIBLE_BLOCK {
+        let size = u32::try_from(block.len()).expect("a short block's length fits u32")
             | BLOCK_UNCOMPRESSED_BIT;
         out.extend_from_slice(&size.to_le_bytes());
         out.extend_from_slice(block);
+        return Ok(());
     }
+    let level = level.min(LIBLZ4_HC_CLEVEL_MAX);
+    let header = out.len();
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let start = out.len();
+    out.resize(start + lzzzz::lz4::max_compressed_size(block.len()), 0);
+    let comp_len = lzzzz::lz4_hc::compress(block, &mut out[start..], level)
+        .map_err(|e| CompressionError::InvalidData(format!("lz4 hc compress: {e}")))?;
+    // `block` is at most `BLOCK_SIZE` (64 KiB), so both lengths always fit in
+    // a `u32`.
+    let size = if comp_len < block.len() {
+        out.truncate(start + comp_len);
+        u32::try_from(comp_len).expect("a 64 KiB block's compressed length fits u32")
+    } else {
+        out.truncate(start + block.len());
+        out[start..].copy_from_slice(block);
+        u32::try_from(block.len()).expect("a 64 KiB block's length fits u32")
+            | BLOCK_UNCOMPRESSED_BIT
+    };
+    out[header..start].copy_from_slice(&size.to_le_bytes());
     Ok(())
 }
 
@@ -214,16 +266,14 @@ mod tests {
     fn frame_uses_64kib_independent_blocks() {
         // Compress a payload larger than 64 KiB so the block-size choice is
         // observable in the frame header: our explicit `Max64KB` must stay
-        // 64 KiB rather than grow to an auto-selected larger block. This pins
-        // the `frame_info()` settings (a `Default::default()` FrameInfo would
-        // auto-pick a 256 KiB block for a payload this size).
+        // 64 KiB rather than grow to an auto-selected larger block.
         let big = vec![0xCDu8; 128 * 1024];
         let z = compress(&big).unwrap();
         // LZ4 frame layout: [magic:4][FLG][BD]...
         let flg = z[4];
         let bd = z[5];
         // BD bits 4..6 encode the block max size; value 4 == 64 KiB.
-        assert2::assert!(&z[0..4] == &[0x04, 0x22, 0x4D, 0x18][..]);
+        assert2::assert!(&z[..7] == &[0x04, 0x22, 0x4D, 0x18, 0x60, 0x40, 0x82]);
         assert2::assert!(bd >> 4 & 0x7 == 4);
         assert2::assert!(flg >> 5 & 1 == 1);
         assert2::assert!(flg >> 4 & 1 == 0);
@@ -290,7 +340,7 @@ mod tests {
         // single block.
         let incompressible: Vec<u8> = (0..=255u8).collect();
         let out = compress_with_level(&incompressible, 1).unwrap();
-        let block_size = u32::from_le_bytes(out[frame_header().len()..][..4].try_into().unwrap());
+        let block_size = u32::from_le_bytes(out[FRAME_HEADER.len()..][..4].try_into().unwrap());
         assert2::assert!(block_size & BLOCK_UNCOMPRESSED_BIT != 0);
         assert2::assert!((block_size & !BLOCK_UNCOMPRESSED_BIT) as usize == incompressible.len());
         let back = decompress(&out, BIG_CAP).unwrap();
@@ -306,6 +356,6 @@ mod tests {
         let payload = compressible_payload();
         let fast = compress(&payload).unwrap();
         let hc = compress_with_level(&payload, 1).unwrap();
-        assert2::assert!(fast[..frame_header().len()] == hc[..frame_header().len()]);
+        assert2::assert!(fast[..FRAME_HEADER.len()] == hc[..FRAME_HEADER.len()]);
     }
 }
