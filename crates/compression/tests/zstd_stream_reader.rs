@@ -39,7 +39,8 @@ fn original_decompress(data: &[u8], max_output: usize) -> Result<Bytes, Compress
 #[test]
 fn zstd_input_boundaries_preserve_complete_results_and_errors() {
     for size in [
-        0_usize, 1, 1024, 131_071, 131_072, 131_073, 131_074, 131_075, 131_076, 262_144, 1_048_576,
+        0_usize, 1, 1024, 131_071, 131_072, 131_073, 131_074, 131_075, 131_076, 262_144, 1_048_575,
+        1_048_576, 1_048_577,
     ] {
         for random in [false, true] {
             let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
@@ -67,6 +68,22 @@ fn zstd_input_boundaries_preserve_complete_results_and_errors() {
                     encoder.write_all(&input).unwrap();
                     let wire = encoder.finish().unwrap();
                     let mut variants = vec![wire.clone(), Vec::new()];
+                    if known_size && wire[4] >> 6 == 2 && wire[4] & 0x23 == 0x20 {
+                        for declared in [
+                            0_u32,
+                            1,
+                            131_072,
+                            131_073,
+                            1_048_575,
+                            1_048_576,
+                            1_048_577,
+                            u32::MAX,
+                        ] {
+                            let mut changed = wire.clone();
+                            changed[5..9].copy_from_slice(&declared.to_le_bytes());
+                            variants.push(changed);
+                        }
+                    }
                     for index in [
                         0,
                         4,
@@ -81,6 +98,12 @@ fn zstd_input_boundaries_preserve_complete_results_and_errors() {
                             changed[index] ^= 1;
                             variants.push(changed);
                         }
+                    }
+                    for sample in 0..32_usize {
+                        let index = (sample * 7919 + 13) % wire.len();
+                        let mut changed = wire.clone();
+                        changed[index] ^= 1 << (sample % 8);
+                        variants.push(changed);
                     }
                     for len in [4, wire.len() / 2, wire.len() - 1] {
                         variants.push(wire[..len.min(wire.len())].to_vec());
@@ -105,6 +128,9 @@ fn zstd_input_boundaries_preserve_complete_results_and_errors() {
                         131_071,
                         131_072,
                         131_073,
+                        1_048_575,
+                        1_048_576,
+                        1_048_577,
                         2_097_152,
                     ];
                     caps.sort_unstable();

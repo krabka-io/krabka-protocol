@@ -18,7 +18,7 @@ const REUSE_MAX_INPUT: usize = 128 * 1024;
 
 // Direct decode bounds its output allocation even when the frame header lies.
 // Larger frames and streams retain the incremental output cap check.
-const MAX_DIRECT_OUTPUT: usize = 128 * 1024;
+const MAX_DIRECT_OUTPUT: usize = 1024 * 1024;
 
 thread_local! {
     static COMPRESSOR: RefCell<Option<zstd::bulk::Compressor<'static>>> = const { RefCell::new(None) };
@@ -60,9 +60,9 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
         // Other frames retain the streaming decoder's window limit.
         && data.get(4).is_some_and(|descriptor| descriptor & 0x20 != 0)
         && zstd::zstd_safe::find_frame_compressed_size(data) == Ok(data.len())
-        && let Ok(out) = zstd::bulk::decompress(data, size)
+        && let Some(out) = direct_decompress(data, size)
     {
-        return Ok(Bytes::from(out));
+        return out.map(Bytes::from);
     }
     let decoder = zstd::stream::Decoder::with_buffer(ChunkedSlice {
         data,
@@ -79,6 +79,34 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
         return Err(CompressionError::TooLarge { limit: max_output });
     }
     Ok(Bytes::from(out))
+}
+
+// Keep the original small-frame path. Larger untrusted size hints reserve
+// fallibly; a reservation/decode failure returns to the capped stream.
+fn direct_decompress(data: &[u8], size: usize) -> Option<Result<Vec<u8>, CompressionError>> {
+    if size <= 128 * 1024 {
+        return zstd::bulk::decompress(data, size).ok().map(Ok);
+    }
+    let mut decoder = zstd::zstd_safe::DCtx::try_create()?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(size).ok()?;
+    match decoder.decompress(&mut output, data) {
+        Ok(_) => Some(Ok(output)),
+        Err(code) => {
+            let name = zstd::zstd_safe::get_error_name(code);
+            // Native bulk decode checks the actual content size before the checksum.
+            // A checksum failure on this complete frame cannot compete with
+            // TooLarge: its verified size fits the caller's cap. Other errors
+            // retry the stream, which owns their ordering and acceptance.
+            if name == "Restored data doesn't match checksum" {
+                Some(Err(CompressionError::InvalidData(format!(
+                    "zstd decode: {name}"
+                ))))
+            } else {
+                None
+            }
+        }
+    }
 }
 
 // Expose the same input boundaries as Decoder::new's staging buffer without
