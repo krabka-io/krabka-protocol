@@ -40,6 +40,31 @@ diff_test!(zstd_differential, "zstd", CompressionType::Zstd);
 
 #[test]
 #[ignore = "requires JVM oracle"]
+fn lz4_hc_levels_and_block_boundaries_differential() {
+    let mut oracle = oracle::shared();
+    for size in [0, 1, 12, 13, 65_536, 65_537, 65_548, 1_048_576] {
+        for random in [false, true] {
+            let mut state = 0xDEAD_BEEF_CAFE_BABE_u64;
+            let input: Vec<u8> = (0..size)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1);
+                    if random { state.to_be_bytes()[0] } else { 7 }
+                })
+                .collect();
+            for level in [1, 12, 17] {
+                let encoded =
+                    krabka_compression::compress_with_level(CompressionType::Lz4, &input, level)
+                        .unwrap();
+                assert2::assert!(oracle.decompress("lz4", &encoded) == input);
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires JVM oracle"]
 fn chunk_boundaries_differential() {
     let mut oracle = oracle::shared();
     for (name, codec) in [

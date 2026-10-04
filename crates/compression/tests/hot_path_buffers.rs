@@ -82,6 +82,106 @@ fn lz4_matches_streaming_encoder() {
 }
 
 #[test]
+fn lz4_reuse_preserves_independent_frames() {
+    let threads: Vec<_> = (0..2_u8)
+        .map(|seed| {
+            std::thread::spawn(move || {
+                for size in [65_536, 65_535, 65_534, 131_071, 12, 65_536, 1_048_576] {
+                    for random in [false, true] {
+                        let mut input = payload(size, random);
+                        for byte in &mut input {
+                            *byte ^= seed;
+                        }
+                        let mut reference = vec![0x04, 0x22, 0x4d, 0x18, 0x60, 0x40, 0x82];
+                        for block in input.chunks(65_536) {
+                            let mut compressed =
+                                vec![0; lz4rip::block::get_maximum_output_size(block.len())];
+                            let len = lz4rip::block::compress_into(block, &mut compressed).unwrap();
+                            if len < block.len() {
+                                reference
+                                    .extend_from_slice(&u32::try_from(len).unwrap().to_le_bytes());
+                                reference.extend_from_slice(&compressed[..len]);
+                            } else {
+                                let len = u32::try_from(block.len()).unwrap() | 0x8000_0000;
+                                reference.extend_from_slice(&len.to_le_bytes());
+                                reference.extend_from_slice(block);
+                            }
+                        }
+                        reference.extend_from_slice(&[0; 4]);
+                        let wire = compress(CompressionType::Lz4, &input).unwrap();
+                        assert!(wire.as_ref() == reference);
+                    }
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+}
+
+#[test]
+fn lz4_hc_matches_separate_block_buffers() {
+    const BLOCK: usize = 65_536;
+    for size in (0..=15).chain([
+        96,
+        1024,
+        BLOCK - 1,
+        BLOCK,
+        BLOCK + 1,
+        BLOCK + 12,
+        BLOCK + 13,
+        2 * BLOCK,
+        2 * BLOCK + 1,
+    ]) {
+        for input in [payload(size, false), payload(size, true), vec![7; size]] {
+            for level in 1..=17 {
+                if level == 9 {
+                    assert!(
+                        compress_with_level(CompressionType::Lz4, &input, level).unwrap()
+                            == compress(CompressionType::Lz4, &input).unwrap()
+                    );
+                    continue;
+                }
+                // Independently assemble the old frame with separate compressed
+                // block buffers, including blocks too short to shrink.
+                let mut reference = vec![0x04, 0x22, 0x4d, 0x18, 0x60, 0x40, 0x82];
+                for block in input.chunks(BLOCK) {
+                    let mut compressed = vec![0; lzzzz::lz4::max_compressed_size(block.len())];
+                    let len =
+                        lzzzz::lz4_hc::compress(block, &mut compressed, level.min(12)).unwrap();
+                    if len < block.len() {
+                        reference.extend_from_slice(&u32::try_from(len).unwrap().to_le_bytes());
+                        reference.extend_from_slice(&compressed[..len]);
+                    } else {
+                        let len = u32::try_from(block.len()).unwrap() | 0x8000_0000;
+                        reference.extend_from_slice(&len.to_le_bytes());
+                        reference.extend_from_slice(block);
+                    }
+                }
+                reference.extend_from_slice(&[0; 4]);
+                let wire = compress_with_level(CompressionType::Lz4, &input, level).unwrap();
+                assert!(wire.as_ref() == reference, "size={size}, level={level}");
+                let limit = ByteSize::from_bytes(u64::try_from(size).unwrap());
+                assert!(
+                    decompress(CompressionType::Lz4, &wire, limit)
+                        .unwrap()
+                        .as_ref()
+                        == input
+                );
+                if size != 0 {
+                    let too_small = ByteSize::from_bytes(u64::try_from(size - 1).unwrap());
+                    assert!(matches!(
+                        decompress(CompressionType::Lz4, &wire, too_small),
+                        Err(CompressionError::TooLarge { .. })
+                    ));
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn snappy_matches_separate_chunk_buffers() {
     for size in [0, 1, 32_767, 32_768, 32_769, 65_536, 1_048_576] {
         for random in [false, true] {
