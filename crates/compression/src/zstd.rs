@@ -1,6 +1,9 @@
 //! Zstd through the `zstd` crate, which wraps libzstd.
 
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    io::{self, BufRead, Read},
+};
 
 use bytes::Bytes;
 
@@ -61,8 +64,11 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
     {
         return Ok(Bytes::from(out));
     }
-    let decoder = zstd::stream::Decoder::new(data)
-        .map_err(|e| CompressionError::InvalidData(format!("zstd open: {e}")))?;
+    let decoder = zstd::stream::Decoder::with_buffer(ChunkedSlice {
+        data,
+        chunk_remaining: 0,
+    })
+    .map_err(|e| CompressionError::InvalidData(format!("zstd open: {e}")))?;
     // Read at most `max_output + 1` bytes so we can detect overflow without
     // materializing the oversized output.
     let mut limited = std::io::Read::take(decoder, (max_output as u64).saturating_add(1));
@@ -73,6 +79,38 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
         return Err(CompressionError::TooLarge { limit: max_output });
     }
     Ok(Bytes::from(out))
+}
+
+// Expose the same input boundaries as Decoder::new's staging buffer without
+// allocating or copying the slice. Boundaries affect checksum/cap error order.
+struct ChunkedSlice<'a> {
+    data: &'a [u8],
+    chunk_remaining: usize,
+}
+
+impl BufRead for ChunkedSlice<'_> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.chunk_remaining == 0 {
+            self.chunk_remaining = self.data.len().min(zstd::zstd_safe::DCtx::in_size());
+        }
+        Ok(&self.data[..self.chunk_remaining])
+    }
+
+    fn consume(&mut self, amount: usize) {
+        let amount = amount.min(self.chunk_remaining);
+        self.data = &self.data[amount..];
+        self.chunk_remaining -= amount;
+    }
+}
+
+impl Read for ChunkedSlice<'_> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let input = self.fill_buf()?;
+        let len = input.len().min(output.len());
+        output[..len].copy_from_slice(&input[..len]);
+        self.consume(len);
+        Ok(len)
+    }
 }
 
 #[cfg(test)]
