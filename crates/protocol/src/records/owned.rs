@@ -720,6 +720,29 @@ impl RecordBatch {
         self.encode_with_compression_level(buf, None)
     }
 
+    /// Encode this batch into an owned wire buffer.
+    ///
+    /// Uncompressed records are written directly behind the header, avoiding
+    /// a temporary body buffer and its copy into the output.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same encoding errors as [`Self::encode`].
+    pub fn encode_to_bytes(&self) -> Result<Bytes, RecordsError> {
+        let mut wire = BytesMut::with_capacity(self.encoded_len());
+        if self.attributes.compression() == krabka_compression::CompressionType::None {
+            wire.resize(HEADER_LEN, 0);
+            for record in &self.records {
+                record.encode(&mut wire)?;
+            }
+            let (mut header, body) = wire.split_at_mut(HEADER_LEN);
+            self.encode_header(&mut header, body)?;
+        } else {
+            self.encode(&mut wire)?;
+        }
+        Ok(wire.freeze())
+    }
+
     /// Encode this batch into `buf`, and compress the records at `level`.
     ///
     /// `None` uses the default level of the codec, as [`Self::encode`] does.
@@ -738,8 +761,6 @@ impl RecordBatch {
         buf: &mut B,
         level: Option<i32>,
     ) -> Result<(), RecordsError> {
-        const HEADER_TAIL_LEN: i32 = 49;
-
         // 1. Encode records into a temporary buffer.
         let mut raw_body =
             BytesMut::with_capacity(self.records.iter().map(Record::encoded_len).sum());
@@ -756,12 +777,20 @@ impl RecordBatch {
             None => krabka_compression::compress(codec, &raw_body)?,
         };
 
-        // 3. batch_length = HEADER_TAIL_LEN + body_len
+        self.encode_header(buf, &body)?;
+        buf.put_slice(&body);
+        Ok(())
+    }
+
+    fn encode_header<B: BufMut>(&self, buf: &mut B, body: &[u8]) -> Result<(), RecordsError> {
+        const HEADER_TAIL_LEN: i32 = 49;
+
+        // batch_length = HEADER_TAIL_LEN + body_len
         let batch_length = HEADER_TAIL_LEN
             + i32::try_from(body.len())
                 .map_err(|_| RecordsError::RecordParse("body length exceeds i32".into()))?;
 
-        // 4. Build the CRC-covered header portion (attributes through records_count = 40 bytes).
+        // CRC-covered header portion (attributes through records_count = 40 bytes).
         let mut covered_head = [0_u8; 40];
         let mut covered = covered_head.as_mut_slice();
         covered.put_i16(self.attributes.0);
@@ -775,18 +804,17 @@ impl RecordBatch {
             i32::try_from(self.records.len())
                 .map_err(|_| RecordsError::RecordParse("records_count exceeds i32".into()))?,
         );
-        // 5. Compute CRC over covered_head then body.
+        // Compute CRC over covered_head then body.
         let mut crc = crc32c(&covered_head);
-        crc = crc32c_append(crc, &body);
+        crc = crc32c_append(crc, body);
 
-        // 6. Emit the full header then body.
+        // Emit the full header.
         buf.put_i64(self.base_offset);
         buf.put_i32(batch_length);
         buf.put_i32(self.partition_leader_epoch);
         buf.put_i8(2); // magic v2
         buf.put_u32(crc);
         buf.put_slice(&covered_head);
-        buf.put_slice(&body);
         Ok(())
     }
 
