@@ -111,20 +111,39 @@ impl Record {
     }
 
     fn encode_body<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
-        buf.put_i8(self.attributes);
-        put_varlong(buf, self.timestamp_delta);
-        put_varint(buf, self.offset_delta);
+        // Metadata needs at most 21 bytes. Include short keys in the same write.
+        const SMALL_KEY_LEN: usize = 32;
+        const PREFIX_LEN: usize = 21 + SMALL_KEY_LEN;
+        let mut prefix = [0_u8; PREFIX_LEN];
+        let mut fields = prefix.as_mut_slice();
+        fields.put_i8(self.attributes);
+        put_varlong(&mut fields, self.timestamp_delta);
+        put_varint(&mut fields, self.offset_delta);
         match &self.key {
-            None => put_varint(buf, -1),
+            None => put_varint(&mut fields, -1),
             Some(k) => {
-                put_varint(
-                    buf,
-                    i32::try_from(k.len()).map_err(|_| {
-                        RecordsError::RecordParse("record key length overflow".into())
-                    })?,
-                );
-                buf.put_slice(k);
+                let Ok(len) = i32::try_from(k.len()) else {
+                    // Preserve the fields already written before an invalid key.
+                    let used = PREFIX_LEN - fields.len();
+                    buf.put_slice(&prefix[..used]);
+                    return Err(RecordsError::RecordParse(
+                        "record key length overflow".into(),
+                    ));
+                };
+                put_varint(&mut fields, len);
             }
+        }
+        if let Some(key) = &self.key
+            && key.len() <= SMALL_KEY_LEN
+        {
+            fields.put_slice(key);
+        }
+        let used = PREFIX_LEN - fields.len();
+        buf.put_slice(&prefix[..used]);
+        if let Some(key) = &self.key
+            && key.len() > SMALL_KEY_LEN
+        {
+            buf.put_slice(key);
         }
         match &self.value {
             None => put_varint(buf, -1),
@@ -367,6 +386,71 @@ mod record_tests {
             key: Some(Bytes::from(vec![b'k'; 128])),
             value: Some(Bytes::from(vec![b'v'; 4096])),
             headers: vec![],
+        }
+    }
+
+    #[test]
+    fn record_prefix_golden_bytes_across_destination_splits() {
+        let mut cases = vec![
+            (Record::default(), vec![0x0c, 0, 0, 0, 1, 1, 0]),
+            (
+                Record {
+                    attributes: i8::MIN,
+                    timestamp_delta: i64::MIN,
+                    offset_delta: i32::MIN,
+                    key: Some(Bytes::from_static(b"k")),
+                    value: Some(Bytes::from_static(b"v")),
+                    headers: vec![],
+                },
+                vec![
+                    0x2a, 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0xff,
+                    0xff, 0xff, 0xff, 0x0f, 0x02, b'k', 0x02, b'v', 0,
+                ],
+            ),
+            (
+                Record {
+                    offset_delta: 129,
+                    key: Some(Bytes::from_static(b"k")),
+                    value: Some(Bytes::from_static(b"v")),
+                    ..Default::default()
+                },
+                vec![0x12, 0, 0, 0x82, 0x02, 0x02, b'k', 0x02, b'v', 0],
+            ),
+        ];
+        // Null and empty keys differ; 32/33 cover the short-key boundary,
+        // and 63/64 cross a zigzag length-prefix boundary.
+        for (len, length_prefix, key_prefix) in [
+            (0, vec![12], vec![0]),
+            (32, vec![76], vec![64]),
+            (33, vec![78], vec![66]),
+            (63, vec![138, 1], vec![126]),
+            (64, vec![142, 1], vec![128, 1]),
+        ] {
+            let mut expected = length_prefix;
+            expected.extend_from_slice(&[0, 0, 0]);
+            expected.extend(key_prefix);
+            expected.extend(std::iter::repeat_n(b'k', len));
+            expected.extend_from_slice(&[1, 0]);
+            cases.push((
+                Record {
+                    key: Some(Bytes::from(vec![b'k'; len])),
+                    ..Default::default()
+                },
+                expected,
+            ));
+        }
+        for (record, expected) in cases {
+            for split in 0..=expected.len() {
+                let mut encoded = vec![0xcd; expected.len()];
+                let (first, second) = encoded.split_at_mut(split);
+                let mut destination = first.chain_mut(second);
+                record.encode(&mut destination).unwrap();
+                assert2::assert!(destination.remaining_mut() == 0);
+                assert2::assert!(encoded == expected);
+                let mut cursor = encoded.as_slice();
+                assert2::assert!(Record::decode(&mut cursor).unwrap() == record);
+                assert2::assert!(cursor.is_empty());
+            }
         }
     }
 
