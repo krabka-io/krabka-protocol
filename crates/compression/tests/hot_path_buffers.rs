@@ -58,35 +58,45 @@ fn block_boundaries_and_output_limits() {
     }
 }
 
-/// Preserve the original streaming decoder's complete result and error text,
-/// including cases where an untrusted trailer changes buffer/read boundaries.
-#[test]
-fn gzip_capacity_hint_preserves_streaming_results_and_errors() {
+fn streaming_gzip_reference(wire: &[u8], limit: usize) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
-
-    fn reference(wire: &[u8], limit: usize) -> Result<Vec<u8>, String> {
-        if wire.is_empty() {
-            return Err("invalid compressed data: empty gzip payload".into());
-        }
-        let mut reader = flate2::read::GzDecoder::new(wire)
-            .take(u64::try_from(limit).unwrap().saturating_add(1));
-        let mut output = Vec::with_capacity(wire.len().saturating_mul(2).min(limit));
-        reader
-            .read_to_end(&mut output)
-            .map_err(|error| format!("invalid compressed data: gzip decode: {error}"))?;
-        if output.len() > limit {
-            return Err(format!(
-                "decompressed output exceeds limit of {limit} bytes"
-            ));
-        }
-        Ok(output)
+    if wire.is_empty() {
+        return Err("invalid compressed data: empty gzip payload".into());
     }
+    let mut reader =
+        flate2::read::GzDecoder::new(wire).take(u64::try_from(limit).unwrap().saturating_add(1));
+    let mut output = Vec::with_capacity(wire.len().saturating_mul(2).min(limit));
+    reader
+        .read_to_end(&mut output)
+        .map_err(|error| format!("invalid compressed data: gzip decode: {error}"))?;
+    if output.len() > limit {
+        return Err(format!(
+            "decompressed output exceeds limit of {limit} bytes"
+        ));
+    }
+    Ok(output)
+}
 
+/// Preserve the original streaming decoder's complete result and error text,
+/// including different compressed-input boundaries and untrusted trailers.
+#[test]
+fn gzip_decoder_preserves_streaming_results_and_errors() {
     let other = compress(CompressionType::Gzip, b"another member").unwrap();
     for size in [0, 1, 1024, 32_768, 65_536, 131_072, 131_073, 1_048_576] {
         for random in [false, true] {
             let wire = compress(CompressionType::Gzip, &payload(size, random)).unwrap();
             let mut variants = vec![wire.to_vec(), Vec::new()];
+            for index in 0..wire.len().min(20) {
+                let mut changed = wire.to_vec();
+                changed[index] ^= 1;
+                variants.push(changed);
+            }
+            if size == 0 {
+                // MTIME, XFL and OS may vary in the canonical empty frame.
+                let mut changed = wire.to_vec();
+                changed[4..10].fill(0xff);
+                variants.push(changed);
+            }
             let mut optional = wire.to_vec();
             optional[3] = 0x18;
             optional.splice(10..10, b"filename\0comment\0".iter().copied());
@@ -94,7 +104,25 @@ fn gzip_capacity_hint_preserves_streaming_results_and_errors() {
             for length in [1, 9, 10, wire.len() / 2, wire.len() - 1] {
                 variants.push(wire[..length.min(wire.len())].to_vec());
             }
-            for index in [0, 2, 10, wire.len() / 2, wire.len() - 8] {
+            for index in [
+                0,
+                2,
+                10,
+                wire.len() / 2,
+                wire.len() - 8,
+                16_383,
+                16_384,
+                16_385,
+                32_767,
+                32_768,
+                32_769,
+                65_535,
+                65_536,
+                65_537,
+            ]
+            .into_iter()
+            .filter(|&index| index < wire.len())
+            {
                 let mut corrupt = wire.to_vec();
                 corrupt[index] ^= 0xFF;
                 variants.push(corrupt);
@@ -111,10 +139,25 @@ fn gzip_capacity_hint_preserves_streaming_results_and_errors() {
             let mut trailing = wire.to_vec();
             trailing.extend_from_slice(&[0; 32]);
             variants.push(trailing);
-            let mut limits = vec![0, size.saturating_sub(1), size, size + 1, 2 * 1024 * 1024];
+            let mut limits = vec![
+                0,
+                1,
+                size.saturating_sub(1),
+                size,
+                size + 1,
+                32_767,
+                32_768,
+                32_769,
+                65_535,
+                65_536,
+                65_537,
+                2 * 1024 * 1024,
+            ];
             if let Ok(limit) = usize::try_from(u64::from(u32::MAX) + 1) {
                 limits.push(limit);
             }
+            limits.sort_unstable();
+            limits.dedup();
             for variant in variants {
                 for &limit in &limits {
                     let actual = decompress(
@@ -125,7 +168,7 @@ fn gzip_capacity_hint_preserves_streaming_results_and_errors() {
                     .map(|bytes| bytes.to_vec())
                     .map_err(|error| error.to_string());
                     assert!(
-                        actual == reference(&variant, limit),
+                        actual == streaming_gzip_reference(&variant, limit),
                         "size={size} random={random} limit={limit}"
                     );
                 }
