@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-10-06
+
+- First release on crates.io under the `krabka-*` name. Earlier versions were
+  published as `crabka-*`, which are now retired.
+
+
 ### Added
 
 - Hybrid logical clock stamps carried on the `krabka.hlc` Kafka record header, with a 16-byte fixed-width big-endian layout.
