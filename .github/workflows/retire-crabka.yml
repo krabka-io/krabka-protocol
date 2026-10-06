@@ -1,0 +1,242 @@
+name: retire-crabka
+
+# Retire the 45 `crabka-*` crates on crates.io. Krabka was called Crabka, and
+# robot-head published these names from robot-head/crabka. The crates now live
+# under `krabka-*` names in the krabka-io repositories.
+#
+# For each crate in the table below, this workflow:
+#
+# 1. publishes one tombstone release, the next patch after the highest
+#    version. It has no code. Its description, README and crate docs give the
+#    new name.
+# 2. yanks every other version, so a new `cargo add crabka-x` or a fresh
+#    resolve gets only the tombstone. Lockfiles that already name a yanked
+#    version keep building.
+#
+# A run is idempotent, so a rerun continues where a failed or timed-out run
+# stopped. A tombstone is a version whose description starts with "Renamed:".
+# A crate that has one gets no second tombstone, and a yanked version is not
+# yanked again.
+#
+# Run it once, after the first publish of every `krabka-*` crate that a row
+# points at. docs/releasing.md has the procedure.
+#
+# crates.io lets an account publish a burst of new versions of existing
+# crates, then one a minute, and it limits yanks too. This run sleeps between
+# uploads and waits on a 429 answer. The full run takes hours: about 290
+# versions get yanked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Package each tombstone and list each yank, but change nothing on crates.io
+        type: boolean
+        default: true
+      yank:
+        description: Yank every version except the tombstone
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retire-crabka
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    name: retire the crabka crates
+    runs-on: ubuntu-latest
+    # The GitHub-hosted limit. A run that hits it is safe to start again.
+    timeout-minutes: 360
+    # Holds CRABKA_CRATES_IO_TOKEN, a crates.io token of robot-head, the owner
+    # of every crabka name, with the publish-update and yank scopes.
+    environment: crabka-retirement
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+      YANK: ${{ inputs.yank }}
+      # crates.io refuses an API request without a User-Agent that names the
+      # caller, and its crawler policy allows one request a second.
+      USER_AGENT: krabka-retire-crabka (https://github.com/krabka-io/krabka-protocol)
+      # One row a crate: the old name, the new crate name or `-` when no crate
+      # replaces it on crates.io, and the repository that holds its successor.
+      CRATES: |
+        crabka-protocol             krabka-protocol             https://github.com/krabka-io/krabka-protocol
+        crabka-compression          krabka-compression          https://github.com/krabka-io/krabka-protocol
+        crabka-ids                  krabka-ids                  https://github.com/krabka-io/krabka-protocol
+        crabka-units                krabka-units                https://github.com/krabka-io/krabka-protocol
+        crabka-security             krabka-security             https://github.com/krabka-io/krabka-protocol
+        crabka-metadata             krabka-metadata             https://github.com/krabka-io/krabka-protocol
+        crabka-voters               krabka-voters               https://github.com/krabka-io/krabka-protocol
+        crabka-trace-context        krabka-trace-context        https://github.com/krabka-io/krabka-protocol
+        crabka-client-core          krabka-client-core          https://github.com/krabka-io/krabka-client-rs
+        crabka-client-producer      krabka-client-producer      https://github.com/krabka-io/krabka-client-rs
+        crabka-client-consumer      krabka-client-consumer      https://github.com/krabka-io/krabka-client-rs
+        crabka-client-admin         krabka-client-admin         https://github.com/krabka-io/krabka-client-rs
+        crabka-schema-serde         krabka-schema-serde         https://github.com/krabka-io/krabka-schema-registry
+        crabka-log                  krabka-log                  https://github.com/krabka-io/krabka-broker
+        crabka-verified             krabka-verified             https://github.com/krabka-io/krabka-broker
+        crabka-broker               -                           https://github.com/krabka-io/krabka-broker
+        crabka-audit                -                           https://github.com/krabka-io/krabka-broker
+        crabka-authz                -                           https://github.com/krabka-io/krabka-broker
+        crabka-raft                 -                           https://github.com/krabka-io/krabka-broker
+        crabka-kraft-core           -                           https://github.com/krabka-io/krabka-broker
+        crabka-records-legacy       -                           https://github.com/krabka-io/krabka-broker
+        crabka-remote-storage       -                           https://github.com/krabka-io/krabka-broker
+        crabka-remote-storage-topic -                           https://github.com/krabka-io/krabka-broker
+        crabka-telemetry            -                           https://github.com/krabka-io/krabka-broker
+        crabka-throttle             -                           https://github.com/krabka-io/krabka-broker
+        crabka-logfmt               -                           https://github.com/krabka-io/krabka-broker
+        crabka-bench-driver         -                           https://github.com/krabka-io/krabka-broker
+        crabka-cli                  -                           https://github.com/krabka-io/krabka-cli
+        crabka-operator             -                           https://github.com/krabka-io/krabka-operator
+        crabka-rebalancer           -                           https://github.com/krabka-io/krabka-rebalancer
+        crabka-schema-registry      -                           https://github.com/krabka-io/krabka-schema-registry
+        crabka-grpc-gateway         -                           https://github.com/krabka-io/krabka-gateway
+        crabka-playground           -                           https://github.com/krabka-io/krabka-io.github.io
+        crabka-client-streams       -                           https://github.com/krabka-io/krabka-streams-rs
+        crabka-connect              -                           https://github.com/krabka-io/krabka-connect
+        crabka-connect-derive       -                           https://github.com/krabka-io/krabka-connect
+        crabka-connect-postgres     -                           https://github.com/krabka-io/krabka-connect
+        crabka-replicator           -                           https://github.com/krabka-io/krabka-connect
+        crabka-pgcatalog            -                           https://github.com/krabka-io/gres
+        crabka-pgexec               -                           https://github.com/krabka-io/gres
+        crabka-pgkv                 -                           https://github.com/krabka-io/gres
+        crabka-pgmvcc               -                           https://github.com/krabka-io/gres
+        crabka-pgparser             -                           https://github.com/krabka-io/gres
+        crabka-pgtypes              -                           https://github.com/krabka-io/gres
+        crabka-pgwire               -                           https://github.com/krabka-io/gres
+    steps:
+      # The table must name every crate that robot-head owns, and nothing else.
+      # A crate that the table misses would stay live under the old name.
+      - name: the table names every crabka crate
+        run: |
+          owned="$(curl -sSf -A "${USER_AGENT}" \
+            'https://crates.io/api/v1/crates?user_id=415441&per_page=100' |
+            jq -r '.crates[].name | select(startswith("crabka-"))' | sort)"
+          listed="$(awk 'NF { print $1 }' <<<"${CRATES}" | sort)"
+          if [ "${owned}" != "${listed}" ]; then
+            echo 'The table and the crabka crates on crates.io differ:' >&2
+            diff <(echo "${listed}") <(echo "${owned}") >&2 || true
+            exit 1
+          fi
+          echo "The table names all $(wc -l <<<"${listed}") crabka crates."
+
+      - name: check the token
+        if: inputs.dry_run == false
+        env:
+          CRABKA_CRATES_IO_TOKEN: ${{ secrets.CRABKA_CRATES_IO_TOKEN }}
+        run: |
+          if [ -z "${CRABKA_CRATES_IO_TOKEN}" ]; then
+            echo 'Set CRABKA_CRATES_IO_TOKEN in the crabka-retirement environment first.' >&2
+            exit 1
+          fi
+
+      - name: publish tombstones and yank
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRABKA_CRATES_IO_TOKEN }}
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/tombstones"
+          mkdir -p "${work}"
+
+          # Runs a cargo command. On a 429 answer it waits and tries again.
+          cargo_retry() {
+            local attempt
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if "$@" </dev/null 2>&1 | tee "${work}/cargo.log"; then
+                return 0
+              fi
+              if ! grep -q '429' "${work}/cargo.log"; then
+                return 1
+              fi
+              echo "crates.io rate-limited the request (attempt ${attempt}); waiting two minutes"
+              sleep 120
+            done
+            return 1
+          }
+
+          # The loops read their lists on fd 3, so no command inside reads them.
+          while read -r old new repo <&3; do
+            [ -n "${old}" ] || continue
+            echo "::group::${old}"
+
+            sleep 1
+            curl -sSf -A "${USER_AGENT}" "https://crates.io/api/v1/crates/${old}" </dev/null >"${work}/crate.json"
+
+            tombstone="$(jq -r '[.versions[]
+              | select(.yanked | not)
+              | select(.description // "" | startswith("Renamed:"))
+              | .num][0] // empty' "${work}/crate.json")"
+
+            if [ -n "${tombstone}" ]; then
+              echo "${old} ${tombstone} is the tombstone already"
+            else
+              highest="$(jq -r '.versions[].num' "${work}/crate.json" | sort -V | tail -1)"
+              IFS=. read -r major minor patch <<<"${highest%%[-+]*}"
+              tombstone="${major}.${minor}.$((patch + 1))"
+              echo "${old}: highest version ${highest}, tombstone ${tombstone}"
+
+              if [ "${new}" = - ]; then
+                description="Renamed: this crate is retired; its successor is in ${repo}"
+                successor="Its successor lives in [${repo#https://github.com/}](${repo}), under the \`krabka\` name. No crate on crates.io replaces it."
+              else
+                description="Renamed: use ${new} instead"
+                successor="Use [\`${new}\`](https://crates.io/crates/${new}) instead. Its source is in [${repo#https://github.com/}](${repo})."
+              fi
+
+              dir="${work}/${old}"
+              mkdir -p "${dir}/src"
+              cat >"${dir}/Cargo.toml" <<EOF
+          [package]
+          name = "${old}"
+          version = "${tombstone}"
+          edition = "2021"
+          description = "${description}"
+          license = "Apache-2.0"
+          repository = "${repo}"
+          readme = "README.md"
+          keywords = ["krabka", "renamed", "deprecated"]
+
+          [workspace]
+          EOF
+              cat >"${dir}/README.md" <<EOF
+          # ${old}
+
+          \`${old}\` was renamed. The project that published it, Crabka, is now
+          [Krabka](https://github.com/krabka-io).
+
+          ${successor}
+
+          This release contains no code. Every earlier version of \`${old}\` is
+          yanked. A lockfile that names one of them still builds, but a new
+          dependency on \`${old}\` cannot resolve to one.
+          EOF
+              printf '%s\n' '#![doc = include_str!("../README.md")]' '#![no_std]' >"${dir}/src/lib.rs"
+
+              if [ "${DRY_RUN}" = true ]; then
+                (cd "${dir}" && cargo publish --dry-run --allow-dirty </dev/null)
+              else
+                (cd "${dir}" && cargo_retry cargo publish --allow-dirty)
+                # Keep below one new version a minute once the burst is spent.
+                sleep 65
+              fi
+            fi
+
+            if [ "${YANK}" = true ]; then
+              jq -r --arg keep "${tombstone}" \
+                '.versions[] | select(.yanked | not) | select(.num != $keep) | .num' \
+                "${work}/crate.json" | sort -V >"${work}/yank.txt"
+              while read -r version <&3; do
+                if [ "${DRY_RUN}" = true ]; then
+                  echo "would yank ${old} ${version}"
+                else
+                  cargo_retry cargo yank --version "${version}" "${old}"
+                  sleep 2
+                fi
+              done 3<"${work}/yank.txt"
+            fi
+            echo '::endgroup::'
+          done 3<<<"${CRATES}"

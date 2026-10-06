@@ -163,3 +163,41 @@ which a fresh resolve picks. So `cargo publish --dry-run` fails for
 `krabka-security`, and for `krabka-metadata`, which depends on it. The `plan`
 job then stops before any upload. Until crates.io has an `sspi` release that
 builds, publish the other crates with the `crates` input.
+
+## Retire the crabka crates
+
+Krabka was called Crabka. The robot-head account published 45 `crabka-*`
+crates from `robot-head/crabka`. They are retired once, by
+[`retire-crabka.yml`](../.github/workflows/retire-crabka.yml). For each crate,
+the workflow:
+
+1. publishes a tombstone release, the next patch after the highest version.
+   The tombstone has no code. Its description, README and crate docs name the
+   new crate, or the repository of the successor.
+2. yanks every other version.
+
+The table in the workflow maps each `crabka-*` crate to its successor. The
+first step compares the table with the crates that robot-head owns on
+crates.io, and stops when they differ.
+
+Run the retirement only after the first publish of every `krabka-*` crate that
+the table names, in all four repositories. A tombstone links to its `krabka-*`
+crate, and that link must work.
+
+1. Sign in to crates.io as robot-head. Create a token with the
+   `publish-update` and `yank` scopes, limited to the crate pattern `crabka-*`.
+2. In this repository, create the environment `crabka-retirement` and add the
+   token to it as the secret `CRABKA_CRATES_IO_TOKEN`.
+3. Start `retire-crabka.yml` with `dry_run` on. Read the log. It shows each
+   tombstone version and each version it would yank.
+4. Start it again with `dry_run` off.
+5. Delete the secret and the environment, and revoke the token.
+
+The run is idempotent. It finds an existing tombstone by its description,
+which starts with "Renamed:", and it does not yank a version twice. crates.io
+rate-limits new versions and yanks, so the run sleeps between uploads and
+waits on a `429` answer. About 290 versions get yanked, so the run takes
+hours. If it reaches the six-hour job limit, start it again.
+
+The `yank` input is on by default. Turn it off to publish only the
+tombstones.
