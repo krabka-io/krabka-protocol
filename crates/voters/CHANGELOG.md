@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.1] — 2026-10-06
 
 - First release on crates.io under the `krabka-*` name. Earlier versions were
-  published as `crabka-*`, which are now retired.
+  published as `crabka-*`; those names are being retired.
 
 ## [0.3.8] — 2026-06-23
 
