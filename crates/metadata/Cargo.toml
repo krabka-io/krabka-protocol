@@ -6,12 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Versioned metadata record types + immutable image for Krabka"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-metadata"
 readme = "README.md"
 keywords = ["kafka", "metadata", "kraft", "krabka"]
 categories = ["data-structures", "encoding"]
+# Ship the library source only. The tests, fixtures and benches stay in the
+# repository.
+include = ["src/**/*", "/Cargo.toml", "/README.md", "/CHANGELOG.md"]
 
 [lints]
 workspace = true

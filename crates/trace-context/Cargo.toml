@@ -6,12 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "W3C Trace Context propagation helpers shared by Krabka's wire-protocol crates"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-trace-context"
 readme = "README.md"
 keywords = ["tracing", "opentelemetry", "w3c", "sqlcommenter", "krabka"]
 categories = ["development-tools::debugging"]
+# Ship the library source only. The tests, fixtures and benches stay in the
+# repository.
+include = ["src/**/*", "/Cargo.toml", "/README.md", "/CHANGELOG.md"]
 
 [lints]
 workspace = true
@@ -25,7 +27,10 @@ tracing-opentelemetry = { workspace = true }
 
 [dev-dependencies]
 assert2 = { workspace = true }
-krabka-pgparser = { version = "0.4.2", git = "https://github.com/krabka-io/gres", rev = "d9827c521665d746e39fdf3334ae214502f24f71" }
+# No `version`: krabka-pgparser is not on crates.io, and `cargo publish` drops a
+# dev-dependency without one from the published manifest. With a version,
+# crates.io would refuse the upload.
+krabka-pgparser = { git = "https://github.com/krabka-io/gres", rev = "d9827c521665d746e39fdf3334ae214502f24f71" }
 opentelemetry_sdk = { workspace = true, features = ["trace", "testing"] }
 serde_json = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -2,11 +2,11 @@
 
 [![Crates.io](https://img.shields.io/crates/v/krabka-metadata.svg)](https://crates.io/crates/krabka-metadata)
 [![Docs.rs](https://docs.rs/krabka-metadata/badge.svg)](https://docs.rs/krabka-metadata)
-[![CI](https://github.com/robot-head/crabka/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-head/crabka/actions/workflows/ci.yml)
+[![CI](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml)
 
 Versioned metadata record types + immutable image for Krabka.
 
-This crate is part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation of Kafka-compatible infrastructure and clients.
+This crate is part of [Krabka](https://github.com/krabka-io/krabka-protocol), a Rust implementation of Kafka-compatible infrastructure and clients.
 
 ## Install
 

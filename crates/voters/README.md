@@ -1,6 +1,6 @@
 # krabka-voters
 
-KIP-853 voter-set value types for [Krabka](https://github.com/robot-head/crabka).
+KIP-853 voter-set value types for [Krabka](https://github.com/krabka-io/krabka-protocol).
 A voter is `(id, directory-id, endpoints, kraft.version range)`.
 
 This is a pure value-type leaf crate with no IO, no async, and no crypto, so it
