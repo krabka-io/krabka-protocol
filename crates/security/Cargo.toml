@@ -6,12 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "TLS, SASL, SCRAM, OAuth, and Kerberos security utilities for Krabka"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-security"
 readme = "README.md"
 keywords = ["kafka", "tls", "sasl", "scram", "krabka"]
 categories = ["authentication", "cryptography", "network-programming"]
+# Ship the library source only. The tests, fixtures and benches stay in the
+# repository.
+include = ["src/**/*", "/Cargo.toml", "/README.md", "/CHANGELOG.md"]
 
 [lints]
 workspace = true

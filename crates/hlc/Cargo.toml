@@ -6,12 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Hybrid logical clock stamps that ride on Kafka record headers, with a clock-skew observation seam"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-hlc"
 readme = "README.md"
 keywords = ["kafka", "hlc", "clock", "causality", "krabka"]
 categories = ["date-and-time", "data-structures"]
+# Ship the library source only. The tests, fixtures and benches stay in the
+# repository.
+include = ["src/**/*", "/Cargo.toml", "/README.md", "/CHANGELOG.md"]
 
 [lints]
 workspace = true

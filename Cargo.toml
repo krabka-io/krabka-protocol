@@ -10,6 +10,7 @@ edition = "2024"
 license = "Apache-2.0"
 authors = ["The Krabka Authors"]
 rust-version = "1.98.1"
+repository = "https://github.com/krabka-io/krabka-protocol"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -99,6 +100,10 @@ snap = "1"
 # SSPI 0.23.0 plus MIT Kerberos interoperability and the upstream PR #764 fix.
 # SASL/GSSAPI (Kerberos). `network_client` lets the initiator reach the KDC;
 # `ring` keeps crypto provider choice aligned with rustls/rcgen in this workspace.
+# `cargo publish` keeps only the `version` of a git dependency, so the published
+# krabka-security depends on sspi 0.23.0 from crates.io, without the fork's
+# MIT Kerberos fixes. A consumer that needs them patches sspi to this revision.
+# docs/releasing.md says what this means for a publish.
 sspi = { version = "0.23.0", git = "https://github.com/robot-head/sspi-rs", rev = "df53e86c0ee635348ae61ee84ad930ae790d08f1", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree

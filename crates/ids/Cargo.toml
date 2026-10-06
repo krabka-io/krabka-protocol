@@ -6,12 +6,14 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 description = "Canonical newtypes for Krabka's cross-crate Kafka identifiers (offset, partition index, …)"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-ids"
 readme = "README.md"
 keywords = ["kafka", "offset", "partition", "newtype", "krabka"]
 categories = ["data-structures"]
+# Ship the library source only. The tests, fixtures and benches stay in the
+# repository.
+include = ["src/**/*", "/Cargo.toml", "/README.md", "/CHANGELOG.md"]
 
 [lints]
 workspace = true
