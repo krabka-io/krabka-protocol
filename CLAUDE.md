@@ -2,18 +2,60 @@
 
 ## Compatibility
 
-**krabka is greenfield and undeployed.** There are no production users, no
-persisted state to migrate, and no clients pinned to a specific build. Do not
-write backwards-compatibility shims:
+**From krabka-broker 1.0.0 on, krabka is backwards compatible on disk.** Any
+1.x broker reads every artifact that an earlier 1.x broker wrote, and a rolling
+upgrade from 1.x to 1.y works. Data written before 1.0.0 gets no promise.
+krabka-broker's
+[`docs/persisted_formats.md`](https://github.com/krabka-io/krabka-broker/blob/main/docs/persisted_formats.md)
+lists every persisted format, states the contract, and records the known gaps.
 
-- No `#[serde(default)]` on metadata fields "to keep old raft logs readable"
-- No `V2` enum variants that stay alongside `V1` to support replay
-- No feature flags that gate new behavior behind a default-off switch
-- No migration code or one-shot upgraders for on-disk format changes
+In this repository the contract covers the code that defines bytes a broker
+persists, or sends to a node of another version during a rolling upgrade:
+
+- `krabka-metadata`: `MetadataRecord` and every type it contains, the
+  `NoOpRecord` private tags, and the KIP-631 translation in `kraft_translate.rs`
+- `krabka-protocol`: the record-batch, control-record, metadata-envelope and
+  checkpoint codecs under `crates/protocol/src/records/`
+- every type in `krabka-ids`, `krabka-voters` and `krabka-security` that a
+  `MetadataRecord` contains
+
+For all of them:
+
+- Never reorder or remove a `MetadataRecord` variant, and never insert one
+  before an existing variant. Add a new variant at the end only. wincode
+  encodes a variant by its index.
+- Never change the fields of a type that a persisted `MetadataRecord` contains.
+  wincode is positional and carries no field names, so `#[serde(default)]` does
+  not help it. To change a record's shape, add a new variant at the end (for
+  example `V2Topic`) and keep the old variant readable.
+- Never reuse a `NoOpRecord` private tag. 1001 and 1003 to 1006 are assigned,
+  and 1002 is burned. A new private record takes a new tag.
+- Give a new or changed format a version marker, and a reader for every earlier
+  1.x version of it.
+- Gate new writer behavior on a feature level, so a broker keeps writing the old
+  format until the operator finalizes the level that introduces the new one, as
+  in Kafka's KIP-584 and KIP-778. Never add a `metadata.version` level that
+  Kafka's `MetadataVersion` does not have.
+- Add a golden-bytes fixture test for each persisted format you add or change.
+  The test decodes bytes that an earlier release wrote and compares the decoded
+  value. It does not compare source text.
+- Where they keep 1.x data readable, `#[serde(default)]` on a JSON field, a kept
+  `V1` variant beside its `V2`, and a reader for an older version are required,
+  not forbidden.
+
+During development, deleting local raft logs and data directories is still fine
+for a format that no release has shipped.
+
+Everything else that Kafka compatibility does not govern keeps the greenfield
+rule: in-memory types, internal APIs, and the Rust API. For those, do not write
+backwards-compatibility shims:
+
+- No feature flags that gate new non-persisted behavior behind a default-off
+  switch
 - No deprecated-but-kept API surfaces
 
-When a schema, enum, wire format, or interface changes, change it. Delete local
-raft logs and data directories during development if necessary.
+When a non-persisted schema, enum, or interface changes, change it. The Rust API
+is not under a stability promise.
 
 **Kafka compatibility is the constraint that matters.** Always keep:
 
