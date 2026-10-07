@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking.** `decode_value_header` accepts only KIP-631 frame version 1,
+  `FRAME_VERSION`, as Kafka's `MetadataRecordSerde` does. Any other value is
+  `EnvelopeError::UnknownFrameVersion`, and `decode_value` reports it as a
+  schema mismatch with Kafka's message. `ValueHeader` no longer carries
+  `frame_version`, and `EnvelopeError` is now `Clone`, `Copy` and `Eq`.
+
 ## [0.5.1] — 2026-10-06
 
 - First release on crates.io under the `krabka-*` name. Earlier versions were

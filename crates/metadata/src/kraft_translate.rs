@@ -82,7 +82,7 @@ use krabka_protocol::{
     tagged_fields::{UnknownTaggedField, UnknownTaggedFields},
 };
 use krabka_security::{KafkaPrincipal, ListenerProtocol, SaslMechanism};
-use wincode::{Deserialize as _, Serialize as _};
+use wincode::{SchemaRead, Serialize as _, config::DefaultConfig};
 
 use crate::{
     MetadataImage,
@@ -117,6 +117,30 @@ pub enum TranslateError {
     /// remove in log order, so this means a corrupt or out-of-order log.
     #[error("unknown ACL id {0} on decode")]
     UnknownAclId(uuid::Uuid),
+    /// A `NoOpRecord` carries one tagged field at a tag in the krabka-private
+    /// range (1001 and up) that this build does not assign. 1002 is one: it
+    /// is burned and no build writes it.
+    #[error("unknown krabka-private NoOpRecord tag {0}")]
+    UnknownPrivateTag(u32),
+    /// The body of a krabka-private `NoOpRecord` tag starts with a version
+    /// other than [`PRIVATE_RECORD_VERSION`]. A newer broker wrote it, or the
+    /// metadata log predates krabka 1.0, whose bodies carry no version.
+    #[error(
+        "krabka-private NoOpRecord tag {tag} has record version {version}, and this build reads \
+         only version {PRIVATE_RECORD_VERSION}; a record without a version predates krabka 1.0, \
+         and its node must be reformatted"
+    )]
+    UnknownPrivateRecordVersion { tag: u32, version: i16 },
+    /// A krabka-private `NoOpRecord` tag carries a record that the tag table
+    /// assigns to another tag (`expected_tag`), or to no tag (`None`).
+    #[error(
+        "krabka-private NoOpRecord tag {tag} carries a record that belongs to tag {expected_tag:?}"
+    )]
+    PrivateTagMismatch { tag: u32, expected_tag: Option<u32> },
+    /// The body of a krabka-private `NoOpRecord` tag holds `trailing` bytes
+    /// after its record. A re-encode would drop them, so the body is refused.
+    #[error("krabka-private NoOpRecord tag {tag} has {trailing} bytes after its record")]
+    TrailingPrivateRecordBytes { tag: u32, trailing: usize },
 }
 
 // ----- uuid bridging -----
@@ -778,12 +802,6 @@ fn to_kraft_iter(
         MetadataRecord::V1ClientMetricsConfig(config) => {
             client_metrics_config_to_kraft(config, image)
         }
-        // Snapshot-only state pin. Kafka derives this epoch from FeatureLevel
-        // record offsets, but a materialized snapshot no longer contains those
-        // offsets. Preserve the already-derived value in a private carrier.
-        MetadataRecord::V1FeaturesEpoch(_) => {
-            vec![private_carrier(rec, PRIVATE_FEATURES_EPOCH_TAG)?]
-        }
         // KIP-858 directory-assignment delta. Kafka's standard
         // PartitionChangeRecord carries the complete directories vector while
         // leaving every unrelated partition field unset.
@@ -791,9 +809,6 @@ fn to_kraft_iter(
             vec![KraftMetadataRecord::PartitionChange(
                 partition_dir_assignment_to_kraft(r, image)?,
             )]
-        }
-        MetadataRecord::V1PartitionOffsetAdvance(_) => {
-            vec![private_carrier(rec, PRIVATE_PARTITION_OFFSET_ADVANCE_TAG)?]
         }
         MetadataRecord::V1PartitionElr(r) => vec![KraftMetadataRecord::PartitionChange(
             partition_state_to_kraft(
@@ -811,22 +826,21 @@ fn to_kraft_iter(
         MetadataRecord::V1PartitionUpdate(r) => vec![KraftMetadataRecord::PartitionChange(
             partition_update_to_kraft(r, image)?,
         )],
-        // KFC-9 freeze registry and break-glass proposals. KIP-631 has no
-        // counterpart for either, and `NoCounterpart` is not an option: the
-        // controller submits all three through `submit_change`, which encodes
-        // every record it appends. So they ride the private carrier.
-        MetadataRecord::V1TopicFreeze(_) => {
-            vec![private_carrier(rec, PRIVATE_TOPIC_FREEZE_TAG)?]
-        }
-        MetadataRecord::V1BreakGlassProposal(_) => {
-            vec![private_carrier(rec, PRIVATE_BREAK_GLASS_PROPOSAL_TAG)?]
-        }
-        MetadataRecord::V1DeleteBreakGlassProposal(_) => {
-            vec![private_carrier(
-                rec,
-                PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_TAG,
-            )?]
-        }
+        // Krabka-only records ride the private carrier, at the tag that
+        // `private_tag` assigns.
+        // - `V1FeaturesEpoch` is a snapshot-only state pin. Kafka derives this
+        //   epoch from FeatureLevel record offsets, but a materialized snapshot
+        //   no longer contains those offsets, so the derived value is kept.
+        // - `V1PartitionOffsetAdvance` is a diskless offset delta.
+        // - KFC-9 freeze registry and break-glass proposals. KIP-631 has no
+        //   counterpart for either, and `NoCounterpart` is not an option: the
+        //   controller submits all three through `submit_change`, which
+        //   encodes every record it appends.
+        MetadataRecord::V1FeaturesEpoch(_)
+        | MetadataRecord::V1PartitionOffsetAdvance(_)
+        | MetadataRecord::V1TopicFreeze(_)
+        | MetadataRecord::V1BreakGlassProposal(_)
+        | MetadataRecord::V1DeleteBreakGlassProposal(_) => vec![private_carrier(rec)?],
         // ----- no KIP-631 metadata counterpart -----
         MetadataRecord::V1Voters(_) => {
             return Err(TranslateError::NoCounterpart("V1Voters"));
@@ -840,21 +854,43 @@ fn to_kraft_iter(
 
 /// Krabka-private tags for records that KIP-631 has no schema for.
 ///
-/// Each one rides as the only tagged field of a `NoOpRecord` (apiKey 20). The
-/// field body is the wincode-serialized [`MetadataRecord`]. Kafka reads the
-/// record as a `NoOpRecord`: its generated reader keeps an undeclared tag in
-/// `_unknownTaggedFields` (KIP-482), and `MetadataDelta` and `QuorumController`
-/// skip a `NoOpRecord` on replay. So `kafka-dump-log --cluster-metadata-decoder`
-/// and `kafka-metadata-shell` decode every krabka log segment and checkpoint.
+/// Each one rides as the only tagged field of a `NoOpRecord` (apiKey 20). Kafka
+/// reads the record as a `NoOpRecord`: its generated reader keeps an undeclared
+/// tag in `_unknownTaggedFields` (KIP-482), and `MetadataDelta` and
+/// `QuorumController` skip a `NoOpRecord` on replay. So
+/// `kafka-dump-log --cluster-metadata-decoder` and `kafka-metadata-shell`
+/// decode every krabka log segment and checkpoint.
 ///
-/// `NoOpRecord` declares no tagged fields. The tags start at 1001, far above
-/// any tag a later Kafka schema is likely to add. The values are an on-disk
-/// contract.
+/// `NoOpRecord` declares no tagged fields. The tags start at
+/// [`PRIVATE_TAG_FLOOR`], far above any tag a later Kafka schema is likely to
+/// add.
+///
+/// # The 1.x tag table
+///
+/// This table is part of the krabka 1.x on-disk contract. A tag carries exactly
+/// one [`MetadataRecord`] variant, and [`from_private_carrier`] refuses any
+/// other variant under it. Never reassign a tag. A new private record takes a
+/// new tag above 1006.
+///
+/// | Tag  | Variant                                       |
+/// | :--- | :-------------------------------------------- |
+/// | 1001 | [`MetadataRecord::V1FeaturesEpoch`]           |
+/// | 1002 | None. Burned: never written, never reused.    |
+/// | 1003 | [`MetadataRecord::V1PartitionOffsetAdvance`]  |
+/// | 1004 | [`MetadataRecord::V1TopicFreeze`]             |
+/// | 1005 | [`MetadataRecord::V1BreakGlassProposal`]      |
+/// | 1006 | [`MetadataRecord::V1DeleteBreakGlassProposal`]|
+///
+/// # The tag body
+///
+/// A big-endian `i16` [`PRIVATE_RECORD_VERSION`], then the wincode-serialized
+/// [`MetadataRecord`].
 const PRIVATE_FEATURES_EPOCH_TAG: u32 = 1001;
 /// Diskless offset-advance delta carried verbatim so it stays a per-partition
 /// increment on apply (never a full-record replace).
 const PRIVATE_PARTITION_OFFSET_ADVANCE_TAG: u32 = 1003;
-// 1002 is an unexplained gap in this numbering. Do not reuse it.
+// 1002 is burned. No build writes it, and the reader refuses it as an unknown
+// private tag. Do not reuse it.
 /// KFC-9 write-freeze registry entry.
 const PRIVATE_TOPIC_FREEZE_TAG: u32 = 1004;
 /// KFC-9 break-glass proposal, carried verbatim so the approval list, the
@@ -862,6 +898,11 @@ const PRIVATE_TOPIC_FREEZE_TAG: u32 = 1004;
 const PRIVATE_BREAK_GLASS_PROPOSAL_TAG: u32 = 1005;
 /// KFC-9 break-glass proposal tombstone, which the expiry sweep emits.
 const PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_TAG: u32 = 1006;
+
+/// The lowest tag of the krabka-private range. A lone `NoOpRecord` tag below
+/// it is not krabka's, so it has no counterpart; one at or above it that the
+/// table does not assign is [`TranslateError::UnknownPrivateTag`].
+const PRIVATE_TAG_FLOOR: u32 = 1001;
 
 /// The tags that [`private_carrier`] writes and [`from_private_carrier`] reads.
 const PRIVATE_TAGS: [u32; 5] = [
@@ -872,12 +913,41 @@ const PRIVATE_TAGS: [u32; 5] = [
     PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_TAG,
 ];
 
-/// Wraps a wincode-serialized [`MetadataRecord`] in a `NoOpRecord` as the
-/// tagged field `tag`. See [`PRIVATE_FEATURES_EPOCH_TAG`] for why Kafka's
-/// tools can read the result.
-fn private_carrier(rec: &MetadataRecord, tag: u32) -> Result<KraftMetadataRecord, TranslateError> {
-    let body = <serde_wincode::SerdeCompat<MetadataRecord>>::serialize(rec)
+/// The version of a krabka-private `NoOpRecord` tag body, the big-endian `i16`
+/// in front of the wincode [`MetadataRecord`]. It is part of the krabka 1.x
+/// on-disk contract.
+pub const PRIVATE_RECORD_VERSION: i16 = 0;
+
+/// The tag that carries `rec`, per the table on
+/// [`PRIVATE_FEATURES_EPOCH_TAG`], or `None` for a variant that does not ride
+/// a private tag.
+fn private_tag(rec: &MetadataRecord) -> Option<u32> {
+    match rec {
+        MetadataRecord::V1FeaturesEpoch(_) => Some(PRIVATE_FEATURES_EPOCH_TAG),
+        MetadataRecord::V1PartitionOffsetAdvance(_) => Some(PRIVATE_PARTITION_OFFSET_ADVANCE_TAG),
+        MetadataRecord::V1TopicFreeze(_) => Some(PRIVATE_TOPIC_FREEZE_TAG),
+        MetadataRecord::V1BreakGlassProposal(_) => Some(PRIVATE_BREAK_GLASS_PROPOSAL_TAG),
+        MetadataRecord::V1DeleteBreakGlassProposal(_) => {
+            Some(PRIVATE_DELETE_BREAK_GLASS_PROPOSAL_TAG)
+        }
+        _ => None,
+    }
+}
+
+/// Wraps `rec` in a `NoOpRecord` as the tagged field that [`private_tag`]
+/// assigns it. See [`PRIVATE_FEATURES_EPOCH_TAG`] for the body layout and why
+/// Kafka's tools can read the result.
+///
+/// # Errors
+/// [`TranslateError::NoCounterpart`] for a variant that has no private tag,
+/// and [`TranslateError::Encode`] if wincode fails.
+fn private_carrier(rec: &MetadataRecord) -> Result<KraftMetadataRecord, TranslateError> {
+    let tag = private_tag(rec).ok_or(TranslateError::NoCounterpart("private carrier"))?;
+    let record = <serde_wincode::SerdeCompat<MetadataRecord>>::serialize(rec)
         .map_err(|e| TranslateError::Encode(e.to_string()))?;
+    let mut body = Vec::with_capacity(2 + record.len());
+    body.extend_from_slice(&PRIVATE_RECORD_VERSION.to_be_bytes());
+    body.extend_from_slice(&record);
     Ok(KraftMetadataRecord::NoOp(NoOpRecord {
         unknown_tagged_fields: UnknownTaggedFields(vec![UnknownTaggedField {
             tag,
@@ -889,17 +959,57 @@ fn private_carrier(rec: &MetadataRecord, tag: u32) -> Result<KraftMetadataRecord
 /// Reads the record that [`private_carrier`] wrapped.
 ///
 /// # Errors
-/// [`TranslateError::NoCounterpart`] for a `NoOpRecord` that does not carry
-/// exactly one private tag, such as the empty KIP-835 no-op that Kafka writes,
-/// and [`TranslateError::Decode`] for a malformed body.
+/// - [`TranslateError::NoCounterpart`] for a `NoOpRecord` that does not carry
+///   exactly one tagged field at a tag of [`PRIVATE_TAG_FLOOR`] or above, such
+///   as the empty KIP-835 no-op that Kafka writes.
+/// - [`TranslateError::UnknownPrivateTag`] for a lone private-range tag that
+///   the table does not assign, 1002 included.
+/// - [`TranslateError::UnknownPrivateRecordVersion`] for a body whose version
+///   is not [`PRIVATE_RECORD_VERSION`], which includes a 0.x body that has no
+///   version.
+/// - [`TranslateError::PrivateTagMismatch`] for a record that the table
+///   assigns to another tag.
+/// - [`TranslateError::TrailingPrivateRecordBytes`] for a body with bytes
+///   after its record.
+/// - [`TranslateError::Decode`] for a body too short to hold its version, or a
+///   malformed record.
 fn from_private_carrier(no_op: &NoOpRecord) -> Result<MetadataRecord, TranslateError> {
-    match no_op.unknown_tagged_fields.0.as_slice() {
-        [field] if PRIVATE_TAGS.contains(&field.tag) => {
-            <serde_wincode::SerdeCompat<MetadataRecord>>::deserialize(&field.bytes)
-                .map_err(|e| TranslateError::Decode(e.to_string()))
-        }
-        _ => Err(TranslateError::NoCounterpart("NoOp")),
+    let [field] = no_op.unknown_tagged_fields.0.as_slice() else {
+        return Err(TranslateError::NoCounterpart("NoOp"));
+    };
+    let tag = field.tag;
+    if tag < PRIVATE_TAG_FLOOR {
+        return Err(TranslateError::NoCounterpart("NoOp"));
     }
+    if !PRIVATE_TAGS.contains(&tag) {
+        return Err(TranslateError::UnknownPrivateTag(tag));
+    }
+    let Some((version, record)) = field.bytes.split_first_chunk::<2>() else {
+        return Err(TranslateError::Decode(format!(
+            "krabka-private NoOpRecord tag {tag} body is {} bytes, too short for its i16 version",
+            field.bytes.len()
+        )));
+    };
+    let version = i16::from_be_bytes(*version);
+    if version != PRIVATE_RECORD_VERSION {
+        return Err(TranslateError::UnknownPrivateRecordVersion { tag, version });
+    }
+    let mut rest: &[u8] = record;
+    let rec = <serde_wincode::SerdeCompat<MetadataRecord> as SchemaRead<'_, DefaultConfig>>::get(
+        &mut rest,
+    )
+    .map_err(|e| TranslateError::Decode(e.to_string()))?;
+    if !rest.is_empty() {
+        return Err(TranslateError::TrailingPrivateRecordBytes {
+            tag,
+            trailing: rest.len(),
+        });
+    }
+    let expected_tag = private_tag(&rec);
+    if expected_tag != Some(tag) {
+        return Err(TranslateError::PrivateTagMismatch { tag, expected_tag });
+    }
+    Ok(rec)
 }
 
 fn register_broker_to_kraft(
@@ -3603,12 +3713,8 @@ mod tests {
         28, 29,
     ];
 
-    /// Every Krabka-only record frames as a Kafka `NoOpRecord` v0 whose body is
-    /// exactly one tagged field and no trailing bytes. Kafka's reader accepts
-    /// that shape: the undeclared tag goes to `_unknownTaggedFields`, and
-    /// `AbstractApiMessageSerde.read` finds no garbage after the record.
-    #[test]
-    fn private_records_frame_as_a_kafka_no_op_record() {
+    /// One record per assigned private tag, in tag order.
+    fn private_rows() -> Vec<(&'static str, MetadataRecord, u32)> {
         let mut rows: Vec<(&'static str, MetadataRecord, u32)> = vec![
             (
                 "features epoch",
@@ -3626,7 +3732,24 @@ mod tests {
             ),
         ];
         rows.extend(freeze_records());
-        for (label, rec, tag) in rows {
+        rows
+    }
+
+    /// The version-0 body of a private tag: the big-endian `i16` version,
+    /// then the wincode record.
+    fn versioned_body(version: i16, rec: &MetadataRecord) -> Vec<u8> {
+        let mut body = version.to_be_bytes().to_vec();
+        body.extend(<serde_wincode::SerdeCompat<MetadataRecord>>::serialize(rec).unwrap());
+        body
+    }
+
+    /// Every Krabka-only record frames as a Kafka `NoOpRecord` v0 whose body is
+    /// exactly one tagged field and no trailing bytes. Kafka's reader accepts
+    /// that shape: the undeclared tag goes to `_unknownTaggedFields`, and
+    /// `AbstractApiMessageSerde.read` finds no garbage after the record.
+    #[test]
+    fn private_records_frame_as_a_kafka_no_op_record() {
+        for (label, rec, tag) in private_rows() {
             let values = to_kraft_values(&rec, &img()).unwrap();
             check!(values.len() == 1, "{label}");
             let (decoded, version) = KraftMetadataRecord::decode_value(&values[0]).unwrap();
@@ -3635,14 +3758,13 @@ mod tests {
                 "{label}: apiKey {} is not in Kafka's table",
                 decoded.api_key()
             );
-            let body = <serde_wincode::SerdeCompat<MetadataRecord>>::serialize(&rec).unwrap();
             check!(
                 (decoded, version)
                     == (
                         KraftMetadataRecord::NoOp(NoOpRecord {
                             unknown_tagged_fields: UnknownTaggedFields(vec![UnknownTaggedField {
                                 tag,
-                                bytes: Bytes::from(body),
+                                bytes: Bytes::from(versioned_body(PRIVATE_RECORD_VERSION, &rec)),
                             }]),
                         }),
                         0
@@ -3653,6 +3775,142 @@ mod tests {
                 from_kraft_value(&values[0], &img()).unwrap() == rec,
                 "{label}"
             );
+        }
+    }
+
+    /// The full `__cluster_metadata` record value of each row of
+    /// [`private_rows`], in the same order. These bytes are the krabka 1.x
+    /// on-disk contract: the KIP-631 frame, the `NoOpRecord` tagged field, the
+    /// `i16` record version 0, then the wincode record.
+    const PRIVATE_GOLDEN_VALUES: [&str; 5] = [
+        // features epoch (tag 1001)
+        "01140001e9070e0000130000000700000000000000",
+        // diskless offset advance (tag 1003)
+        "01140001eb071b000015000000010000000000000074020000000900000000000000",
+        // topic freeze (tag 1004)
+        "01140001ec07ba01000018000000090000000000000074656e616e742d612e01000000010a000000000000004452206375746f7665720a00000000000000557365723a616c6963650068e5cf8b0100001000000000000000000000000000000000000000000000b10a00000000000000616c6963652d797562694000000000000000abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        // break-glass proposal (tag 1005)
+        "01140001ed07f7010000190000001000000000000000000000000000000000000000000000b1000000000e000000000000006c69746572616c3a6f72646572730a00000000000000557365723a616c6963651400000000000000696e636964656e74203437313120636c6f7365640068e5cf8b010000c08feecf8b01000001000000000000000800000000000000557365723a626f626052e6cf8b0100000800000000000000626f622d797562694000000000000000cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdc03ce7cf8b01000000",
+        // break-glass tombstone (tag 1006)
+        "01140001ee071e00001a0000001000000000000000000000000000000000000000000000b1",
+    ];
+
+    #[test]
+    fn private_records_match_the_golden_bytes() {
+        use crate::wincode_contract::{hex, unhex};
+
+        for ((label, rec, _), golden) in private_rows().into_iter().zip(PRIVATE_GOLDEN_VALUES) {
+            let values = to_kraft_values(&rec, &img()).unwrap();
+            check!(
+                values.iter().map(|v| hex(v)).collect::<Vec<_>>() == vec![golden.to_owned()],
+                "{label}"
+            );
+            check!(
+                from_kraft_value(&unhex(golden), &img()) == Ok(rec),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_carrier_rejects_a_bad_tag_or_body() {
+        let epoch = MetadataRecord::V1FeaturesEpoch(FeaturesEpochRecord { epoch: 7 });
+        let topic = MetadataRecord::V1Topic(TopicRecord {
+            name: "t".into(),
+            topic_id: uuid::Uuid::from_u128(0x7),
+            partitions: 1,
+            replication_factor: 1,
+        });
+        let unversioned = <serde_wincode::SerdeCompat<MetadataRecord>>::serialize(&epoch).unwrap();
+        for (label, tag, body, want) in [
+            (
+                "version 1",
+                1001,
+                versioned_body(1, &epoch),
+                TranslateError::UnknownPrivateRecordVersion {
+                    tag: 1001,
+                    version: 1,
+                },
+            ),
+            (
+                "future version",
+                1001,
+                versioned_body(i16::MAX, &epoch),
+                TranslateError::UnknownPrivateRecordVersion {
+                    tag: 1001,
+                    version: i16::MAX,
+                },
+            ),
+            (
+                "0.x body without a version",
+                1001,
+                unversioned,
+                TranslateError::UnknownPrivateRecordVersion {
+                    tag: 1001,
+                    version: 0x1300,
+                },
+            ),
+            (
+                "record of another tag",
+                1004,
+                versioned_body(0, &epoch),
+                TranslateError::PrivateTagMismatch {
+                    tag: 1004,
+                    expected_tag: Some(1001),
+                },
+            ),
+            (
+                "record of no tag",
+                1001,
+                versioned_body(0, &topic),
+                TranslateError::PrivateTagMismatch {
+                    tag: 1001,
+                    expected_tag: None,
+                },
+            ),
+            (
+                "trailing byte after the record",
+                1001,
+                {
+                    let mut body = versioned_body(0, &epoch);
+                    body.push(0);
+                    body
+                },
+                TranslateError::TrailingPrivateRecordBytes {
+                    tag: 1001,
+                    trailing: 1,
+                },
+            ),
+            (
+                "burned tag 1002",
+                1002,
+                versioned_body(0, &epoch),
+                TranslateError::UnknownPrivateTag(1002),
+            ),
+            (
+                "unassigned tag 1007",
+                1007,
+                versioned_body(0, &epoch),
+                TranslateError::UnknownPrivateTag(1007),
+            ),
+            (
+                "one-byte body",
+                1001,
+                vec![0],
+                TranslateError::Decode(
+                    "krabka-private NoOpRecord tag 1001 body is 1 bytes, too short for its i16 \
+                     version"
+                        .into(),
+                ),
+            ),
+        ] {
+            let no_op = KraftMetadataRecord::NoOp(NoOpRecord {
+                unknown_tagged_fields: UnknownTaggedFields(vec![UnknownTaggedField {
+                    tag,
+                    bytes: Bytes::from(body),
+                }]),
+            });
+            check!(from_kraft(&no_op, &img()) == Err(want), "{label}");
         }
     }
 

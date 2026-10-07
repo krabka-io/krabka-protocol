@@ -1,13 +1,14 @@
-//! Bridge between [`MetadataRecord`] and the Kafka `Record` wire type.
+//! Bridge between [`MetadataRecord`] and a Kafka [`Record`] whose value is the
+//! wincode encoding of the record.
 //!
-//! Broker-only observers fetch `__cluster_metadata` as Kafka
-//! record batches (Component B). Each [`MetadataRecord`] maps to exactly
-//! one [`Record`]: `key = None`, `value = wincode(MetadataRecord)`. The
-//! enum variant itself is the record type + version, so no separate type
-//! tag is carried. This wire surface is krabka-private (clients never
-//! fetch `__cluster_metadata`), so it only needs to be stable and
-//! round-trippable, and not byte-identical to Apache Kafka's `ApiMessage`
-//! framing.
+//! Each [`MetadataRecord`] maps to exactly one [`Record`]: `key = None`,
+//! `value = wincode(MetadataRecord)`. The enum variant index is the record
+//! type, so no separate type tag is carried.
+//!
+//! Nothing in krabka writes this shape to the metadata log or sends it to an
+//! observer. The `__cluster_metadata` log, its snapshots, and the observer
+//! metadata fetch carry Kafka's KIP-631 `ApiMessageAndVersion` frame, which
+//! [`crate::kraft_translate`] writes and reads.
 
 use bytes::Bytes;
 use krabka_protocol::records::Record;

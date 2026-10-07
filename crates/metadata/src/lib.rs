@@ -56,6 +56,8 @@ pub mod kraft_translate;
 pub mod metadata_version;
 mod records;
 pub mod transaction_version;
+#[cfg(test)]
+mod wincode_contract;
 pub mod write_freeze;
 
 pub use acl::{AclEntry, AclEntryFilter, AclOperation, PatternType, PermissionType, ResourceType};
@@ -73,7 +75,8 @@ pub use kafka_record::{KafkaRecordError, from_kafka_record, to_kafka_record};
 /// core can compile to WebAssembly.
 pub use krabka_voters as voters;
 pub use kraft_translate::{
-    TranslateError, from_kraft, from_kraft_value, to_kraft, to_kraft_records, to_kraft_values,
+    PRIVATE_RECORD_VERSION, TranslateError, from_kraft, from_kraft_value, to_kraft,
+    to_kraft_records, to_kraft_values,
 };
 pub use records::{
     BrokerConfigRecord, BrokerEndpoint, BrokerRegistrationChangeRecord, BrokerRegistrationRecord,
