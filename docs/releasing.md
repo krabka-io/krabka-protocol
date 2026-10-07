@@ -64,8 +64,8 @@ packaged sources, as crates.io users get them.
 Tag the merge commit on `main`, then push the tag:
 
 ```sh
-git tag -a v0.5.0 -m "krabka-protocol 0.5.0"
-git push origin v0.5.0
+git tag -a v0.5.1 -m "krabka-protocol 0.5.1"
+git push origin v0.5.1
 ```
 
 ## 3. What the workflow does

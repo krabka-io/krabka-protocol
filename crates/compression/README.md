@@ -64,7 +64,7 @@ All codecs are enabled by default. Disable the defaults and select only the
 codecs you need:
 
 ```toml
-krabka-compression = { version = "0.3.8", default-features = false, features = ["gzip", "zstd"] }
+krabka-compression = { version = "0.5.1", default-features = false, features = ["gzip", "zstd"] }
 ```
 
 A call to a disabled codec returns `CompressionError::FeatureDisabled`.

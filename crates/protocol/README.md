@@ -80,7 +80,7 @@ compression codecs. Turn off the default features to select a smaller codec
 set:
 
 ```toml
-krabka-protocol = { version = "0.3.8", default-features = false, features = ["snappy", "zstd"] }
+krabka-protocol = { version = "0.5.1", default-features = false, features = ["snappy", "zstd"] }
 ```
 
 - `arbitrary` - enables `arbitrary` implementations for generated/test data.
