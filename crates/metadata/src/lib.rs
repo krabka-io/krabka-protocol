@@ -52,6 +52,7 @@ mod feature;
 pub mod group_version;
 mod image;
 pub mod kafka_record;
+pub mod krabka_version;
 pub mod kraft_translate;
 pub mod metadata_version;
 mod records;
@@ -69,6 +70,7 @@ pub use feature::{
 };
 pub use image::{DelegationToken, EntityKey, MetadataImage, ThrottleKind, canonicalize_entity};
 pub use kafka_record::{KafkaRecordError, from_kafka_record, to_kafka_record};
+pub use krabka_version::{KrabkaVersion, PrivateRpc, private_rpc_version};
 /// KIP-853 voter-set value types, re-exported from the [`krabka_voters`] leaf
 /// crate. The path stays `krabka_metadata::voters`, so existing call sites are
 /// unchanged. The types live in their own crypto-free crate, so the consensus
