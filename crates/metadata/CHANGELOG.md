@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking.** The body of each krabka-private record in a `NoOpRecord`
+  tagged field (tags 1001 and 1003 to 1006) now starts with a big-endian
+  `i16` version, `PRIVATE_RECORD_VERSION` (0). The reader refuses any other
+  version, a tag the table does not assign (1002 included), and a record
+  that arrives under a tag other than its own. `TranslateError` gains
+  `UnknownPrivateTag`, `UnknownPrivateRecordVersion` and `PrivateTagMismatch`
+  for these, so a caller can tell them from `NoCounterpart`. A record written
+  before this change is refused, so a metadata log from 0.x must be formatted
+  again.
+- The wincode layout of every `MetadataRecord` variant is pinned by a
+  golden-bytes test. It is part of the on-disk contract from krabka-broker
+  1.0.0 on.
+
 ## [0.5.1] — 2026-10-06
 
 - First release on crates.io under the `krabka-*` name. Earlier versions were
