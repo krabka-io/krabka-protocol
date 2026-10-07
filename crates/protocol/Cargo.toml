@@ -3,24 +3,28 @@ name = "krabka-protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "Apache-2.0"
-authors = ["The Krabka Authors"]
+license.workspace = true
+authors.workspace = true
 description = "Apache Kafka wire-protocol codec (4.3.0), with typed RecordBatch and zero-copy borrowed decode"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-protocol"
 readme = "README.md"
 keywords = ["kafka", "wire-protocol", "codec", "serialization", "decoder"]
 categories = ["encoding", "parser-implementations"]
+# The library source and the committed codecs. Of the schemas, build.rs reads
+# only the two VERSION files, so the JSON schemas, tests and fixtures stay in
+# the repository.
 include = [
     "src/**/*",
     "generated/**/*",
-    "schemas/**/*",
-    "build.rs",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE",
-    "NOTICE",
+    "schemas/VERSION",
+    "schemas/versions/*/VERSION",
+    "/build.rs",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/CHANGELOG.md",
 ]
 build = "build.rs"
 
@@ -46,7 +50,7 @@ thiserror = { workspace = true }
 arbitrary = { workspace = true, optional = true }
 zerocopy = { workspace = true }
 crc-fast = { workspace = true }
-krabka-compression = { version = "0.5.0", path = "../compression", default-features = false }
+krabka-compression = { version = "0.5.1", path = "../compression", default-features = false }
 krabka-units = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }

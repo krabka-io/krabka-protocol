@@ -5,7 +5,7 @@
 
 Hybrid logical clock stamps that ride on Kafka record headers.
 
-Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
+Part of [Krabka](https://github.com/krabka-io/krabka-protocol), a Rust implementation of Apache Kafka.
 
 ## Overview
 
@@ -49,7 +49,7 @@ round_trip(&clock).unwrap();
 ## Documentation
 
 - [API Documentation](https://docs.rs/krabka-hlc)
-- [Krabka repository](https://github.com/robot-head/crabka)
+- [Krabka repository](https://github.com/krabka-io/krabka-protocol)
 
 ## License
 

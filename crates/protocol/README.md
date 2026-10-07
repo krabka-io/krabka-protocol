@@ -2,11 +2,11 @@
 
 [![Crates.io](https://img.shields.io/crates/v/krabka-protocol.svg)](https://crates.io/crates/krabka-protocol)
 [![Docs.rs](https://docs.rs/krabka-protocol/badge.svg)](https://docs.rs/krabka-protocol)
-[![CI](https://github.com/robot-head/crabka/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-head/crabka/actions/workflows/ci.yml)
+[![CI](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml)
 
 Apache Kafka wire-protocol codec for Rust.
 
-Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation
+Part of [Krabka](https://github.com/krabka-io/krabka-protocol), a Rust implementation
 of Apache Kafka-compatible infrastructure and clients.
 
 ## Overview
@@ -80,7 +80,7 @@ compression codecs. Turn off the default features to select a smaller codec
 set:
 
 ```toml
-krabka-protocol = { version = "0.3.8", default-features = false, features = ["snappy", "zstd"] }
+krabka-protocol = { version = "0.5.1", default-features = false, features = ["snappy", "zstd"] }
 ```
 
 - `arbitrary` - enables `arbitrary` implementations for generated/test data.
@@ -89,10 +89,10 @@ krabka-protocol = { version = "0.3.8", default-features = false, features = ["sn
 ## Documentation
 
 - [API documentation](https://docs.rs/krabka-protocol)
-- [Krabka repository](https://github.com/robot-head/crabka)
-- [Kafka compatibility matrix](https://github.com/robot-head/crabka/blob/main/docs/KIP_MATRIX.md)
+- [Krabka repository](https://github.com/krabka-io/krabka-protocol)
+- [Kafka compatibility matrix](https://github.com/krabka-io/krabka-broker/blob/main/docs/KIP_MATRIX.md)
 
 ## License
 
 Apache-2.0. Derivative work of [Apache Kafka](https://kafka.apache.org); see
-[NOTICE](https://github.com/robot-head/crabka/blob/main/NOTICE).
+[NOTICE](https://github.com/krabka-io/krabka-protocol/blob/main/NOTICE).

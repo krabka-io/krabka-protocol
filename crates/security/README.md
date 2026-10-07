@@ -2,11 +2,11 @@
 
 [![Crates.io](https://img.shields.io/crates/v/krabka-security.svg)](https://crates.io/crates/krabka-security)
 [![Docs.rs](https://docs.rs/krabka-security/badge.svg)](https://docs.rs/krabka-security)
-[![CI](https://github.com/robot-head/crabka/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-head/crabka/actions/workflows/ci.yml)
+[![CI](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/krabka-io/krabka-protocol/actions/workflows/ci.yml)
 
 TLS, SASL, SCRAM, OAuth, Kerberos, and certificate utilities for Krabka.
 
-Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation
+Part of [Krabka](https://github.com/krabka-io/krabka-protocol), a Rust implementation
 of Apache Kafka-compatible infrastructure and clients.
 
 ## Overview
@@ -74,10 +74,10 @@ println!("send SCRAM client-first-message: {}", String::from_utf8_lossy(&client_
 ## Documentation
 
 - [API documentation](https://docs.rs/krabka-security)
-- [Krabka repository](https://github.com/robot-head/crabka)
-- [Kafka compatibility matrix](https://github.com/robot-head/crabka/blob/main/docs/KIP_MATRIX.md)
+- [Krabka repository](https://github.com/krabka-io/krabka-protocol)
+- [Kafka compatibility matrix](https://github.com/krabka-io/krabka-broker/blob/main/docs/KIP_MATRIX.md)
 
 ## License
 
 Apache-2.0. Derivative work of [Apache Kafka](https://kafka.apache.org); see
-[NOTICE](https://github.com/robot-head/crabka/blob/main/NOTICE).
+[NOTICE](https://github.com/krabka-io/krabka-protocol/blob/main/NOTICE).

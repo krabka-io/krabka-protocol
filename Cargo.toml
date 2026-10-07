@@ -5,11 +5,12 @@ members = ["crates/*"]
 exclude = ["tools/mutants"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["The Krabka Authors"]
 rust-version = "1.98.1"
+repository = "https://github.com/krabka-io/krabka-protocol"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -50,7 +51,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 hex = "0.4"
 hmac = "0.13"
 jsonpath-rust = "1.0"
-lz4rip = { version = "0.11.5", default-features = false, features = ["frame"] }
+lz4rip = { version = "0.11.10", default-features = false, features = ["frame"] }
 # `lz4rip` has only the fast LZ4 block compressor. `lzzzz` binds the reference
 # `liblz4` C library, which is where the LZ4 HC compressor comes from, for
 # `krabka-compression`'s `compress_with_level(Lz4, ..)` at a non-default level.
@@ -99,6 +100,10 @@ snap = "1"
 # SSPI 0.23.0 plus MIT Kerberos interoperability and the upstream PR #764 fix.
 # SASL/GSSAPI (Kerberos). `network_client` lets the initiator reach the KDC;
 # `ring` keeps crypto provider choice aligned with rustls/rcgen in this workspace.
+# `cargo publish` keeps only the `version` of a git dependency, so the published
+# krabka-security depends on sspi 0.23.0 from crates.io, without the fork's
+# MIT Kerberos fixes. A consumer that needs them patches sspi to this revision.
+# docs/releasing.md says what this means for a publish.
 sspi = { version = "0.23.0", git = "https://github.com/robot-head/sspi-rs", rev = "df53e86c0ee635348ae61ee84ad930ae790d08f1", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree
@@ -124,5 +129,5 @@ zerocopy = { version = "0.8", features = ["derive"] }
 zstd = "0.14"
 
 # First-party crates inherited by more than one member.
-krabka-security = { path = "crates/security", version = "0.5.0" }
-krabka-units = { path = "crates/units", version = "0.5.0" }
+krabka-security = { path = "crates/security", version = "0.5.1" }
+krabka-units = { path = "crates/units", version = "0.5.1" }

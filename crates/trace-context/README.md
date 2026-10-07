@@ -4,7 +4,7 @@
 
 W3C Trace Context propagation helpers shared by Krabka's wire-protocol crates.
 
-Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation of Apache Kafka.
+Part of [Krabka](https://github.com/krabka-io/krabka-protocol), a Rust implementation of Apache Kafka.
 
 ## Overview
 
@@ -33,7 +33,7 @@ carrier.apply_to(&span);
 
 ## Documentation
 
-- [Krabka repository](https://github.com/robot-head/crabka)
+- [Krabka repository](https://github.com/krabka-io/krabka-protocol)
 
 ## License
 

@@ -3,21 +3,21 @@ name = "krabka-compression"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "Apache-2.0"
-authors = ["The Krabka Authors"]
+license.workspace = true
+authors.workspace = true
 description = "Kafka wire-protocol compression codecs for Rust"
-repository = "https://github.com/robot-head/crabka"
-homepage = "https://github.com/robot-head/crabka"
+repository.workspace = true
 documentation = "https://docs.rs/krabka-compression"
 readme = "README.md"
 keywords = ["kafka", "compression", "wire-protocol", "snappy", "zstd"]
 categories = ["compression", "encoding"]
 include = [
     "src/**/*",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE",
-    "NOTICE",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE",
+    "/NOTICE",
+    "/CHANGELOG.md",
 ]
 
 [package.metadata.docs.rs]
