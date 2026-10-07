@@ -28,12 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TranslateError::InvalidReference` is a value that depends on the metadata
   image, which two racing committed writes can legitimately produce, so every
   replica skips it: an unknown partition, a broker that is not a replica, a
-  directory list whose length does not match the replicas, or an epoch the
-  image already holds at its maximum. `TranslateError::InvalidValue` is a
+  directory list whose length does not match the replicas the image holds,
+  or an epoch the image already holds at its maximum. `TranslateError::InvalidValue` is a
   value that no build accepts, decided by the bytes alone, which Kafka treats
   as a fatal decode failure: an unknown enum discriminant, a negative id, an
-  integer that does not fit the wire width, or a string that does not parse.
-  Both keep the `field` and `detail` fields.
+  integer that does not fit the wire width, a string that does not parse, or
+  a directory list whose length does not match the replicas that the same
+  record sets. Both keep the `field` and `detail` fields.
 
 - **Breaking.** The body of each krabka-private record in a `NoOpRecord`
   tagged field (tags 1001 and 1003 to 1006) now starts with a big-endian

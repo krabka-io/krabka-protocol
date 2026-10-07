@@ -109,16 +109,17 @@ pub enum TranslateError {
     /// A value that is well-formed on its own but names something the
     /// metadata image does not hold in the shape the record needs: an unknown
     /// partition, a broker that is not a replica, a directory list whose
-    /// length does not match the replicas, or an epoch that the image already
-    /// holds at its maximum. Two racing committed writes can legitimately
+    /// length does not match the replicas the image holds, or an epoch that
+    /// the image already holds at its maximum. Two racing committed writes can legitimately
     /// produce one, and every replica sees the same image in log order, so
     /// every replica skips the record in the same way.
     #[error("invalid reference in {field}: {detail}")]
     InvalidReference { field: &'static str, detail: String },
     /// A value that no build accepts, whatever the image holds: an unknown
     /// enum discriminant, a negative node id or iteration count, an integer
-    /// that does not fit the wire width, or a string that does not parse.
-    /// The bytes alone decide it, and Kafka treats the same content as a
+    /// that does not fit the wire width, a string that does not parse, or a
+    /// directory list whose length does not match the replicas that the same
+    /// record sets. The bytes alone decide it, and Kafka treats the same content as a
     /// fatal decode failure.
     #[error("invalid {field}: {detail}")]
     InvalidValue { field: &'static str, detail: String },
@@ -1363,10 +1364,11 @@ fn delegation_token_to_kraft(t: &DelegationTokenRecord) -> KDelegationTokenRecor
 /// [`TranslateError::UnknownTopicId`] when a topic or partition references a
 /// topic id absent from `image`, [`TranslateError::NoCounterpart`] for
 /// records this layer does not model, [`TranslateError::InvalidValue`] for
-/// out-of-range enum values, negative ids and unparsable strings, and
+/// out-of-range enum values, negative ids, unparsable strings and a directory
+/// list whose length does not match the replicas in the same record, and
 /// [`TranslateError::InvalidReference`] for a partition change that the image
 /// cannot apply: an unknown partition, a directory list whose length does not
-/// match the replicas, or an epoch already at its maximum.
+/// match the image's replicas, or an epoch already at its maximum.
 // exhaustive match over KraftMetadataRecord
 pub fn from_kraft(
     rec: &KraftMetadataRecord,
@@ -1792,16 +1794,21 @@ fn partition_change_from_kraft(
             })?);
     }
     if let Some(directories) = &change.directories {
-        // A reference error: unless the same record also replaces the
-        // replicas, the length to match is the image's replica count.
         if directories.len() != partition.replicas.len() {
-            return Err(TranslateError::InvalidReference {
-                field: "partition change directories",
-                detail: format!(
-                    "{} directories for {} replicas",
-                    directories.len(),
-                    partition.replicas.len()
-                ),
+            let field = "partition change directories";
+            let detail = format!(
+                "{} directories for {} replicas",
+                directories.len(),
+                partition.replicas.len()
+            );
+            // When the same record replaces the replicas, the replicas were
+            // set from its bytes above, so the bytes alone decide the
+            // mismatch. Otherwise the length to match is the image's replica
+            // count, and the mismatch depends on the image.
+            return Err(if change.replicas.is_some() {
+                TranslateError::InvalidValue { field, detail }
+            } else {
+                TranslateError::InvalidReference { field, detail }
             });
         }
         partition.directories = directories.iter().copied().map(from_kuuid).collect();
@@ -4110,20 +4117,23 @@ mod tests {
         assert2::assert!(image.topic_partition_count("t") == 3);
     }
 
-    /// Pins which `Invalid*` variant a representative of each kind of bad
-    /// input produces. A reference error depends on what the image holds; a
-    /// value error is decided by the record's bytes alone.
-    #[test]
-    fn invalid_errors_split_into_reference_and_value() {
+    /// An image with topic `t` and three one-replica partitions: 0 is
+    /// ordinary, 1 holds its leader epoch at the maximum and 2 its partition
+    /// epoch.
+    fn classification_image() -> (MetadataImage, uuid::Uuid) {
         let topic_id = uuid::Uuid::from_u128(0x7E);
         let mut image = img();
         image.apply(&MetadataRecord::V1Topic(TopicRecord {
             name: "t".into(),
             topic_id,
-            partitions: 2,
+            partitions: 3,
             replication_factor: 1,
         }));
-        for (partition, leader_epoch) in [(0, LeaderEpoch(7)), (1, LeaderEpoch(i32::MAX))] {
+        for (partition, leader_epoch, partition_epoch) in [
+            (0, LeaderEpoch(7), 3),
+            (1, LeaderEpoch(i32::MAX), 3),
+            (2, LeaderEpoch(7), i32::MAX),
+        ] {
             image.apply(&MetadataRecord::V1Partition(PartitionRecord {
                 topic: "t".into(),
                 partition,
@@ -4131,12 +4141,21 @@ mod tests {
                 replicas: vec![NodeId(1)],
                 isr: vec![NodeId(1)],
                 leader_epoch,
-                partition_epoch: 3,
+                partition_epoch,
                 adding_replicas: vec![],
                 removing_replicas: vec![],
                 directories: vec![],
             }));
         }
+        (image, topic_id)
+    }
+
+    /// Pins which `Invalid*` variant a representative of each kind of bad
+    /// input produces. A reference error depends on what the image holds; a
+    /// value error is decided by the record's bytes alone.
+    #[test]
+    fn invalid_errors_split_into_reference_and_value() {
+        let (image, topic_id) = classification_image();
         let change = |partition_id: i32, edit: fn(&mut KPartitionChangeRecord)| {
             let mut record = KPartitionChangeRecord {
                 topic_id: to_kuuid(topic_id),
@@ -4176,6 +4195,17 @@ mod tests {
                 ),
             ),
             (
+                "decode: directories do not match replicas in the same record",
+                change(0, |c| {
+                    c.replicas = Some(vec![1, 2]);
+                    c.directories = Some(vec![KUuid([1; 16])]);
+                }),
+                value(
+                    "partition change directories",
+                    "1 directories for 2 replicas",
+                ),
+            ),
+            (
                 "decode: image leader epoch at its maximum",
                 change(1, |c| c.leader = 1),
                 reference("partition change leader epoch", "leader epoch overflow"),
@@ -4193,6 +4223,30 @@ mod tests {
                 )
                 .map(|_| unreachable!()),
                 reference("partition directory assignment", "unknown partition t-9"),
+            ),
+            (
+                "decode: image partition epoch at its maximum",
+                change(2, |_| {}),
+                reference(
+                    "partition change partition epoch",
+                    "partition epoch overflow",
+                ),
+            ),
+            (
+                "decode: unknown leader recovery state on a partition record",
+                from_kraft(
+                    &KraftMetadataRecord::Partition(KPartitionRecord {
+                        topic_id: to_kuuid(topic_id),
+                        partition_id: 0,
+                        leader: 1,
+                        replicas: vec![1],
+                        isr: vec![1],
+                        leader_recovery_state: 9,
+                        ..Default::default()
+                    }),
+                    &image,
+                ),
+                value("partition leader recovery state", "unknown state 9"),
             ),
             (
                 "decode: unknown leader recovery state on a known partition",
@@ -4236,6 +4290,260 @@ mod tests {
                 )
                 .map(|_| unreachable!()),
                 value("producer IDs broker id", "node_id 2147483648 exceeds i32"),
+            ),
+        ] {
+            check!(got == want, "{case}");
+        }
+    }
+
+    /// Every byte-content check names its field and the offending value, and
+    /// reports it as `InvalidValue`, whatever the image holds.
+    #[test]
+    fn byte_content_errors_are_invalid_values() {
+        let image = img();
+        let decode = |record: KraftMetadataRecord| from_kraft(&record, &image).map(drop);
+        let encode = |record: MetadataRecord| to_kraft(&record, &image).map(drop);
+        let scram = |mechanism: i8, iterations: i32| {
+            decode(KraftMetadataRecord::UserScramCredential(
+                UserScramCredentialRecord {
+                    name: "alice".into(),
+                    mechanism,
+                    iterations,
+                    ..Default::default()
+                },
+            ))
+        };
+        let token = |owner: &str, requester: &str, renewer: &str| {
+            decode(KraftMetadataRecord::DelegationToken(
+                KDelegationTokenRecord {
+                    owner: owner.into(),
+                    requester: requester.into(),
+                    renewers: vec![renewer.into()],
+                    ..Default::default()
+                },
+            ))
+        };
+        let config = |resource_type: i8, resource_name: &str| {
+            decode(KraftMetadataRecord::Config(ConfigRecord {
+                resource_type,
+                resource_name: resource_name.into(),
+                name: "k".into(),
+                ..Default::default()
+            }))
+        };
+        let value = |field, detail: &str| {
+            Err(TranslateError::InvalidValue {
+                field,
+                detail: detail.into(),
+            })
+        };
+
+        for (case, got, want) in [
+            (
+                "a non-SCRAM mechanism on encode",
+                scram_mechanism_to_wire(SaslMechanism::Plain).map(drop),
+                value("scram mechanism", "Plain is not a SCRAM mechanism"),
+            ),
+            (
+                "an unknown SCRAM mechanism byte",
+                scram(9, 4096),
+                value("scram mechanism", "unknown SCRAM mechanism wire byte 9"),
+            ),
+            (
+                "negative SCRAM iterations",
+                scram(1, -1),
+                value("scram iterations", "-1 is negative"),
+            ),
+            (
+                "SCRAM iterations that exceed i32 on encode",
+                encode(MetadataRecord::V1ScramCredential(ScramCredentialRecord {
+                    user: "alice".into(),
+                    mechanism: SaslMechanism::ScramSha256,
+                    salt: vec![],
+                    stored_key: vec![],
+                    server_key: vec![],
+                    iterations: u32::MAX,
+                })),
+                value("scram iterations", "4294967295 exceeds i32"),
+            ),
+            (
+                "an unknown ACL resource type",
+                resource_type_from_wire(9).map(drop),
+                value("acl resource_type", "unknown wire byte 9"),
+            ),
+            (
+                "an unknown ACL pattern type",
+                pattern_type_from_wire(9).map(drop),
+                value("acl pattern_type", "unknown wire byte 9"),
+            ),
+            (
+                "an unknown ACL operation",
+                operation_from_wire(99).map(drop),
+                value("acl operation", "unknown wire byte 99"),
+            ),
+            (
+                "an unknown ACL permission type",
+                permission_from_wire(9).map(drop),
+                value("acl permission_type", "unknown wire byte 9"),
+            ),
+            (
+                "an unknown security protocol",
+                protocol_from_wire(9).map(drop),
+                value("security_protocol", "unknown wire value 9"),
+            ),
+            (
+                "an unregistered broker id that exceeds i32 on encode",
+                encode(MetadataRecord::V1UnregisterBroker(UnregisterBrokerRecord {
+                    node_id: NodeId(1 << 31),
+                    broker_epoch: 0,
+                })),
+                value("broker_id", "node_id 2147483648 exceeds i32"),
+            ),
+            (
+                "a registered broker id that exceeds i32 on encode",
+                encode(MetadataRecord::V1BrokerRegistration(
+                    BrokerRegistrationRecord {
+                        node_id: NodeId(1 << 31),
+                        broker_epoch: 0,
+                        incarnation_id: uuid::Uuid::nil(),
+                        host: "localhost".into(),
+                        port: 9092,
+                        rack: None,
+                        log_dirs: vec![],
+                        fenced: false,
+                        in_controlled_shutdown: false,
+                        cordoned_log_dirs: None,
+                        endpoints: vec![],
+                        features: std::collections::BTreeMap::new(),
+                    },
+                )),
+                value("broker_id", "node_id 2147483648 exceeds i32"),
+            ),
+            (
+                "a registered controller id that exceeds i32 on encode",
+                encode(MetadataRecord::V1ControllerRegistration(
+                    ControllerRegistrationRecord {
+                        node_id: NodeId(1 << 31),
+                        incarnation_id: uuid::Uuid::nil(),
+                        zk_migration_ready: false,
+                        endpoints: vec![],
+                        features: std::collections::BTreeMap::new(),
+                    },
+                )),
+                value("controller_id", "node_id 2147483648 exceeds i32"),
+            ),
+            (
+                "a delegation token owner that does not parse",
+                token("alice", "User:bob", "User:carol"),
+                value("delegation token owner", "invalid principal \"alice\""),
+            ),
+            (
+                "a delegation token requester that does not parse",
+                token("User:alice", "bob", "User:carol"),
+                value("delegation token requester", "invalid principal \"bob\""),
+            ),
+            (
+                "a delegation token renewer that does not parse",
+                token("User:alice", "User:bob", "carol"),
+                value("delegation token renewer", "invalid principal \"carol\""),
+            ),
+            (
+                "a broker config resource name that is not a node id",
+                config(4, "broker-one"),
+                value(
+                    "broker config resource_name",
+                    "invalid digit found in string",
+                ),
+            ),
+            (
+                "an unsupported config resource type",
+                config(99, "x"),
+                value("config resource_type", "unsupported resource_type 99"),
+            ),
+        ] {
+            check!(got == want, "{case}");
+        }
+    }
+
+    /// The encode-side checks of partition records and partition updates:
+    /// a lookup in the image is a reference error, a node id that exceeds
+    /// `i32` a value error.
+    #[test]
+    fn partition_encode_errors_split_into_reference_and_value() {
+        let (image, _) = classification_image();
+        let encode = |record: MetadataRecord| to_kraft(&record, &image).map(drop);
+        let update = |partition: i32, edit: fn(&mut crate::PartitionUpdateRecord)| {
+            let mut record = crate::PartitionUpdateRecord {
+                partition: image.partition("t", 0).unwrap().clone(),
+                eligible_leader_replicas: None,
+                last_known_elr: None,
+                recovery_state: None,
+            };
+            record.partition.partition = partition;
+            edit(&mut record);
+            encode(MetadataRecord::V1PartitionUpdate(record))
+        };
+        let reference = |field, detail: &str| {
+            Err(TranslateError::InvalidReference {
+                field,
+                detail: detail.into(),
+            })
+        };
+        let value = |field, detail: &str| {
+            Err(TranslateError::InvalidValue {
+                field,
+                detail: detail.into(),
+            })
+        };
+
+        for (case, got, want) in [
+            (
+                "encode: directory assignment for a broker that is not a replica",
+                encode(MetadataRecord::V1PartitionDirAssignment(
+                    PartitionDirAssignmentRecord {
+                        topic: "t".into(),
+                        partition: 0,
+                        replica: NodeId(2),
+                        directory: uuid::Uuid::from_u128(0xD1),
+                    },
+                )),
+                reference(
+                    "partition directory assignment",
+                    "broker 2 is not a replica of t-0",
+                ),
+            ),
+            (
+                "encode: partition update for an unknown partition",
+                update(9, |_| {}),
+                reference("partition update", "unknown partition t-9"),
+            ),
+            (
+                "encode: partition update with a replica that exceeds i32",
+                update(0, |u| u.partition.replicas = vec![NodeId(1 << 31)]),
+                value("partition replicas", "node id 2147483648 exceeds i32"),
+            ),
+            (
+                "encode: partition update with an eligible leader that exceeds i32",
+                update(0, |u| {
+                    u.eligible_leader_replicas = Some(vec![NodeId(1 << 31)]);
+                }),
+                value("eligible leader replica", "node id 2147483648 exceeds i32"),
+            ),
+            (
+                "encode: partition with a replica that exceeds i32",
+                encode(MetadataRecord::V1Partition(PartitionRecord {
+                    replicas: vec![NodeId(1 << 31)],
+                    ..image.partition("t", 0).unwrap().clone()
+                })),
+                value("partition replicas", "node id 2147483648 exceeds i32"),
+            ),
+            (
+                "encode: partition with a leader that exceeds i32",
+                encode(MetadataRecord::V1Partition(PartitionRecord {
+                    leader: NodeId(1 << 31),
+                    ..image.partition("t", 0).unwrap().clone()
+                })),
+                value("partition leader", "leader 2147483648 exceeds i32"),
             ),
         ] {
             check!(got == want, "{case}");
