@@ -32,9 +32,29 @@
 //! `kafka-features upgrade --release-version` iterates Kafka's own
 //! `Feature.PRODUCTION_FEATURES` only, so it never touches `krabka.version`.
 //!
-//! A fresh cluster bootstraps at [`KRABKA_VERSION_MAX`], the latest production
-//! level, as Kafka bootstraps its production features. The level does not
-//! follow the bootstrap `metadata.version`.
+//! # Why a fresh cluster bootstraps at 0
+//!
+//! A fresh cluster bootstraps `krabka.version` at [`KRABKA_VERSION_MIN`],
+//! whatever the bootstrap `metadata.version` is, so `krabka format` writes no
+//! `FeatureLevelRecord` for it, as Kafka writes none for a feature at level 0.
+//! An Apache Kafka node in the same cluster does not know `krabka.version`, so
+//! it treats the feature as supported at `[0, 0]` (`QuorumFeatures.DISABLED`).
+//! A Kafka controller that replays a finalized level above 0 halts: it throws
+//! "this controller only supports versions 0", and its
+//! `ProcessTerminatingFaultHandler` exits. A Kafka broker cannot register with
+//! a controller that has finalized a level above 0.
+//!
+//! This departs from Kafka's rule for its own production features, which
+//! bootstrap at their latest level. That rule holds because every Kafka node
+//! of the release knows those features. `krabka.version` is not one of Kafka's
+//! features, so no Kafka node ever knows it. Nothing is lost: levels 0 and 1
+//! mean the same formats.
+//!
+//! An operator finalizes `krabka.version` with
+//! `kafka-features upgrade --feature krabka.version=1` once every node supports
+//! it. The controller refuses a level that some registered node does not
+//! support, and a Kafka node, which advertises nothing for the feature,
+//! supports only 0.
 //!
 //! # Dependencies
 //!

@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Its supported range is `[0, 1]`: level 0, which an absent feature reads as,
   and level 1 both mean the 1.0.0 formats, and the first format change takes
   level 2. It is registered in `feature_registry`, so `supported_feature_ranges`
-  advertises it and `bootstrap_feature_records` now seeds `krabka.version=1`
-  for every release. `KrabkaVersion::finalized` reads the level from a
+  advertises it. `bootstrap_feature_records` seeds no record for it (see
+  Fixed). `KrabkaVersion::finalized` reads the level from a
   `MetadataImage`, and `private_rpc_version` (with `PrivateRpc`) gives the
   highest request version of the private controller RPCs `SubmitChange`
   (1003), `MetadataFetch` (1004) and `DelegationTokenMutation` (1005) that a
@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The wincode layout of every `MetadataRecord` variant is pinned by a
   golden-bytes test. It is part of the on-disk contract from krabka-broker
   1.0.0 on.
+
+### Fixed
+
+- **Breaking.** `KrabkaVersionFeature::default_level` is now
+  `KRABKA_VERSION_MIN` (0) for every bootstrap `metadata.version`, so
+  `bootstrap_feature_records` and `bootstrap_feature_records_with_overrides`
+  write no `krabka.version` record unless an override asks for one. A
+  bootstrapped level 1 halted an Apache Kafka controller in a mixed cluster,
+  which supports only level 0 of a feature it does not know, and kept an Apache
+  Kafka broker from registering. An operator finalizes the feature with
+  `kafka-features upgrade --feature krabka.version=1` once every node supports
+  it. Levels 0 and 1 mean the same formats, and nodes still advertise `[0, 1]`.
 
 ## [0.5.1] — 2026-10-06
 

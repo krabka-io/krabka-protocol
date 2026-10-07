@@ -263,8 +263,9 @@ impl Feature for KRaftVersionFeature {
 
 /// `krabka.version`, the krabka-owned feature that gates krabka-only on-disk
 /// and inter-node format changes (see [`crate::krabka_version`]). A fresh
-/// cluster bootstraps at the latest production level whatever the bootstrap
-/// metadata.version is, because no krabka level maps to a Kafka release.
+/// cluster bootstraps at level 0 whatever the bootstrap metadata.version is,
+/// so the bootstrap writes no record for it. An Apache Kafka node in the same
+/// cluster supports only level 0 of a feature it does not know.
 pub struct KrabkaVersionFeature;
 
 impl Feature for KrabkaVersionFeature {
@@ -278,7 +279,7 @@ impl Feature for KrabkaVersionFeature {
         )
     }
     fn default_level(&self, _bootstrap_mv: i16) -> i16 {
-        crate::krabka_version::KRABKA_VERSION_MAX
+        crate::krabka_version::KRABKA_VERSION_MIN
     }
     // dependencies: inherits the empty default. No krabka.version level needs a
     // metadata.version yet. min_required_floor: inherits the supported min,
@@ -484,14 +485,20 @@ mod tests {
         check!(supported_feature_ranges() == want);
     }
 
-    /// `krabka.version` bootstraps at its latest production level whatever
-    /// the bootstrap metadata.version, and an override can pin it to 0.
+    /// `krabka.version` bootstraps at 0, so it earns no record, whatever the
+    /// bootstrap metadata.version. An explicit override still finalizes it.
     #[test]
-    fn krabka_version_bootstraps_at_the_latest_production_level() {
+    fn krabka_version_bootstraps_at_zero() {
         use crate::metadata_version::{METADATA_VERSION_MAX, METADATA_VERSION_MIN};
         for (case, bootstrap, overrides, want) in [
-            ("minimum release", METADATA_VERSION_MIN, vec![], Some(1)),
-            ("latest release", METADATA_VERSION_MAX, vec![], Some(1)),
+            ("minimum release", METADATA_VERSION_MIN, vec![], None),
+            ("latest release", METADATA_VERSION_MAX, vec![], None),
+            (
+                "override to 1 earns a record",
+                METADATA_VERSION_MAX,
+                vec![("krabka.version".to_string(), 1)],
+                Some(1),
+            ),
             (
                 "override to 0 omits the record",
                 METADATA_VERSION_MAX,
@@ -563,7 +570,7 @@ mod tests {
             // control record rather than by UpdateFeatures. Leaving it out of
             // this table left its name, range and default entirely unasserted.
             ("kraft.version", (0, 1), 0, 0),
-            ("krabka.version", (0, 1), 1, 0),
+            ("krabka.version", (0, 1), 0, 0),
         ];
 
         for (name, range, default_at_25, floor) in expected {
@@ -767,28 +774,31 @@ mod tests {
                     ("metadata.version".to_string(), 25),
                     ("group.version".to_string(), 1),
                     ("transaction.version".to_string(), 2),
-                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
 
+    /// The whole record set, in registry order. `krabka.version` defaults to
+    /// 0, so it earns no record, as Kafka writes none for a level-0 feature.
     #[test]
     fn bootstrap_at_the_latest_level_enables_every_released_feature() {
-        let levels = levels_of(&bootstrap_feature_records(
-            crate::metadata_version::METADATA_VERSION_MAX,
-        ));
-        assert2::assert!(
-            levels
-                == BTreeMap::from([
-                    ("metadata.version".to_string(), 34),
-                    ("group.version".to_string(), 1),
-                    ("transaction.version".to_string(), 2),
-                    ("share.version".to_string(), 2),
-                    ("streams.version".to_string(), 1),
-                    ("eligible.leader.replicas.version".to_string(), 1),
-                    ("krabka.version".to_string(), 1),
-                ])
-        );
+        let want: Vec<crate::MetadataRecord> = [
+            ("metadata.version", 34),
+            ("group.version", 1),
+            ("transaction.version", 2),
+            ("share.version", 2),
+            ("streams.version", 1),
+            ("eligible.leader.replicas.version", 1),
+        ]
+        .into_iter()
+        .map(|(name, level)| {
+            crate::MetadataRecord::V1FeatureLevel(crate::FeatureLevelRecord {
+                name: name.to_string(),
+                level,
+            })
+        })
+        .collect();
+        check!(bootstrap_feature_records(crate::metadata_version::METADATA_VERSION_MAX) == want);
     }
 
     #[test]
@@ -802,7 +812,6 @@ mod tests {
                 == BTreeMap::from([
                     ("metadata.version".to_string(), 25),
                     ("transaction.version".to_string(), 2),
-                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
@@ -830,7 +839,6 @@ mod tests {
                 == BTreeMap::from([
                     ("metadata.version".to_string(), 23),
                     ("group.version".to_string(), 1),
-                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
