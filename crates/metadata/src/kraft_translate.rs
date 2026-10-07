@@ -82,7 +82,7 @@ use krabka_protocol::{
     tagged_fields::{UnknownTaggedField, UnknownTaggedFields},
 };
 use krabka_security::{KafkaPrincipal, ListenerProtocol, SaslMechanism};
-use wincode::{Deserialize as _, Serialize as _};
+use wincode::{SchemaRead, Serialize as _, config::DefaultConfig};
 
 use crate::{
     MetadataImage,
@@ -137,6 +137,10 @@ pub enum TranslateError {
         "krabka-private NoOpRecord tag {tag} carries a record that belongs to tag {expected_tag:?}"
     )]
     PrivateTagMismatch { tag: u32, expected_tag: Option<u32> },
+    /// The body of a krabka-private `NoOpRecord` tag holds `trailing` bytes
+    /// after its record. A re-encode would drop them, so the body is refused.
+    #[error("krabka-private NoOpRecord tag {tag} has {trailing} bytes after its record")]
+    TrailingPrivateRecordBytes { tag: u32, trailing: usize },
 }
 
 // ----- uuid bridging -----
@@ -965,6 +969,8 @@ fn private_carrier(rec: &MetadataRecord) -> Result<KraftMetadataRecord, Translat
 ///   version.
 /// - [`TranslateError::PrivateTagMismatch`] for a record that the table
 ///   assigns to another tag.
+/// - [`TranslateError::TrailingPrivateRecordBytes`] for a body with bytes
+///   after its record.
 /// - [`TranslateError::Decode`] for a body too short to hold its version, or a
 ///   malformed record.
 fn from_private_carrier(no_op: &NoOpRecord) -> Result<MetadataRecord, TranslateError> {
@@ -988,8 +994,17 @@ fn from_private_carrier(no_op: &NoOpRecord) -> Result<MetadataRecord, TranslateE
     if version != PRIVATE_RECORD_VERSION {
         return Err(TranslateError::UnknownPrivateRecordVersion { tag, version });
     }
-    let rec = <serde_wincode::SerdeCompat<MetadataRecord>>::deserialize(record)
-        .map_err(|e| TranslateError::Decode(e.to_string()))?;
+    let mut rest: &[u8] = record;
+    let rec = <serde_wincode::SerdeCompat<MetadataRecord> as SchemaRead<'_, DefaultConfig>>::get(
+        &mut rest,
+    )
+    .map_err(|e| TranslateError::Decode(e.to_string()))?;
+    if !rest.is_empty() {
+        return Err(TranslateError::TrailingPrivateRecordBytes {
+            tag,
+            trailing: rest.len(),
+        });
+    }
     let expected_tag = private_tag(&rec);
     if expected_tag != Some(tag) {
         return Err(TranslateError::PrivateTagMismatch { tag, expected_tag });
@@ -3851,6 +3866,19 @@ mod tests {
                 TranslateError::PrivateTagMismatch {
                     tag: 1001,
                     expected_tag: None,
+                },
+            ),
+            (
+                "trailing byte after the record",
+                1001,
+                {
+                    let mut body = versioned_body(0, &epoch);
+                    body.push(0);
+                    body
+                },
+                TranslateError::TrailingPrivateRecordBytes {
+                    tag: 1001,
+                    trailing: 1,
                 },
             ),
             (

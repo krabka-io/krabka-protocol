@@ -10,6 +10,10 @@
 //!
 //! [`variant_index`] matches every variant without a wildcard, so a new
 //! variant does not compile until it has an index and a row here.
+//!
+//! The enums nested inside the records are positional too, and one record
+//! value shows only one of their variants. [`check_enum!`] pins every variant
+//! of each of them, with the same no-wildcard guard.
 
 use std::collections::BTreeMap;
 
@@ -486,4 +490,90 @@ fn every_golden_decodes_to_its_value() {
 fn an_unknown_variant_index_does_not_decode() {
     let decoded = <SerdeCompat<MetadataRecord>>::deserialize(&32u32.to_le_bytes());
     check!(decoded.is_err());
+}
+
+/// Checks that each listed variant of `$ty` encodes to its golden bytes and
+/// decodes back. The `match` lists the variants without a wildcard, so a new
+/// variant does not compile until it has a row.
+macro_rules! check_enum {
+    ($ty:ident { $($variant:ident => $golden:literal),+ $(,)? }) => {
+        for (value, golden) in [$(($ty::$variant, $golden)),+] {
+            match value {
+                $($ty::$variant)|+ => {}
+            }
+            let bytes = <SerdeCompat<$ty>>::serialize(&value).unwrap();
+            check!(hex(&bytes) == golden, "{}::{value:?}", stringify!($ty));
+            let decoded = <SerdeCompat<$ty>>::deserialize(&unhex(golden));
+            check!(decoded.ok() == Some(value), "{}::{value:?}", stringify!($ty));
+        }
+    };
+}
+
+/// Every variant of every enum that a [`MetadataRecord`] field reaches, in
+/// declaration order. wincode writes a unit variant as its `u32` index.
+#[test]
+fn every_nested_enum_variant_encodes_to_its_golden_bytes() {
+    check_enum!(ResourceType {
+        Topic => "00000000",
+        Group => "01000000",
+        Cluster => "02000000",
+        TransactionalId => "03000000",
+        DelegationToken => "04000000",
+        User => "05000000",
+    });
+    check_enum!(PatternType {
+        Literal => "00000000",
+        Prefixed => "01000000",
+    });
+    check_enum!(PermissionType {
+        Allow => "00000000",
+        Deny => "01000000",
+    });
+    check_enum!(AclOperation {
+        All => "00000000",
+        Read => "01000000",
+        Write => "02000000",
+        Create => "03000000",
+        Delete => "04000000",
+        Alter => "05000000",
+        Describe => "06000000",
+        ClusterAction => "07000000",
+        DescribeConfigs => "08000000",
+        AlterConfigs => "09000000",
+        IdempotentWrite => "0a000000",
+        TwoPhaseCommit => "0b000000",
+        CreateTokens => "0c000000",
+        DescribeTokens => "0d000000",
+    });
+    check_enum!(BreakGlassAction {
+        ThawTopicFreeze => "00000000",
+        UncleanElectLeaders => "01000000",
+        UncleanRecovery => "02000000",
+        UnregisterBroker => "03000000",
+        CancelReassignment => "04000000",
+        DeleteTopic => "05000000",
+        DeleteRecords => "06000000",
+    });
+    check_enum!(LeaderRecoveryState {
+        Recovered => "00000000",
+        Recovering => "01000000",
+    });
+    check_enum!(FencingChange {
+        Unfence => "00000000",
+        None => "01000000",
+        Fence => "02000000",
+    });
+    check_enum!(ListenerProtocol {
+        Plaintext => "00000000",
+        Ssl => "01000000",
+        SaslPlaintext => "02000000",
+        SaslSsl => "03000000",
+    });
+    check_enum!(SaslMechanism {
+        Plain => "00000000",
+        ScramSha256 => "01000000",
+        ScramSha512 => "02000000",
+        OAuthBearer => "03000000",
+        Gssapi => "04000000",
+    });
 }
