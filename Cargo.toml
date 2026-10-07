@@ -104,7 +104,7 @@ snap = "1"
 # krabka-security depends on sspi 0.23.0 from crates.io, without the fork's
 # MIT Kerberos fixes. A consumer that needs them patches sspi to this revision.
 # docs/releasing.md says what this means for a publish.
-sspi = { version = "0.23.0", git = "https://github.com/robot-head/sspi-rs", rev = "df53e86c0ee635348ae61ee84ad930ae790d08f1", default-features = false, features = ["network_client", "ring"] }
+sspi = { version = "0.23.0", git = "https://github.com/robot-head/sspi-rs", rev = "73ad2bcfff41c44b22c7e2400d528faedbf38967", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree
 # (syn/quote/proc-macro2/heck/rustversion) is already compiled in the graph,
