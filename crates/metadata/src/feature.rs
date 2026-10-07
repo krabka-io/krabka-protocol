@@ -261,6 +261,30 @@ impl Feature for KRaftVersionFeature {
     }
 }
 
+/// `krabka.version`, the krabka-owned feature that gates krabka-only on-disk
+/// and inter-node format changes (see [`crate::krabka_version`]). A fresh
+/// cluster bootstraps at the latest production level whatever the bootstrap
+/// metadata.version is, because no krabka level maps to a Kafka release.
+pub struct KrabkaVersionFeature;
+
+impl Feature for KrabkaVersionFeature {
+    fn name(&self) -> &'static str {
+        crate::krabka_version::KRABKA_VERSION_FEATURE
+    }
+    fn supported_range(&self) -> (i16, i16) {
+        (
+            crate::krabka_version::KRABKA_VERSION_MIN,
+            crate::krabka_version::KRABKA_VERSION_MAX,
+        )
+    }
+    fn default_level(&self, _bootstrap_mv: i16) -> i16 {
+        crate::krabka_version::KRABKA_VERSION_MAX
+    }
+    // dependencies: inherits the empty default. No krabka.version level needs a
+    // metadata.version yet. min_required_floor: inherits the supported min,
+    // because levels 0 and 1 are the same formats.
+}
+
 /// All features this broker supports finalizing. Single source of truth.
 #[must_use]
 pub fn feature_registry() -> &'static [&'static dyn Feature] {
@@ -272,6 +296,7 @@ pub fn feature_registry() -> &'static [&'static dyn Feature] {
         &StreamsVersionFeature,
         &ElrVersionFeature,
         &KRaftVersionFeature,
+        &KrabkaVersionFeature,
     ];
     REGISTRY
 }
@@ -430,10 +455,64 @@ mod tests {
             // Kafka's TransactionVersion has TV_0 to TV_2 only (broker #784).
             ("transaction.version", 2, true),
             ("transaction.version", 3, false),
+            ("krabka.version", 0, true),
+            ("krabka.version", 1, true),
+            ("krabka.version", 2, false),
             ("not.a.feature", 1, false),
         ] {
             assert2::assert!(is_supported_level(name, level) == want);
         }
+    }
+
+    /// The whole map a node advertises at registration and in `ApiVersions`.
+    #[test]
+    fn supported_feature_ranges_are_pinned() {
+        let want: BTreeMap<String, (i16, i16)> = [
+            ("eligible.leader.replicas.version", (0, 1)),
+            ("group.version", (0, 1)),
+            ("krabka.metadata.downgrade", (1, 1)),
+            ("krabka.version", (0, 1)),
+            ("kraft.version", (0, 1)),
+            ("metadata.version", (7, 34)),
+            ("share.version", (0, 2)),
+            ("streams.version", (0, 1)),
+            ("transaction.version", (0, 2)),
+        ]
+        .into_iter()
+        .map(|(name, range)| (name.to_string(), range))
+        .collect();
+        check!(supported_feature_ranges() == want);
+    }
+
+    /// `krabka.version` bootstraps at its latest production level whatever
+    /// the bootstrap metadata.version, and an override can pin it to 0.
+    #[test]
+    fn krabka_version_bootstraps_at_the_latest_production_level() {
+        use crate::metadata_version::{METADATA_VERSION_MAX, METADATA_VERSION_MIN};
+        for (case, bootstrap, overrides, want) in [
+            ("minimum release", METADATA_VERSION_MIN, vec![], Some(1)),
+            ("latest release", METADATA_VERSION_MAX, vec![], Some(1)),
+            (
+                "override to 0 omits the record",
+                METADATA_VERSION_MAX,
+                vec![("krabka.version".to_string(), 0)],
+                None,
+            ),
+        ] {
+            let overrides: BTreeMap<String, i16> = overrides.into_iter().collect();
+            let levels = levels_of(&bootstrap_feature_records_with_overrides(
+                bootstrap, &overrides,
+            ));
+            check!(levels.get("krabka.version").copied() == want, "{case}");
+        }
+    }
+
+    #[test]
+    fn krabka_version_declares_no_dependencies_and_no_level_name() {
+        let f = feature("krabka.version").expect("registered");
+        check!((f.dependencies(0), f.dependencies(1), f.level_name(1)) == (&[][..], &[][..], None));
+        let resolved = BTreeMap::from([("krabka.version".to_string(), 1)]);
+        check!(validate_feature_dependencies(&resolved) == Ok(()));
     }
 
     #[test]
@@ -484,6 +563,7 @@ mod tests {
             // control record rather than by UpdateFeatures. Leaving it out of
             // this table left its name, range and default entirely unasserted.
             ("kraft.version", (0, 1), 0, 0),
+            ("krabka.version", (0, 1), 1, 0),
         ];
 
         for (name, range, default_at_25, floor) in expected {
@@ -687,6 +767,7 @@ mod tests {
                     ("metadata.version".to_string(), 25),
                     ("group.version".to_string(), 1),
                     ("transaction.version".to_string(), 2),
+                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
@@ -705,6 +786,7 @@ mod tests {
                     ("share.version".to_string(), 2),
                     ("streams.version".to_string(), 1),
                     ("eligible.leader.replicas.version".to_string(), 1),
+                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
@@ -720,6 +802,7 @@ mod tests {
                 == BTreeMap::from([
                     ("metadata.version".to_string(), 25),
                     ("transaction.version".to_string(), 2),
+                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
@@ -747,6 +830,7 @@ mod tests {
                 == BTreeMap::from([
                     ("metadata.version".to_string(), 23),
                     ("group.version".to_string(), 1),
+                    ("krabka.version".to_string(), 1),
                 ])
         );
     }
