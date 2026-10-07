@@ -8,5 +8,5 @@ pub mod control;
 pub mod envelope;
 pub mod record;
 
-pub use envelope::{EnvelopeError, ValueHeader, decode_value_header, encode_value};
-pub use record::KraftMetadataRecord;
+pub use envelope::{EnvelopeError, FRAME_VERSION, ValueHeader, decode_value_header, encode_value};
+pub use record::{KraftMetadataRecord, UNKNOWN_FRAME_VERSION};

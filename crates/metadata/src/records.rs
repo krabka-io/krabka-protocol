@@ -1,6 +1,11 @@
-//! Versioned metadata records. Future versions add variants. An older
-//! reader can skip an unknown variant because we encode each variant
-//! length-prefixed inside the `bincode` payload.
+//! Versioned metadata records.
+//!
+//! wincode encodes a [`MetadataRecord`] as its variant index, then the fields
+//! of the variant in declaration order. Nothing is length-prefixed, so a reader
+//! cannot skip a variant it does not know: it fails to decode it. The variant
+//! order and every field layout are part of the krabka 1.x on-disk contract. A
+//! new variant goes at the end. The golden bytes in `wincode_contract.rs` pin
+//! one value of every variant.
 
 pub use krabka_ids::LeaderEpoch;
 pub use krabka_voters::NodeId;

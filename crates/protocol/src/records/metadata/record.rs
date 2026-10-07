@@ -34,8 +34,13 @@ use crate::{
         unregister_controller_record::UnregisterControllerRecord,
         user_scram_credential_record::UserScramCredentialRecord,
     },
-    records::metadata::envelope::{decode_value_header, encode_value},
+    records::metadata::envelope::{EnvelopeError, decode_value_header, encode_value},
 };
+
+/// The [`ProtocolError::SchemaMismatch`] text of a record value whose envelope
+/// declares a frame version other than
+/// [`FRAME_VERSION`](crate::records::metadata::envelope::FRAME_VERSION).
+pub const UNKNOWN_FRAME_VERSION: &str = "unknown metadata record frame version";
 
 /// A single `KRaft` metadata record (the value of one Kafka `Record`).
 #[derive(Debug, Clone, PartialEq)]
@@ -175,11 +180,17 @@ impl KraftMetadataRecord {
     /// needs that apiVersion to re-encode the record byte-identically.
     ///
     /// # Errors
-    /// Returns a [`ProtocolError`] if the envelope or body cannot be decoded.
+    /// Returns a [`ProtocolError`] if the envelope or body cannot be decoded,
+    /// and [`ProtocolError::SchemaMismatch`] with [`UNKNOWN_FRAME_VERSION`]
+    /// for a frame version other than 1.
     pub fn decode_value(value: &[u8]) -> Result<(Self, i16), ProtocolError> {
         let mut cur: &[u8] = value;
-        let hdr = decode_value_header(&mut cur)
-            .map_err(|_| ProtocolError::SchemaMismatch("metadata record envelope"))?;
+        let hdr = decode_value_header(&mut cur).map_err(|e| match e {
+            EnvelopeError::Truncated => ProtocolError::SchemaMismatch("metadata record envelope"),
+            EnvelopeError::UnknownFrameVersion(_) => {
+                ProtocolError::SchemaMismatch(UNKNOWN_FRAME_VERSION)
+            }
+        })?;
         let v = api_version_to_i16(hdr.api_version)?;
         let rec = match hdr.api_key {
             0 => Self::RegisterBroker(RegisterBrokerRecord::decode(&mut cur, v)?),
@@ -255,6 +266,32 @@ mod tests {
         check!(ver == 0);
         // Re-encode at the decoded version is byte-identical.
         check!(decoded.encode_value(ver).expect("re-encode") == value);
+    }
+
+    /// A frame version other than 1 is refused with its own error, as
+    /// Kafka's `AbstractApiMessageSerde.read` refuses it, and a truncated
+    /// envelope keeps the generic one.
+    #[test]
+    fn decode_value_rejects_a_bad_envelope() {
+        for (label, value, want) in [
+            (
+                "frame version 0",
+                vec![0x00, 0x0C, 0x00],
+                UNKNOWN_FRAME_VERSION,
+            ),
+            (
+                "frame version 2",
+                vec![0x02, 0x0C, 0x00],
+                UNKNOWN_FRAME_VERSION,
+            ),
+            ("truncated", vec![0x01], "metadata record envelope"),
+        ] {
+            let got = KraftMetadataRecord::decode_value(&value);
+            check!(
+                matches!(got, Err(ProtocolError::SchemaMismatch(m)) if m == want),
+                "{label}: {got:?}"
+            );
+        }
     }
 
     /// KIP-1312 `UnregisterControllerRecord` is metadata apiKey 29, version 0,
