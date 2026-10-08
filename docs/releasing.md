@@ -153,16 +153,19 @@ crate's publisher, and delete the secret again.
 
 ## The sspi dependency
 
-`krabka-security` uses `sspi` from a git fork, which a crates.io package
-cannot name. `cargo publish` keeps only the `version` of a git dependency, so
-the published `krabka-security` depends on `sspi` 0.23.0 from crates.io. That
-release does not have the fork's MIT Kerberos fixes.
+`krabka-security` depends on
+[`krabka-sspi`](https://crates.io/crates/krabka-sspi), renamed to `sspi` in
+the workspace manifest. `krabka-sspi` is a temporary crates.io release of
+[krabka-io/sspi-rs](https://github.com/krabka-io/sspi-rs): upstream `sspi`
+0.23.0 plus the MIT Kerberos interoperability fixes
+([devolutions/sspi-rs#738](https://github.com/Devolutions/sspi-rs/pull/738))
+and the #764 fix. Its library is still named `sspi`, so the code says
+`use sspi::...`.
 
-`sspi` 0.23.0 from crates.io also does not build against `picky-krb` 0.12.5,
-which a fresh resolve picks. So `cargo publish --dry-run` fails for
-`krabka-security`, and for `krabka-metadata`, which depends on it. The `plan`
-job then stops before any upload. Until crates.io has an `sspi` release that
-builds, publish the other crates with the `crates` input.
+When an upstream `sspi` release contains those fixes, change the workspace
+entry to that `sspi` version and drop `package = "krabka-sspi"`. Then release.
+krabka-io/sspi-rs's `docs/krabka-sspi-release.md` covers deprecating and
+yanking `krabka-sspi` after that.
 
 ## Retire the crabka crates
 
