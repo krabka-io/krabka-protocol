@@ -22,7 +22,7 @@ ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
     # RSA "Marvin" timing side-channel. Pulled in transitively by `picky`
-    # (a hard dependency of the `sspi` Kerberos stack, from `krabka-sspi`). Our GSSAPI
+    # (a hard dependency of the vendored `sspi` Kerberos stack). Our GSSAPI
     # path is auth-only over AES keytab keys and performs no RSA private-key
     # operations (no PKINIT), so the network-observable timing leak does not
     # apply. The advisory has no fixed release available.

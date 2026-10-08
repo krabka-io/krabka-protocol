@@ -151,28 +151,21 @@ A crate that joins the published set later needs the token once, for its
 first release. Add the secret again for that release, configure the new
 crate's publisher, and delete the secret again.
 
-## The krabka-sspi dependency
+## The sspi dependency
 
-`krabka-security` implements GSSAPI (Kerberos) with `sspi`. Devolutions'
-`sspi` 0.23.0 on crates.io does not interoperate with an MIT KDC, and it does
-not build against the `picky-krb` that a fresh resolve picks. So
 `krabka-security` depends on
-[`krabka-sspi`](https://crates.io/crates/krabka-sspi) 0.23.0 instead. It is a
-fork of `sspi` 0.23.0 from
-[krabka-io/sspi-rs](https://github.com/krabka-io/sspi-rs), with the MIT
-Kerberos fixes (devolutions/sspi-rs#738) and the #764 fix. Its library name is
-still `sspi`, so the code imports `sspi`, and the root `Cargo.toml` renames
-the package:
+[`krabka-sspi`](https://crates.io/crates/krabka-sspi), renamed to `sspi` in
+the workspace manifest. `krabka-sspi` is a temporary crates.io release of
+[krabka-io/sspi-rs](https://github.com/krabka-io/sspi-rs): upstream `sspi`
+0.23.0 plus the MIT Kerberos interoperability fixes
+([devolutions/sspi-rs#738](https://github.com/Devolutions/sspi-rs/pull/738))
+and the #764 fix. Its library is still named `sspi`, so the code says
+`use sspi::...`.
 
-```toml
-sspi = { package = "krabka-sspi", version = "0.23.0", ... }
-```
-
-`krabka-sspi` is temporary. The fixes are going upstream. When an `sspi`
-release on crates.io has them, switch the dependency back to `sspi`, release,
-and then deprecate and yank `krabka-sspi`. Downstream repositories that patch
-`sspi` to a git revision in `[patch.crates-io]` can drop that patch once they
-take a `krabka-security` release that uses `krabka-sspi`.
+When an upstream `sspi` release contains those fixes, change the workspace
+entry to that `sspi` version and drop `package = "krabka-sspi"`. Then release.
+krabka-io/sspi-rs's `docs/krabka-sspi-release.md` covers deprecating and
+yanking `krabka-sspi` after that.
 
 ## Retire the crabka crates
 

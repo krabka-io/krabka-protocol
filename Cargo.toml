@@ -97,14 +97,12 @@ serde-wincode = "=0.1.2"
 serde_json = "1"
 sha2 = "0.11"
 snap = "1"
-# SASL/GSSAPI (Kerberos). `krabka-sspi` is the krabka-io fork of Devolutions'
-# sspi 0.23.0 with the MIT Kerberos interoperability fixes
-# (devolutions/sspi-rs#738) and the #764 fix. It is on crates.io, so the
-# published krabka-security gets those fixes too. Its library name is `sspi`.
-# The fork is temporary: once an upstream sspi release has the fixes, switch
-# back to it, then deprecate and yank krabka-sspi. docs/releasing.md has more.
-# `network_client` lets the initiator reach the KDC; `ring` keeps crypto
-# provider choice aligned with rustls/rcgen in this workspace.
+# SASL/GSSAPI (Kerberos). `network_client` lets the initiator reach the KDC;
+# `ring` keeps crypto provider choice aligned with rustls/rcgen in this workspace.
+# `krabka-sspi` is sspi 0.23.0 plus the MIT Kerberos interoperability fixes
+# (devolutions/sspi-rs#738) and the #764 fix, published from krabka-io/sspi-rs.
+# Its library is still named `sspi`. Return to upstream `sspi` once a release
+# contains those fixes; docs/releasing.md says how.
 sspi = { package = "krabka-sspi", version = "0.23.0", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree
