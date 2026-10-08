@@ -97,14 +97,15 @@ serde-wincode = "=0.1.2"
 serde_json = "1"
 sha2 = "0.11"
 snap = "1"
-# SSPI 0.23.0 plus MIT Kerberos interoperability and the upstream PR #764 fix.
-# SASL/GSSAPI (Kerberos). `network_client` lets the initiator reach the KDC;
-# `ring` keeps crypto provider choice aligned with rustls/rcgen in this workspace.
-# `cargo publish` keeps only the `version` of a git dependency, so the published
-# krabka-security depends on sspi 0.23.0 from crates.io, without the fork's
-# MIT Kerberos fixes. A consumer that needs them patches sspi to this revision.
-# docs/releasing.md says what this means for a publish.
-sspi = { version = "0.23.0", git = "https://github.com/robot-head/sspi-rs", rev = "73ad2bcfff41c44b22c7e2400d528faedbf38967", default-features = false, features = ["network_client", "ring"] }
+# SASL/GSSAPI (Kerberos). `krabka-sspi` is the krabka-io fork of Devolutions'
+# sspi 0.23.0 with the MIT Kerberos interoperability fixes
+# (devolutions/sspi-rs#738) and the #764 fix. It is on crates.io, so the
+# published krabka-security gets those fixes too. Its library name is `sspi`.
+# The fork is temporary: once an upstream sspi release has the fixes, switch
+# back to it, then deprecate and yank krabka-sspi. docs/releasing.md has more.
+# `network_client` lets the initiator reach the KDC; `ring` keeps crypto
+# provider choice aligned with rustls/rcgen in this workspace.
+sspi = { package = "krabka-sspi", version = "0.23.0", default-features = false, features = ["network_client", "ring"] }
 # strum: derive enum<->&'static str (IntoStaticStr) and &str->enum (EnumString)
 # to retire hand-written match-arm conversions. Its whole proc-macro tree
 # (syn/quote/proc-macro2/heck/rustversion) is already compiled in the graph,

@@ -151,18 +151,28 @@ A crate that joins the published set later needs the token once, for its
 first release. Add the secret again for that release, configure the new
 crate's publisher, and delete the secret again.
 
-## The sspi dependency
+## The krabka-sspi dependency
 
-`krabka-security` uses `sspi` from a git fork, which a crates.io package
-cannot name. `cargo publish` keeps only the `version` of a git dependency, so
-the published `krabka-security` depends on `sspi` 0.23.0 from crates.io. That
-release does not have the fork's MIT Kerberos fixes.
+`krabka-security` implements GSSAPI (Kerberos) with `sspi`. Devolutions'
+`sspi` 0.23.0 on crates.io does not interoperate with an MIT KDC, and it does
+not build against the `picky-krb` that a fresh resolve picks. So
+`krabka-security` depends on
+[`krabka-sspi`](https://crates.io/crates/krabka-sspi) 0.23.0 instead. It is a
+fork of `sspi` 0.23.0 from
+[krabka-io/sspi-rs](https://github.com/krabka-io/sspi-rs), with the MIT
+Kerberos fixes (devolutions/sspi-rs#738) and the #764 fix. Its library name is
+still `sspi`, so the code imports `sspi`, and the root `Cargo.toml` renames
+the package:
 
-`sspi` 0.23.0 from crates.io also does not build against `picky-krb` 0.12.5,
-which a fresh resolve picks. So `cargo publish --dry-run` fails for
-`krabka-security`, and for `krabka-metadata`, which depends on it. The `plan`
-job then stops before any upload. Until crates.io has an `sspi` release that
-builds, publish the other crates with the `crates` input.
+```toml
+sspi = { package = "krabka-sspi", version = "0.23.0", ... }
+```
+
+`krabka-sspi` is temporary. The fixes are going upstream. When an `sspi`
+release on crates.io has them, switch the dependency back to `sspi`, release,
+and then deprecate and yank `krabka-sspi`. Downstream repositories that patch
+`sspi` to a git revision in `[patch.crates-io]` can drop that patch once they
+take a `krabka-security` release that uses `krabka-sspi`.
 
 ## Retire the crabka crates
 
