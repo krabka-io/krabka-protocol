@@ -6,7 +6,7 @@
 //! as its `voters` module. The deterministic consensus core,
 //! `krabka-kraft-core`, embeds a [`VoterSet`] in its quorum state.
 
-#![doc(html_root_url = "https://docs.rs/krabka-voters/0.5.1")]
+#![doc(html_root_url = "https://docs.rs/krabka-voters/0.6.0")]
 
 use std::collections::BTreeMap;
 

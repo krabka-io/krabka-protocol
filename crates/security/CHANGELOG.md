@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-08
+
+- First release on crates.io. 0.5.1 was not published: it took `sspi`
+  from a git revision, which a crates.io package cannot name.
+
+### Changed
+
+- GSSAPI (Kerberos) uses [`krabka-sspi`](https://crates.io/crates/krabka-sspi)
+  0.23.0 from crates.io: `sspi` 0.23.0 plus the MIT Kerberos interoperability
+  fixes (devolutions/sspi-rs#738) and the #764 fix. The library is still
+  `sspi`.
+
 ## [0.5.1] — 2026-10-06
 
 - First release on crates.io under the `krabka-*` name. Earlier versions were

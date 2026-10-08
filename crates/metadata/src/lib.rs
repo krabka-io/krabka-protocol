@@ -42,7 +42,7 @@
 //! assert_eq!(key[1].0, "user");
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/krabka-metadata/0.5.1")]
+#![doc(html_root_url = "https://docs.rs/krabka-metadata/0.6.0")]
 
 pub mod acl;
 pub mod break_glass;

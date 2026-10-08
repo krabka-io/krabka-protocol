@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-08
+
+- First release on crates.io. 0.5.1 was not published, because it depends
+  on `krabka-security`.
+
 ### Added
 
 - **Breaking.** The krabka-owned feature `krabka.version` (new module

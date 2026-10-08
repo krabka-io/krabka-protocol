@@ -24,7 +24,7 @@ workspace = true
 # for the in-browser playground without dragging in the rest of the stack.
 [dependencies]
 assert2 = { workspace = true }
-krabka-ids = { version = "0.5.1", path = "../ids" }
+krabka-ids = { version = "0.6.0", path = "../ids" }
 serde = { workspace = true, features = ["derive"] }
 uuid = { workspace = true }
 
