@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `parse_client_initial_response` now matches the SASL/OAUTHBEARER client
+  initial response with the grammar of Kafka 4.3.1's
+  `OAuthBearerClientInitialResponse`
+  ([krabka-broker#1390](https://github.com/krabka-io/krabka-broker/issues/1390)).
+  It rejects the `y` channel-binding flag, an authzid without `a=` or with a
+  raw `=` or a non-ASCII character, a message without the final `\x01`,
+  trailing data, malformed extension keys and values, and a token outside
+  Kafka's token characters. It accepts the `Bearer` scheme in any letter case
+  and an authzid that contains `\x01`, and it no longer keeps the extra spaces
+  before the token in the token. The authzid stays verbatim: Kafka does not
+  decode `=2C` or `=3D` either.
+
 ## [0.6.0] — 2026-10-08
 
 - First release on crates.io under the `krabka-*` name. 0.5.1 could not

@@ -40,77 +40,158 @@ pub struct AuthOutcome {
 /// Parsed RFC 7628 client initial response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientInitialResponse {
-    /// The bearer token (the value after `auth=Bearer `).
+    /// The bearer token (the value after `auth=Bearer` and its spaces).
     pub token: String,
-    /// The GS2 authorization id, if the client supplied a non-empty one.
+    /// The GS2 authorization id after `a=`, verbatim, if the client supplied
+    /// one.
     pub authzid: Option<String>,
 }
 
 /// Parse the SASL/OAUTHBEARER client initial response (RFC 7628 §3.1).
 ///
-/// Wire shape (`^A` = `\x01`):
-/// `gs2-header ^A auth=Bearer <token> [^A key=value ...] ^A ^A`
+/// The grammar is the one that Kafka 4.3.1's
+/// `org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse`
+/// matches against the whole message (`^A` = `\x01`):
 ///
-/// The GS2 header is `gs2-cb-flag "," [authzid] ","`. For OAUTHBEARER over a
-/// TLS / plaintext listener the channel-binding flag is `n`, which means none.
-/// This function accepts `n` / `y` and ignores everything else in the header
-/// except the authzid. It also ignores non-`auth` kvpairs such as host, port,
-/// and extensions.
+/// ```text
+/// message  = "n," ["a=" saslname] "," ^A *(key "=" value ^A) ^A
+/// saslname = 1*([\x01-\x7F] except "=" and "," / "=2C" / "=3D")
+/// key      = 1*[A-Za-z]
+/// value    = 1*[\x21-\x7E SP HTAB CR LF]
+/// auth     = scheme 1*SP token
+/// scheme   = 1*[A-Za-z0-9_]
+/// token    = 1*[-_~+/.A-Za-z0-9] *"="
+/// ```
+///
+/// The channel-binding flag must be `n`. The authzid is returned verbatim:
+/// Kafka does not decode `=2C` or `=3D`. An empty authzid is `None`. The
+/// `auth` kvpair is required, and its scheme must be `Bearer` in any letter
+/// case. If `auth` occurs more than once, the last one wins, as in Kafka's
+/// map. The other kvpairs (SASL extensions such as `host` and `port`) must
+/// match the grammar, but this function does not return them.
 ///
 /// # Errors
 ///
-/// [`AuthError::MalformedMessage`] when the GS2 header or the `auth=Bearer`
-/// kvpair is missing or malformed.
+/// [`AuthError::MalformedMessage`] when the message does not match the
+/// grammar, when the `auth` kvpair is missing, or when its scheme is not
+/// `Bearer`.
 pub fn parse_client_initial_response(bytes: &[u8]) -> Result<ClientInitialResponse, AuthError> {
     let s = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
+    let (authzid, rest) = parse_gs2_header(s)?;
 
-    // Split off the GS2 header at the first kvsep.
-    let (gs2, rest) = s.split_once('\u{1}').ok_or(AuthError::MalformedMessage)?;
-    let authzid = parse_gs2_header(gs2)?;
-
-    // The remainder is kvsep-separated kvpairs terminated by an empty pair
-    // (the trailing `\x01\x01`). Find the `auth` kvpair.
-    let mut token = None;
-    for pair in rest.split('\u{1}') {
-        if pair.is_empty() {
-            continue;
+    // `rest` is `*(key "=" value ^A) ^A`, with nothing after the final `^A`.
+    let kvpairs = rest
+        .strip_suffix(KVSEP)
+        .ok_or(AuthError::MalformedMessage)?;
+    let mut auth = None;
+    if !kvpairs.is_empty() {
+        let kvpairs = kvpairs
+            .strip_suffix(KVSEP)
+            .ok_or(AuthError::MalformedMessage)?;
+        for pair in kvpairs.split(KVSEP) {
+            let (key, value) = pair.split_once('=').ok_or(AuthError::MalformedMessage)?;
+            if !is_kvpair_key(key) || !is_kvpair_value(value) {
+                return Err(AuthError::MalformedMessage);
+            }
+            if key == "auth" {
+                auth = Some(value);
+            }
         }
-        let (key, value) = pair.split_once('=').ok_or(AuthError::MalformedMessage)?;
-        if key == "auth" {
-            let t = value
-                .strip_prefix("Bearer ")
-                .ok_or(AuthError::MalformedMessage)?;
-            token = Some(t.to_string());
-        }
-        // Other keys (host, port, SASL extensions) are not used here.
     }
 
-    let token = token.ok_or(AuthError::MalformedMessage)?;
-    Ok(ClientInitialResponse { token, authzid })
+    let token = parse_bearer_auth(auth.ok_or(AuthError::MalformedMessage)?)?;
+    Ok(ClientInitialResponse {
+        token: token.to_string(),
+        authzid,
+    })
 }
 
-/// Parse a GS2 header `cb-flag "," [authzid] ","` and return a non-empty authzid.
+/// The RFC 7628 kvpair separator.
+const KVSEP: char = '\u{1}';
+
+/// Parse the GS2 header `"n," ["a=" saslname] "," ^A` at the start of a
+/// client initial response.
 ///
-/// This function strips the `a=` prefix that RFC 5801 puts on the authzid.
-fn parse_gs2_header(gs2: &str) -> Result<Option<String>, AuthError> {
-    // cb-flag is one of "n", "y", or "p=<name>". OAUTHBEARER never negotiates
-    // channel binding, so a "p=" flag is malformed here.
-    let rest = if let Some(r) = gs2.strip_prefix("n,") {
-        r
-    } else if let Some(r) = gs2.strip_prefix("y,") {
-        r
+/// This function returns the authzid verbatim (`None` when it is absent) and
+/// the input after the header's trailing `^A`. Kafka accepts only the `n`
+/// channel-binding flag: OAUTHBEARER never negotiates channel binding.
+fn parse_gs2_header(message: &str) -> Result<(Option<String>, &str), AuthError> {
+    let rest = message
+        .strip_prefix("n,")
+        .ok_or(AuthError::MalformedMessage)?;
+    let (authzid, rest) = if let Some(rest) = rest.strip_prefix(',') {
+        (None, rest)
     } else {
-        return Err(AuthError::MalformedMessage);
+        // A saslname never contains ",", so the first "," ends it.
+        let (field, rest) = rest.split_once(',').ok_or(AuthError::MalformedMessage)?;
+        let name = field
+            .strip_prefix("a=")
+            .ok_or(AuthError::MalformedMessage)?;
+        if !is_saslname(name) {
+            return Err(AuthError::MalformedMessage);
+        }
+        (Some(name.to_string()), rest)
     };
-    // `rest` is `[authzid] ","` — must end with the trailing comma.
-    let authzid = rest.strip_suffix(',').ok_or(AuthError::MalformedMessage)?;
-    if authzid.is_empty() {
-        Ok(None)
+    let rest = rest
+        .strip_prefix(KVSEP)
+        .ok_or(AuthError::MalformedMessage)?;
+    Ok((authzid, rest))
+}
+
+/// Whether `name` matches Kafka's `SASLNAME`: one or more of an ASCII
+/// character from `\x01` to `\x7F` other than `=` and `,`, `=2C`, or `=3D`.
+fn is_saslname(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'=' => {
+                let escape = bytes.get(i + 1..i + 3);
+                if escape != Some(b"2C".as_slice()) && escape != Some(b"3D".as_slice()) {
+                    return false;
+                }
+                i += 3;
+            }
+            b',' | 0x00 | 0x80.. => return false,
+            _ => i += 1,
+        }
+    }
+    !bytes.is_empty()
+}
+
+/// Whether `key` matches Kafka's kvpair `KEY`: one or more ASCII letters.
+fn is_kvpair_key(key: &str) -> bool {
+    !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphabetic())
+}
+
+/// Whether `value` matches Kafka's kvpair `VALUE`: one or more of a visible
+/// ASCII character, space, tab, CR, or LF.
+fn is_kvpair_value(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| matches!(b, 0x21..=0x7E | b' ' | b'\t' | b'\r' | b'\n'))
+}
+
+/// Return the token of an `auth` kvpair value, which must be
+/// `scheme 1*SP token` with the scheme `Bearer` in any letter case.
+///
+/// Kafka's `AUTH_PATTERN` is `(?<scheme>[\w]+)[ ]+(?<token>[-_~+/\.a-zA-Z0-9]+([=]*))`,
+/// where `\w` is the ASCII class `[A-Za-z0-9_]`.
+fn parse_bearer_auth(auth: &str) -> Result<&str, AuthError> {
+    let (scheme, rest) = auth.split_once(' ').ok_or(AuthError::MalformedMessage)?;
+    let token = rest.trim_start_matches(' ');
+    let is_scheme_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let is_token_byte = |b: u8| b.is_ascii_alphanumeric() || b"-_~+/.".contains(&b);
+    let unpadded = token.trim_end_matches('=');
+    let well_formed = !scheme.is_empty()
+        && scheme.bytes().all(is_scheme_byte)
+        && !unpadded.is_empty()
+        && unpadded.bytes().all(is_token_byte);
+    if well_formed && scheme.eq_ignore_ascii_case("bearer") {
+        Ok(token)
     } else {
-        // RFC 5801 prefixes the authzid with `a=`.
-        Ok(Some(
-            authzid.strip_prefix("a=").unwrap_or(authzid).to_string(),
-        ))
+        Err(AuthError::MalformedMessage)
     }
 }
 
@@ -965,54 +1046,215 @@ mod tests {
         parse_json_path(expr).expect("expression compiles")
     }
 
-    fn client_resp(token: &str) -> Vec<u8> {
-        format!("n,,\u{1}auth=Bearer {token}\u{1}\u{1}").into_bytes()
-    }
-
     #[test]
-    fn parse_happy_path_empty_authzid() {
-        let r = parse_client_initial_response(&client_resp("tok.en.")).unwrap();
-        assert2::assert!(
-            r == ClientInitialResponse {
-                token: "tok.en.".into(),
-                authzid: None,
-            }
-        );
-    }
-
-    #[test]
-    fn parse_extracts_authzid_and_ignores_extra_kvpairs() {
-        let bytes =
-            b"n,a=alice,\x01host=example.com\x01auth=Bearer abc\x01port=443\x01\x01".to_vec();
-        let r = parse_client_initial_response(&bytes).unwrap();
-        assert2::assert!(
-            r == ClientInitialResponse {
-                token: "abc".into(),
-                authzid: Some("alice".into()),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_rejects_malformed_client_initial_responses() {
-        let cases = [
+    fn parse_accepts_client_initial_responses_that_kafka_accepts() {
+        // Each case is accepted by Kafka 4.3.1's
+        // `OAuthBearerClientInitialResponse` grammar.
+        let cases: [(&str, &[u8], ClientInitialResponse); 14] = [
             (
-                "missing auth kvpair",
-                b"n,,\x01host=example.com\x01\x01".as_slice(),
+                "empty authzid",
+                b"n,,\x01auth=Bearer tok.en.\x01\x01",
+                ClientInitialResponse {
+                    token: "tok.en.".into(),
+                    authzid: None,
+                },
             ),
             (
-                "missing bearer prefix",
-                b"n,,\x01auth=Basic abc\x01\x01".as_slice(),
+                "authzid and extensions around auth",
+                b"n,a=alice,\x01host=example.com\x01auth=Bearer abc\x01port=443\x01\x01",
+                ClientInitialResponse {
+                    token: "abc".into(),
+                    authzid: Some("alice".into()),
+                },
             ),
             (
-                "bad gs2 header",
-                b"z,,\x01auth=Bearer abc\x01\x01".as_slice(),
+                "lowercase scheme",
+                b"n,,\x01auth=bearer T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "uppercase scheme",
+                b"n,,\x01auth=BEARER T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "several spaces after the scheme",
+                b"n,,\x01auth=Bearer   T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "token with padding",
+                b"n,,\x01auth=Bearer abc==\x01\x01",
+                ClientInitialResponse {
+                    token: "abc==".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "every token character class",
+                b"n,,\x01auth=Bearer -_~+/.azAZ09=\x01\x01",
+                ClientInitialResponse {
+                    token: "-_~+/.azAZ09=".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "authzid escapes stay verbatim",
+                b"n,a=a=2Cb=3Dc,\x01auth=Bearer T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: Some("a=2Cb=3Dc".into()),
+                },
+            ),
+            (
+                "authzid with a kvsep inside",
+                b"n,a=x\x01y,\x01auth=Bearer T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: Some("x\x01y".into()),
+                },
+            ),
+            (
+                "extension value with spaces and a tab",
+                b"n,,\x01ext=val ue\tx\x01auth=Bearer T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "extension value with an equals sign",
+                b"n,,\x01auth=Bearer T\x01ext=a=b\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "later auth kvpair wins",
+                b"n,,\x01auth=Bearer A\x01auth=Bearer B\x01\x01",
+                ClientInitialResponse {
+                    token: "B".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "extension key that differs from auth only in case",
+                b"n,,\x01auth=Bearer T\x01Auth=x\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: None,
+                },
+            ),
+            (
+                "authzid with DEL and punctuation",
+                b"n,a=u\x7f!~,\x01auth=Bearer T\x01\x01",
+                ClientInitialResponse {
+                    token: "T".into(),
+                    authzid: Some("u\x7f!~".into()),
+                },
             ),
         ];
-        for (_name, bytes) in cases {
-            assert2::assert!(
-                parse_client_initial_response(bytes) == Err(AuthError::MalformedMessage)
-            );
+        for (name, bytes, expected) in cases {
+            let parsed = parse_client_initial_response(bytes);
+            assert2::assert!(parsed == Ok(expected), "case: {name}");
+        }
+    }
+
+    #[test]
+    fn parse_rejects_client_initial_responses_that_kafka_rejects() {
+        // Each case is rejected by Kafka 4.3.1's
+        // `OAuthBearerClientInitialResponse` grammar.
+        let cases: [(&str, &[u8]); 34] = [
+            ("missing auth kvpair", b"n,,\x01host=example.com\x01\x01"),
+            ("no kvpairs", b"n,,\x01\x01"),
+            (
+                "auth key is case sensitive",
+                b"n,,\x01AUTH=Bearer T\x01\x01",
+            ),
+            ("basic scheme", b"n,,\x01auth=Basic abc\x01\x01"),
+            (
+                "scheme with a non-word character",
+                b"n,,\x01auth=Bear-er T\x01\x01",
+            ),
+            ("no scheme", b"n,,\x01auth= T\x01\x01"),
+            ("no space after the scheme", b"n,,\x01auth=BearerT\x01\x01"),
+            ("tab after the scheme", b"n,,\x01auth=Bearer\tT\x01\x01"),
+            ("no token", b"n,,\x01auth=Bearer \x01\x01"),
+            (
+                "trailing space after the token",
+                b"n,,\x01auth=Bearer T \x01\x01",
+            ),
+            (
+                "token outside the token class",
+                b"n,,\x01auth=Bearer to*ken\x01\x01",
+            ),
+            (
+                "equals sign inside the token",
+                b"n,,\x01auth=Bearer a=b\x01\x01",
+            ),
+            ("padding only", b"n,,\x01auth=Bearer ==\x01\x01"),
+            ("unknown cb flag", b"z,,\x01auth=Bearer abc\x01\x01"),
+            ("y cb flag", b"y,,\x01auth=Bearer T\x01\x01"),
+            ("p cb flag", b"p=tls-unique,,\x01auth=Bearer T\x01\x01"),
+            ("authzid without a=", b"n,alice,\x01auth=Bearer T\x01\x01"),
+            ("empty authzid after a=", b"n,a=,\x01auth=Bearer T\x01\x01"),
+            (
+                "authzid with a raw equals sign",
+                b"n,a=a=b,\x01auth=Bearer T\x01\x01",
+            ),
+            (
+                "authzid with a lowercase escape",
+                b"n,a=a=2c,\x01auth=Bearer T\x01\x01",
+            ),
+            (
+                "authzid with a non-ASCII character",
+                "n,a=b\u{e9},\x01auth=Bearer T\x01\x01".as_bytes(),
+            ),
+            (
+                "authzid with a NUL",
+                b"n,a=a\x00b,\x01auth=Bearer T\x01\x01",
+            ),
+            ("no kvsep after the gs2 header", b"n,,auth=Bearer T\x01\x01"),
+            ("missing final kvsep", b"n,,\x01auth=Bearer T\x01"),
+            ("missing both final kvseps", b"n,,\x01auth=Bearer T"),
+            ("trailing junk", b"n,,\x01auth=Bearer T\x01\x01x"),
+            ("extra trailing kvsep", b"n,,\x01auth=Bearer T\x01\x01\x01"),
+            (
+                "extension key with a digit",
+                b"n,,\x01k1=v\x01auth=Bearer T\x01\x01",
+            ),
+            ("empty extension key", b"n,,\x01=v\x01auth=Bearer T\x01\x01"),
+            (
+                "empty extension value",
+                b"n,,\x01k=\x01auth=Bearer T\x01\x01",
+            ),
+            (
+                "extension without an equals sign",
+                b"n,,\x01k\x01auth=Bearer T\x01\x01",
+            ),
+            (
+                "extension value with a non-ASCII character",
+                "n,,\x01k=v\u{e9}\x01auth=Bearer T\x01\x01".as_bytes(),
+            ),
+            (
+                "extension value with DEL",
+                b"n,,\x01k=v\x7f\x01auth=Bearer T\x01\x01",
+            ),
+            ("invalid UTF-8", b"n,,\x01auth=Bearer T\x01k=\xff\x01\x01"),
+        ];
+        for (name, bytes) in cases {
+            let parsed = parse_client_initial_response(bytes);
+            assert2::assert!(parsed == Err(AuthError::MalformedMessage), "case: {name}");
         }
     }
 
