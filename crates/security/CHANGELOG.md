@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an authzid that contains `\x01`, and it no longer keeps the extra spaces
   before the token in the token. The authzid stays verbatim: Kafka does not
   decode `=2C` or `=3D` either.
+- `UnsecuredJwsValidator::validate` now checks a token the way Kafka 4.3.1's
+  `OAuthBearerUnsecuredValidatorCallbackHandler` does
+  ([#66](https://github.com/krabka-io/krabka-protocol/issues/66)). It rejects
+  an `exp` that is not after `iat`, an `iat` that is not a number, a blank
+  principal, and a numeric scope claim. The new `scope_claim_name` and
+  `required_scope` fields are Kafka's `unsecuredValidatorScopeClaimName` and
+  `unsecuredValidatorRequiredScope`, and `parse_required_scope` reads the
+  option. A token without a required scope item fails with the new
+  `AuthError::InsufficientScope`. The new `oauth_error_json` renders Kafka's
+  server challenge for any validation failure, such as
+  `{"status":"insufficient_scope", "scope":"[a, b]"}`, and replaces
+  `invalid_token_json`, which is removed.
 
 ## [0.6.0] — 2026-10-08
 

@@ -137,6 +137,13 @@ pub enum AuthError {
     /// maps to the RFC 7628 `invalid_token` server error status.
     #[error("oauthbearer introspection transport: {0}")]
     IntrospectionTransport(String),
+    /// OAUTHBEARER token passed every other check but lacked an item of the
+    /// scope the validator requires. This maps to the RFC 7628
+    /// `insufficient_scope` server error status, and `required_scope` is the
+    /// whole configured list, which Kafka's challenge carries in its `scope`
+    /// field. `oauth_error_json` renders that challenge.
+    #[error("insufficient scope: requires {required_scope:?}")]
+    InsufficientScope { required_scope: Vec<String> },
 }
 
 #[cfg(test)]
