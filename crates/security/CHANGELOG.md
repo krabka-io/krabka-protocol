@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ScramServerExchange` now reads the SCRAM client-final message with the
+  grammar of Kafka 4.3.1's `ScramMessages.ClientFinalMessage`
+  ([#65](https://github.com/krabka-io/krabka-protocol/issues/65)):
+  `c=<base64>,r=<nonce>`, any `,<alpha>=<value>` extensions, then
+  `,p=<base64>`. It rejects attributes in another order, an attribute after
+  the proof, a repeated `c=`, a nonce outside Kafka's printable characters,
+  base64 outside Kafka's grammar, and trailing data. It accepts a proof whose
+  last base64 character sets unused bits, as Java's decoder does. The
+  `AuthMessage` still signs the client-final message as the client sent it.
+  A client-first authzid is now compared with the username as the client
+  escaped it, and the last of a repeated SCRAM extension wins, as in Kafka.
 - `parse_client_initial_response` now matches the SASL/OAUTHBEARER client
   initial response with the grammar of Kafka 4.3.1's
   `OAuthBearerClientInitialResponse`
