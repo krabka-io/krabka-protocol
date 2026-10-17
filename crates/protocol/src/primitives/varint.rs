@@ -43,6 +43,87 @@ pub fn get_uvarint<B: Buf>(buf: &mut B) -> Result<u32, ProtocolError> {
     })
 }
 
+/// [`get_varint`] on a byte slice, with no `Buf` in between.
+///
+/// The record parser reads every varint of every record of every batch the
+/// produce path validates, and through the generic decoder each byte was a
+/// `Buf` call with its own bounds check. The one- and two-byte forms, which
+/// cover every length and delta below 8 Ki, are read inline; longer ones go
+/// through [`get_long_varint`]. It agrees with [`get_varint`] on every input,
+/// errors included.
+///
+/// # Errors
+/// [`ProtocolError::UnexpectedEof`] when the slice ends inside the varint, and
+/// [`ProtocolError::VarintTooLong`] when it runs past five bytes.
+#[inline]
+pub(crate) fn get_varint_from_slice(buf: &mut &[u8]) -> Result<i32, ProtocolError> {
+    let bytes: &[u8] = buf;
+    let zigzag = match *bytes {
+        [first, ref rest @ ..] if first < 0x80 => {
+            *buf = rest;
+            u32::from(first)
+        }
+        [first, second, ref rest @ ..] if second < 0x80 => {
+            *buf = rest;
+            u32::from(first & 0x7F) | (u32::from(second) << 7)
+        }
+        _ => {
+            let (value, rest) = get_long_varint(bytes)?;
+            *buf = rest;
+            return Ok(value);
+        }
+    };
+    Ok((zigzag >> 1).cast_signed() ^ -(zigzag & 1).cast_signed())
+}
+
+/// [`get_varint_from_slice`] for a varint of three bytes or more, or one the
+/// slice cuts short.
+#[cold]
+///
+/// It takes the slice by value and returns what is left, so a caller's cursor
+/// never has its address taken and stays in registers on the fast path.
+fn get_long_varint(mut bytes: &[u8]) -> Result<(i32, &[u8]), ProtocolError> {
+    let value = get_varint(&mut bytes)?;
+    Ok((value, bytes))
+}
+
+/// [`get_varlong`] on a byte slice; see [`get_varint_from_slice`].
+///
+/// # Errors
+/// [`ProtocolError::UnexpectedEof`] when the slice ends inside the varlong,
+/// and [`ProtocolError::VarintTooLong`] when it runs past ten bytes.
+#[inline]
+pub(crate) fn get_varlong_from_slice(buf: &mut &[u8]) -> Result<i64, ProtocolError> {
+    let bytes: &[u8] = buf;
+    let zigzag = match *bytes {
+        [first, ref rest @ ..] if first < 0x80 => {
+            *buf = rest;
+            u64::from(first)
+        }
+        [first, second, ref rest @ ..] if second < 0x80 => {
+            *buf = rest;
+            u64::from(first & 0x7F) | (u64::from(second) << 7)
+        }
+        _ => {
+            let (value, rest) = get_long_varlong(bytes)?;
+            *buf = rest;
+            return Ok(value);
+        }
+    };
+    Ok((zigzag >> 1).cast_signed() ^ -(zigzag & 1).cast_signed())
+}
+
+/// [`get_varlong_from_slice`] for a varlong of three bytes or more, or one
+/// the slice cuts short.
+#[cold]
+///
+/// It takes the slice by value and returns what is left, so a caller's cursor
+/// never has its address taken and stays in registers on the fast path.
+fn get_long_varlong(mut bytes: &[u8]) -> Result<(i64, &[u8]), ProtocolError> {
+    let value = get_varlong(&mut bytes)?;
+    Ok((value, bytes))
+}
+
 #[must_use]
 pub fn uvarint_len(v: u32) -> usize {
     if v < 0x80 {
@@ -280,6 +361,34 @@ mod tests {
         ];
         for (v, expected) in cases {
             assert2::assert!(varlong_len(*v) == *expected);
+        }
+    }
+
+    proptest::proptest! {
+        /// The slice decoders and the `Buf` decoders read the same value, or
+        /// fail with the same error, from any bytes, and leave the same
+        /// bytes unread when they succeed.
+        #[test]
+        fn slice_decoders_agree_with_the_buf_decoders(
+            bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..12),
+        ) {
+            let mut generic: &[u8] = &bytes;
+            let mut slice: &[u8] = &bytes;
+            let want = get_varint(&mut generic);
+            let got = get_varint_from_slice(&mut slice);
+            proptest::prop_assert_eq!(format!("{got:?}"), format!("{want:?}"));
+            if want.is_ok() {
+                proptest::prop_assert_eq!(slice, generic);
+            }
+
+            let mut generic: &[u8] = &bytes;
+            let mut slice: &[u8] = &bytes;
+            let want = get_varlong(&mut generic);
+            let got = get_varlong_from_slice(&mut slice);
+            proptest::prop_assert_eq!(format!("{got:?}"), format!("{want:?}"));
+            if want.is_ok() {
+                proptest::prop_assert_eq!(slice, generic);
+            }
         }
     }
 }

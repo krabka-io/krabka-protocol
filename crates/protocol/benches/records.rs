@@ -237,6 +237,79 @@ fn bench_validate_one_v2_batch(c: &mut Criterion) {
     group.finish();
 }
 
+/// A producer's 16 KiB batch: `n` records of 100 bytes, each with `headers`
+/// headers of a 16-byte value.
+fn produced_batch(headers: usize) -> Vec<u8> {
+    let records = (0..100_i32)
+        .map(|offset_delta| Record {
+            offset_delta,
+            key: Some(Bytes::from(format!("key-{offset_delta:012}"))),
+            value: Some(Bytes::from(vec![b'v'; 100])),
+            headers: (0..headers)
+                .map(|index| RecordHeader {
+                    key: format!("header-{index}"),
+                    value: Some(Bytes::from(format!("value-{offset_delta:010}"))),
+                })
+                .collect(),
+            ..Record::default()
+        })
+        .collect();
+    encode_batch(&RecordBatch {
+        last_offset_delta: 99,
+        records,
+        ..RecordBatch::default()
+    })
+}
+
+/// `ValidatedBatch::validate_records`, the walk the produce path makes over
+/// every record of a client batch before it accepts the batch, and the same
+/// walk reading one header of each record, as a KFC-10 header-mode topic does.
+/// Throughput is in records.
+fn bench_validate_records(c: &mut Criterion) {
+    let mut group = c.benchmark_group("record_batch/validate_records");
+    group.throughput(criterion::Throughput::Elements(100));
+    let policy = krabka_compression::RecordDecompressionPolicy::default();
+    for headers in [0, 1, 4] {
+        let encoded = produced_batch(headers);
+        group.bench_function(format!("100rec_{headers}hdr"), |b| {
+            b.iter(|| {
+                let validated = validate_one_v2_batch(black_box(&encoded)).unwrap();
+                validated.validate_records(policy).unwrap();
+            });
+        });
+        // The lookup a header-mode dedup topic makes: the first header with a
+        // given name, without reading any name as UTF-8 again. The name comes
+        // from configuration, so the compiler must not see it.
+        group.bench_function(format!("100rec_{headers}hdr_lookup_header"), |b| {
+            b.iter(|| {
+                let name = black_box("header-0");
+                let validated = validate_one_v2_batch(black_box(&encoded)).unwrap();
+                validated
+                    .validate_records_with(policy, |record| {
+                        black_box(record.headers.find(name));
+                    })
+                    .unwrap();
+            });
+        });
+        group.bench_function(format!("100rec_{headers}hdr_find_header"), |b| {
+            b.iter(|| {
+                let validated = validate_one_v2_batch(black_box(&encoded)).unwrap();
+                validated
+                    .validate_records_with(policy, |record| {
+                        let found = record
+                            .headers
+                            .iter()
+                            .find(|header| header.key == "header-0")
+                            .and_then(|header| header.value);
+                        black_box(found);
+                    })
+                    .unwrap();
+            });
+        });
+    }
+    group.finish();
+}
+
 fn bench_count_records_in_v2_batches(c: &mut Criterion) {
     let mut group = c.benchmark_group("record_batch/count_records_in_v2_batches");
 
@@ -311,6 +384,7 @@ criterion_group!(
     bench_decode_owned_by_size,
     bench_decode_borrowed,
     bench_validate_one_v2_batch,
+    bench_validate_records,
     bench_count_records_in_v2_batches,
     bench_borrowed_iter,
     bench_encoded_len,
