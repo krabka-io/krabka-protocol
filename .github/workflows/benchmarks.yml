@@ -1,0 +1,85 @@
+name: benchmarks
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/benchmarks.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  micro-benchmarks:
+    name: protocol · microbenchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-protocol
+
+      - name: Run Criterion Protocol Benches
+        run: |
+          mkdir -p bench-results
+          cargo bench -p crabka-protocol --bench codec -- --output-format bencher 2>&1 | tee bench-results/protocol-codec.txt
+          cargo bench -p crabka-protocol --bench records -- --output-format bencher 2>&1 | tee bench-results/protocol-records.txt
+          cargo bench -p crabka-compression --bench codec -- --output-format bencher 2>&1 | tee bench-results/compression-codec.txt
+          cargo bench -p crabka-metadata --bench image -- --output-format bencher 2>&1 | tee bench-results/metadata-image.txt
+          cargo bench -p crabka-security --bench scram -- --output-format bencher 2>&1 | tee bench-results/security-scram.txt
+
+      - name: Generate Summary JSON
+        run: |
+          cat << 'EOF' > parse_benches.py
+          import json, re, glob, os, time
+
+          results = {
+              "suite": "krabka-protocol",
+              "commit": os.environ.get("GITHUB_SHA", "unknown")[:8],
+              "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "benchmarks": {}
+          }
+
+          bench_regex = re.compile(r"test\s+([\w\/\-\.]+)\s+\.\.\.\s+bench:\s+([\d,]+)\s+ns\/iter\s+\(\+\/-\s+([\d,]+)\)")
+
+          for file in glob.glob("bench-results/*.txt"):
+              with open(file, "r") as f:
+                  for line in f:
+                      match = bench_regex.search(line)
+                      if match:
+                          name = match.group(1)
+                          ns = float(match.group(2).replace(",", ""))
+                          variance = float(match.group(3).replace(",", ""))
+                          results["benchmarks"][name] = {
+                              "ns_per_iter": ns,
+                              "variance_ns": variance
+                          }
+
+          with open("bench-results/protocol-benchmarks.json", "w") as out:
+              json.dump(results, out, indent=2)
+
+          print(f"Parsed {len(results['benchmarks'])} benchmark metrics.")
+          EOF
+          python3 parse_benches.py
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-benchmark-results
+          path: bench-results/
+          retention-days: 30
