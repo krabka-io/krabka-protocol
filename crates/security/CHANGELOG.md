@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `UnsecuredJwsValidator::default()` allows no clock skew, as Kafka's
+  `unsecuredValidatorAllowableClockSkewMs` defaults to 0
+  ([krabka-broker#1430](https://github.com/krabka-io/krabka-broker/issues/1430)).
+  It used to allow 30 s. `SignedJwsValidator::new` keeps Kafka's 30 s
+  `sasl.oauthbearer.clock.skew.seconds`.
 - `ScramServerExchange` now reads the SCRAM client-final message with the
   grammar of Kafka 4.3.1's `ScramMessages.ClientFinalMessage`
   ([#65](https://github.com/krabka-io/krabka-protocol/issues/65)):

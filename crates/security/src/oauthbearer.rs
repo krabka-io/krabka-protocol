@@ -203,7 +203,8 @@ pub struct UnsecuredJwsValidator {
     /// Claim whose string value becomes the principal name. Default `sub`.
     pub principal_claim_name: String,
     /// Tolerance applied to the `exp` / `iat` temporal checks to absorb clock
-    /// drift between the client and broker.
+    /// drift between the client and broker. Default 0, Kafka's
+    /// `unsecuredValidatorAllowableClockSkewMs`.
     pub allowable_clock_skew: Time,
     /// Precompiled `JsonPath` expression that the validator evaluates against
     /// the token's claim set. The validator rejects the token when the
@@ -240,7 +241,7 @@ impl Default for UnsecuredJwsValidator {
     fn default() -> Self {
         Self {
             principal_claim_name: "sub".to_string(),
-            allowable_clock_skew: secs(30),
+            allowable_clock_skew: <Time as TimeExt>::ZERO,
             custom_claim_check: None,
             valid_token_type: None,
             fallback_user_name_claim: None,
@@ -661,8 +662,9 @@ pub struct SignedJwsValidator {
 }
 
 impl SignedJwsValidator {
-    /// A validator backed by `keys`, with the same claim/skew defaults as the
-    /// unsecured validator and no issuer / audience constraint.
+    /// A validator backed by `keys`, with the unsecured validator's claim
+    /// defaults, Kafka's 30 s `sasl.oauthbearer.clock.skew.seconds`, and no
+    /// issuer / audience constraint.
     #[must_use]
     pub fn new(keys: JwksHandle) -> Self {
         Self {
@@ -1460,9 +1462,22 @@ mod tests {
         // exp = 1000 s ⇒ exp_ms = 1_000_000. With 30 s of skew the token is
         // still good at now = 1_030_000 and dead one millisecond later.
         let token = unsecured("admin", 900, 1_000);
-        let v = UnsecuredJwsValidator::default();
+        let v = UnsecuredJwsValidator {
+            allowable_clock_skew: secs(30),
+            ..Default::default()
+        };
         assert2::check!(v.validate(&token, 1_029_999).is_ok());
         assert2::check!(v.validate(&token, 1_030_000).is_err());
+    }
+
+    /// Kafka's `unsecuredValidatorAllowableClockSkewMs` defaults to 0, so the
+    /// default validator refuses a token from the millisecond its `exp` falls.
+    #[test]
+    fn unsecured_default_allows_no_clock_skew() {
+        let token = unsecured("admin", 900, 1_000);
+        let v = UnsecuredJwsValidator::default();
+        assert2::check!(v.validate(&token, 999_999).is_ok());
+        assert2::check!(v.validate(&token, 1_000_000).is_err());
     }
 
     #[test]
@@ -1920,7 +1935,11 @@ mod tests {
                 Ok(outcome("admin", 1_006_000)),
             ),
         ];
-        let v = UnsecuredJwsValidator::default();
+        // The cases put `iat` up to 10 s ahead of `now`, inside this skew.
+        let v = UnsecuredJwsValidator {
+            allowable_clock_skew: secs(30),
+            ..Default::default()
+        };
         for (name, claims, want) in cases {
             let token = make_unsecured_jws(&claims);
             assert2::check!(v.validate(&token, now_ms) == want, "case: {name}");
