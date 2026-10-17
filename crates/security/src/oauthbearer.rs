@@ -203,7 +203,8 @@ pub struct UnsecuredJwsValidator {
     /// Claim whose string value becomes the principal name. Default `sub`.
     pub principal_claim_name: String,
     /// Tolerance applied to the `exp` / `iat` temporal checks to absorb clock
-    /// drift between the client and broker.
+    /// drift between the client and broker. Default 0, Kafka's
+    /// `unsecuredValidatorAllowableClockSkewMs`.
     pub allowable_clock_skew: Time,
     /// Precompiled `JsonPath` expression that the validator evaluates against
     /// the token's claim set. The validator rejects the token when the
@@ -227,19 +228,28 @@ pub struct UnsecuredJwsValidator {
     /// When `groups_claim` resolves to a string and not an
     /// array, split on this delimiter. Common values: "," or " ".
     pub groups_claim_delimiter: Option<String>,
+    /// Claim that holds the token's scope, Kafka's
+    /// `unsecuredValidatorScopeClaimName`. Default `scope`.
+    pub scope_claim_name: String,
+    /// Scope items the token must all carry, Kafka's
+    /// `unsecuredValidatorRequiredScope`. Empty, the default, requires none.
+    /// [`parse_required_scope`] reads the option's space-delimited value.
+    pub required_scope: Vec<String>,
 }
 
 impl Default for UnsecuredJwsValidator {
     fn default() -> Self {
         Self {
             principal_claim_name: "sub".to_string(),
-            allowable_clock_skew: secs(30),
+            allowable_clock_skew: <Time as TimeExt>::ZERO,
             custom_claim_check: None,
             valid_token_type: None,
             fallback_user_name_claim: None,
             fallback_user_name_prefix: None,
             groups_claim: None,
             groups_claim_delimiter: None,
+            scope_claim_name: "scope".to_string(),
+            required_scope: Vec::new(),
         }
     }
 }
@@ -253,11 +263,15 @@ impl UnsecuredJwsValidator {
     /// # Errors
     ///
     /// [`AuthError::InvalidToken`] for any structural, signature, temporal,
-    /// scope, or principal-claim failure. The caller maps this onto the RFC
-    /// 7628 `invalid_token` server error status.
+    /// scope-claim, or principal-claim failure, and
+    /// [`AuthError::InsufficientScope`] for an otherwise valid token that lacks
+    /// an item of [`required_scope`](Self::required_scope). Kafka's
+    /// `OAuthBearerUnsecuredValidatorCallbackHandler` makes the same split.
+    /// [`oauth_error_json`] renders either one as the RFC 7628 server error
+    /// challenge.
     // skip_all keeps the bearer `token` out of span fields; only the
-    // non-sensitive mechanism is recorded. `err` surfaces the InvalidToken
-    // reason (Debug) without the token contents.
+    // non-sensitive mechanism is recorded. `err` surfaces the failure reason
+    // (Debug) without the token contents.
     #[tracing::instrument(
         level = "info",
         skip_all,
@@ -291,6 +305,9 @@ impl UnsecuredJwsValidator {
         }
 
         let claims: Value = decode_json_segment(payload_b64)?;
+        // Kafka reads the scope claim while it parses the token, so a scope
+        // claim of the wrong type fails the token whatever the required scope.
+        let token_scope = scope_claim(&claims, &self.scope_claim_name)?;
 
         let skew_ms = skew_millis(self.allowable_clock_skew);
         // `exp` is required and must be in the future (within skew).
@@ -298,11 +315,23 @@ impl UnsecuredJwsValidator {
         if exp_ms + skew_ms <= now_ms {
             return Err(AuthError::InvalidToken);
         }
-        // `iat` is optional; if present it must not be in the future (within skew).
-        if let Some(iat_ms) = numeric_date_ms(&claims, "iat")
-            && iat_ms - skew_ms > now_ms
-        {
-            return Err(AuthError::InvalidToken);
+        // `iat` is optional. When present it must be a number, must not be in
+        // the future (within skew), and must be before `exp`. Kafka's
+        // `validateTimeConsistency` compares the two claims in seconds, without
+        // skew.
+        if let Some(iat) = claims.get("iat") {
+            let iat_ms = numeric_date_ms(&claims, "iat").ok_or(AuthError::InvalidToken)?;
+            if iat_ms - skew_ms > now_ms {
+                return Err(AuthError::InvalidToken);
+            }
+            let (Some(issued_at_secs), Some(expires_at_secs)) =
+                (iat.as_f64(), claims.get("exp").and_then(Value::as_f64))
+            else {
+                return Err(AuthError::InvalidToken);
+            };
+            if expires_at_secs <= issued_at_secs {
+                return Err(AuthError::InvalidToken);
+            }
         }
 
         // Optional JsonPath custom_claim_check.
@@ -313,11 +342,12 @@ impl UnsecuredJwsValidator {
         }
 
         // Primary → fallback → reject. Prefix applied only
-        // when fallback fires.
+        // when fallback fires. Kafka rejects a blank principal with
+        // `Utils.isBlank`, so a blank claim counts as absent.
         let (raw_name, used_fallback) = if let Some(n) = claims
             .get(&self.principal_claim_name)
             .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
+            .filter(|s| !is_java_blank(s))
         {
             (n.to_string(), false)
         } else {
@@ -328,7 +358,7 @@ impl UnsecuredJwsValidator {
             let raw = claims
                 .get(fallback_claim)
                 .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
+                .filter(|s| !is_java_blank(s))
                 .ok_or(AuthError::InvalidToken)?;
             (raw.to_string(), true)
         };
@@ -346,6 +376,18 @@ impl UnsecuredJwsValidator {
             Some(path) => extract_groups(path, &claims, self.groups_claim_delimiter.as_deref()),
             None => Vec::new(),
         };
+
+        // Kafka's `validateScope` runs last, so only a token that passes every
+        // other check reports `insufficient_scope`.
+        if !self
+            .required_scope
+            .iter()
+            .all(|item| token_scope.contains(item))
+        {
+            return Err(AuthError::InsufficientScope {
+                required_scope: self.required_scope.clone(),
+            });
+        }
 
         Ok(AuthOutcome {
             principal: Principal {
@@ -463,14 +505,118 @@ fn numeric_date_ms(claims: &Value, key: &str) -> Option<i64> {
     }
 }
 
-/// The RFC 7628 server error response body for a rejected token.
+/// The RFC 7628 server error challenge for a failed OAUTHBEARER validation,
+/// byte for byte what Kafka 4.3.1's `OAuthBearerSaslServer.jsonErrorResponse`
+/// sends.
 ///
-/// The JVM `OAuthBearerSaslClient` treats any non-empty first server message as
-/// an error and replies with a single `\x01` kvsep. The broker then completes
-/// the failure handshake.
+/// [`AuthError::InsufficientScope`] renders as
+/// `{"status":"insufficient_scope", "scope":"[a, b]"}`: the required scope in
+/// Java's `List.toString` form, after the `", "` separator Kafka writes before
+/// the `scope` field. Every other error renders as
+/// `{"status":"invalid_token"}`. No krabka validator produces an
+/// `openid-configuration` field, so the challenge never carries one.
+///
+/// The broker sends this as the server's first message after a failed
+/// validation. The JVM `OAuthBearerSaslClient` treats any non-empty first
+/// server message as an error and replies with a single `\x01` kvsep, and the
+/// broker then completes the failure handshake.
 #[must_use]
-pub fn invalid_token_json() -> String {
-    "{\"status\":\"invalid_token\"}".to_string()
+pub fn oauth_error_json(err: &AuthError) -> String {
+    match err {
+        // A required scope item matches Kafka's scope-token grammar, which has
+        // no `"` or `\`, so the scope needs no JSON escaping. Kafka escapes
+        // nothing either.
+        AuthError::InsufficientScope { required_scope } => format!(
+            "{{\"status\":\"insufficient_scope\", \"scope\":\"[{}]\"}}",
+            required_scope.join(", ")
+        ),
+        _ => "{\"status\":\"invalid_token\"}".to_string(),
+    }
+}
+
+/// A required-scope item outside Kafka's scope-token grammar
+/// (`%x21 / %x23-5B / %x5D-7E`, RFC 6749 §3.3), as
+/// [`parse_required_scope`] reports it.
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+#[error("invalid scope value: {0}")]
+pub struct InvalidScopeItem(pub String);
+
+/// Parse Kafka's `unsecuredValidatorRequiredScope` option the way Kafka 4.3.1's
+/// `OAuthBearerUnsecuredValidatorCallbackHandler` does.
+///
+/// The option is trimmed, then split on single spaces, and empty items are
+/// skipped. A blank option requires no scope. The result is the value of
+/// [`UnsecuredJwsValidator::required_scope`].
+///
+/// # Errors
+///
+/// [`InvalidScopeItem`] for the first item that has a character outside the
+/// scope-token grammar, such as `"`, `\`, a tab, or a non-ASCII character.
+/// Kafka fails the validator's configuration on it.
+pub fn parse_required_scope(option: &str) -> Result<Vec<String>, InvalidScopeItem> {
+    java_trim(option)
+        .split(' ')
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            if item
+                .chars()
+                .all(|c| matches!(c, '\x21' | '\x23'..='\x5B' | '\x5D'..='\x7E'))
+            {
+                Ok(item.to_string())
+            } else {
+                Err(InvalidScopeItem(item.to_string()))
+            }
+        })
+        .collect()
+}
+
+/// Java's `String.trim`: strip every leading and trailing character at or
+/// below U+0020.
+fn java_trim(s: &str) -> &str {
+    s.trim_matches(|c: char| c <= ' ')
+}
+
+/// Kafka's `Utils.isBlank`: empty after [`java_trim`].
+fn is_java_blank(s: &str) -> bool {
+    java_trim(s).is_empty()
+}
+
+/// The text Jackson's `JsonNode.asText` gives a JSON value. Kafka's unsecured
+/// JWS reads every non-number claim, and every element of an array claim,
+/// through it. A container has no text.
+fn jackson_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Null => "null".to_string(),
+        Value::Array(_) | Value::Object(_) => String::new(),
+    }
+}
+
+/// The token's scope as Kafka's `OAuthBearerUnsecuredJws.calculateScope`
+/// reads it from the `claim_name` claim.
+///
+/// An absent claim is no scope. An array is one item per non-blank element,
+/// trimmed. A string is one item, trimmed and not split, or no scope when
+/// blank, and Kafka reads a boolean, `null`, or object claim as such a string.
+///
+/// # Errors
+///
+/// [`AuthError::InvalidToken`] for a numeric claim, which Kafka cannot cast to
+/// a string or a list.
+fn scope_claim(claims: &Value, claim_name: &str) -> Result<Vec<String>, AuthError> {
+    let items = match claims.get(claim_name) {
+        None => Vec::new(),
+        Some(Value::Number(_)) => return Err(AuthError::InvalidToken),
+        Some(Value::Array(elements)) => elements.iter().map(jackson_text).collect(),
+        Some(other) => vec![jackson_text(other)],
+    };
+    Ok(items
+        .iter()
+        .filter(|item| !is_java_blank(item))
+        .map(|item| java_trim(item).to_string())
+        .collect())
 }
 
 /// Validates a *signed* JWS bearer token (`RS256` / `ES256`) against a JWKS
@@ -516,8 +662,9 @@ pub struct SignedJwsValidator {
 }
 
 impl SignedJwsValidator {
-    /// A validator backed by `keys`, with the same claim/skew defaults as the
-    /// unsecured validator and no issuer / audience constraint.
+    /// A validator backed by `keys`, with the unsecured validator's claim
+    /// defaults, Kafka's 30 s `sasl.oauthbearer.clock.skew.seconds`, and no
+    /// issuer / audience constraint.
     #[must_use]
     pub fn new(keys: JwksHandle) -> Self {
         Self {
@@ -1315,9 +1462,22 @@ mod tests {
         // exp = 1000 s ⇒ exp_ms = 1_000_000. With 30 s of skew the token is
         // still good at now = 1_030_000 and dead one millisecond later.
         let token = unsecured("admin", 900, 1_000);
-        let v = UnsecuredJwsValidator::default();
+        let v = UnsecuredJwsValidator {
+            allowable_clock_skew: secs(30),
+            ..Default::default()
+        };
         assert2::check!(v.validate(&token, 1_029_999).is_ok());
         assert2::check!(v.validate(&token, 1_030_000).is_err());
+    }
+
+    /// Kafka's `unsecuredValidatorAllowableClockSkewMs` defaults to 0, so the
+    /// default validator refuses a token from the millisecond its `exp` falls.
+    #[test]
+    fn unsecured_default_allows_no_clock_skew() {
+        let token = unsecured("admin", 900, 1_000);
+        let v = UnsecuredJwsValidator::default();
+        assert2::check!(v.validate(&token, 999_999).is_ok());
+        assert2::check!(v.validate(&token, 1_000_000).is_err());
     }
 
     #[test]
@@ -1679,9 +1839,274 @@ mod tests {
         assert2::assert!(outcome.principal.name == "svc-1");
     }
 
+    /// The [`AuthOutcome`] the unsecured validator returns for `name` and an
+    /// `exp` of `exp_ms`, with no groups.
+    fn outcome(name: &str, exp_ms: i64) -> AuthOutcome {
+        AuthOutcome {
+            principal: Principal {
+                name: name.to_string(),
+                auth_method: AuthMethod::SaslOAuthBearer,
+                groups: Vec::new(),
+            },
+            expires_at_ms: Some(exp_ms),
+        }
+    }
+
+    /// Each case is a claim set Kafka 4.3.1's
+    /// `OAuthBearerUnsecuredValidatorCallbackHandler` answers the same way:
+    /// the validator runs with a 30 s skew at `now` = 1000 s.
     #[test]
-    fn invalid_token_json_is_rfc7628_shape() {
-        assert2::assert!(invalid_token_json() == "{\"status\":\"invalid_token\"}");
+    fn unsecured_validate_matches_kafka_claim_checks() {
+        let now_ms = 1_000_000;
+        let cases: Vec<(&str, serde_json::Value, Result<AuthOutcome, AuthError>)> = vec![
+            (
+                "exp before iat, both inside the skew",
+                serde_json::json!({"sub": "admin", "iat": 1_010, "exp": 1_005}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "exp equal to iat",
+                serde_json::json!({"sub": "admin", "iat": 1_005, "exp": 1_005}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "exp a fraction of a millisecond after iat",
+                serde_json::json!({"sub": "admin", "iat": 1_005.000_1, "exp": 1_005.000_2}),
+                Ok(outcome("admin", 1_005_000)),
+            ),
+            (
+                "exp after iat",
+                serde_json::json!({"sub": "admin", "iat": 1_005, "exp": 1_006}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "no iat skips the consistency check",
+                serde_json::json!({"sub": "admin", "exp": 1_006}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "string iat",
+                serde_json::json!({"sub": "admin", "iat": "999", "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "null iat",
+                serde_json::json!({"sub": "admin", "iat": null, "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "space-only principal",
+                serde_json::json!({"sub": " ", "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "control-character-only principal",
+                serde_json::json!({"sub": "\t\n\u{1}", "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "principal with surrounding spaces stays verbatim",
+                serde_json::json!({"sub": " alice ", "exp": 1_006}),
+                Ok(outcome(" alice ", 1_006_000)),
+            ),
+            (
+                "numeric scope",
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": 5}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "string scope",
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": "a b"}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "list scope with non-string elements, which Kafka reads as text",
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": ["a", 5, true, null, {}]}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "boolean scope, which Kafka reads as text",
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": true}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "object scope, which Kafka reads as blank",
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": {"a": 1}}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+        ];
+        // The cases put `iat` up to 10 s ahead of `now`, inside this skew.
+        let v = UnsecuredJwsValidator {
+            allowable_clock_skew: secs(30),
+            ..Default::default()
+        };
+        for (name, claims, want) in cases {
+            let token = make_unsecured_jws(&claims);
+            assert2::check!(v.validate(&token, now_ms) == want, "case: {name}");
+        }
+    }
+
+    /// A blank principal claim falls through to the fallback claim, and a
+    /// blank fallback claim is rejected the way an absent one is.
+    #[test]
+    fn unsecured_validate_treats_blank_principal_claims_as_absent() {
+        let v = UnsecuredJwsValidator {
+            fallback_user_name_claim: Some("client_id".to_string()),
+            fallback_user_name_prefix: Some("service-account-".to_string()),
+            ..Default::default()
+        };
+        for (name, claims, want) in [
+            (
+                "blank primary, present fallback",
+                serde_json::json!({"sub": "  ", "client_id": "svc", "exp": 1_006}),
+                Ok(outcome("service-account-svc", 1_006_000)),
+            ),
+            (
+                "blank primary, blank fallback",
+                serde_json::json!({"sub": "  ", "client_id": "\t", "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+        ] {
+            let token = make_unsecured_jws(&claims);
+            assert2::check!(v.validate(&token, 1_000_000) == want, "case: {name}");
+        }
+    }
+
+    /// Kafka's `unsecuredValidatorRequiredScope`: every required scope item
+    /// must be in the token's scope claim, or the validation fails with
+    /// `insufficient_scope` and the whole required list.
+    #[test]
+    fn unsecured_validate_enforces_required_scope() {
+        let required = vec!["a".to_string(), "b".to_string()];
+        let insufficient = Err(AuthError::InsufficientScope {
+            required_scope: required.clone(),
+        });
+        let scope_claim = UnsecuredJwsValidator {
+            required_scope: required.clone(),
+            ..Default::default()
+        };
+        let scp_claim = UnsecuredJwsValidator {
+            required_scope: required.clone(),
+            scope_claim_name: "scp".to_string(),
+            ..Default::default()
+        };
+        let cases = [
+            (
+                "list holding every required item",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": ["b", "a"]}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "list items are trimmed, extra items are fine",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": [" a ", "b", "c"]}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "list missing one item",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": ["a"]}),
+                insufficient.clone(),
+            ),
+            (
+                "a string scope is one item, not split on spaces",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": "a b"}),
+                insufficient.clone(),
+            ),
+            (
+                "no scope claim",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006}),
+                insufficient.clone(),
+            ),
+            (
+                "configured scope claim name",
+                &scp_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scp": ["a", "b"]}),
+                Ok(outcome("admin", 1_006_000)),
+            ),
+            (
+                "default claim name ignored once another is configured",
+                &scp_claim,
+                serde_json::json!({"sub": "admin", "exp": 1_006, "scope": ["a", "b"]}),
+                insufficient.clone(),
+            ),
+            (
+                "an expired token is invalid_token, not insufficient_scope",
+                &scope_claim,
+                serde_json::json!({"sub": "admin", "exp": 900}),
+                Err(AuthError::InvalidToken),
+            ),
+            (
+                "a blank principal is invalid_token, not insufficient_scope",
+                &scope_claim,
+                serde_json::json!({"sub": " ", "exp": 1_006}),
+                Err(AuthError::InvalidToken),
+            ),
+        ];
+        for (name, v, claims, want) in cases {
+            let token = make_unsecured_jws(&claims);
+            assert2::check!(v.validate(&token, 1_000_000) == want, "case: {name}");
+        }
+    }
+
+    #[test]
+    fn unsecured_validate_without_required_scope_accepts_a_token_without_scope() {
+        let token = make_unsecured_jws(&serde_json::json!({"sub": "admin", "exp": 1_006}));
+        assert2::assert!(
+            UnsecuredJwsValidator::default().validate(&token, 1_000_000)
+                == Ok(outcome("admin", 1_006_000))
+        );
+    }
+
+    /// Kafka's `OAuthBearerScopeUtils.parseScope` after the option's trim.
+    #[test]
+    fn parse_required_scope_matches_kafka() {
+        let items = |v: &[&str]| v.iter().map(ToString::to_string).collect::<Vec<_>>();
+        for (input, want) in [
+            ("", Ok(Vec::new())),
+            (" \t ", Ok(Vec::new())),
+            ("a", Ok(items(&["a"]))),
+            ("a b", Ok(items(&["a", "b"]))),
+            ("\t a   b \n", Ok(items(&["a", "b"]))),
+            ("a,b", Ok(items(&["a,b"]))),
+            ("!#[]~", Ok(items(&["!#[]~"]))),
+            ("a\"b", Err(InvalidScopeItem("a\"b".to_string()))),
+            ("a\\b", Err(InvalidScopeItem("a\\b".to_string()))),
+            ("a\tb", Err(InvalidScopeItem("a\tb".to_string()))),
+            ("a é", Err(InvalidScopeItem("é".to_string()))),
+        ] {
+            assert2::check!(parse_required_scope(input) == want, "input: {input:?}");
+        }
+    }
+
+    /// Golden server challenges: the bytes of Kafka 4.3.1's
+    /// `OAuthBearerSaslServer.jsonErrorResponse`.
+    #[test]
+    fn oauth_error_json_matches_kafka_json_error_response() {
+        for (err, want) in [
+            (AuthError::InvalidToken, r#"{"status":"invalid_token"}"#),
+            (
+                AuthError::IntrospectionTransport("connection refused".to_string()),
+                r#"{"status":"invalid_token"}"#,
+            ),
+            (
+                AuthError::InsufficientScope {
+                    required_scope: vec!["a".to_string()],
+                },
+                r#"{"status":"insufficient_scope", "scope":"[a]"}"#,
+            ),
+            (
+                AuthError::InsufficientScope {
+                    required_scope: vec!["a".to_string(), "b".to_string()],
+                },
+                r#"{"status":"insufficient_scope", "scope":"[a, b]"}"#,
+            ),
+        ] {
+            assert2::check!(oauth_error_json(&err) == want, "error: {err:?}");
+        }
     }
 
     // ---- SignedJwsValidator -------------------------------------

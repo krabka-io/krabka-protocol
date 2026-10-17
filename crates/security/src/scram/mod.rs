@@ -241,6 +241,7 @@ mod tests {
     use sha2::{Digest, Sha512};
 
     use super::*;
+    use crate::{AuthMethod, Principal};
 
     /// SHA-512 PBKDF2 vector + verify `stored_key = H(client_key)`.
     /// `ScramIterations` is a validated newtype whose whole job is to carry a
@@ -828,6 +829,187 @@ mod tests {
         ] {
             check!(
                 handshake_with_header(gs2_header, extensions, channel_binding_header) == want,
+                "case {case}"
+            );
+        }
+    }
+
+    /// Drive a SCRAM-SHA-256 server exchange for `username` with a hand-built
+    /// client-first (`gs2_header` then `bare`) and a client-final built from
+    /// `template`. In `template`, `{cb}` stands for the base64 of
+    /// `gs2_header`, `{nonce}` for the combined nonce and `{proof}` for the
+    /// base64 proof. The proof signs the template up to `,p={proof}`. With
+    /// `flip_unused_bit`, the proof's last base64 character has its unused
+    /// low bit set. Returns the principal, or the first failure.
+    fn handshake_with_client_final(
+        username: &str,
+        gs2_header: &str,
+        bare: &str,
+        template: &str,
+        flip_unused_bit: bool,
+    ) -> Result<Principal, AuthError> {
+        let password: Vec<u8> = (b'a'..=b'z').collect();
+        let salt: Vec<u8> = (0..16).collect();
+        let cred = hash_scram_password_with_salt(
+            &password,
+            SaslMechanism::ScramSha256,
+            4096,
+            salt.clone(),
+        );
+        let server = ScramServerExchange::new(username.to_string(), cred);
+        let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
+            StepResult::Continue(server_first, next) => (server_first, next),
+            StepResult::Failed(e) => return Err(e),
+            StepResult::Done(..) => panic!("server finished on client-first"),
+        };
+        let server_first = String::from_utf8(server_first).unwrap();
+        let combined_nonce = server_first
+            .strip_prefix("r=")
+            .and_then(|rest| rest.split(',').next())
+            .unwrap();
+        let client_final = template
+            .replace("{cb}", &B64.encode(gs2_header.as_bytes()))
+            .replace("{nonce}", combined_nonce);
+        let signed = client_final.split(",p={proof}").next().unwrap();
+        let auth_message = format!("{bare},{server_first},{signed}");
+        let (proof, _) =
+            client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes()).unwrap();
+        let mut proof_b64 = B64.encode(proof);
+        if flip_unused_bit {
+            // 32 bytes encode as 43 characters and one `=`; the 43rd carries
+            // four data bits and two unused ones.
+            let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let last = proof_b64.as_bytes()[42];
+            let index = alphabet.iter().position(|&c| c == last).unwrap();
+            proof_b64.replace_range(42..43, &char::from(alphabet[index ^ 1]).to_string());
+        }
+        match server.step(client_final.replace("{proof}", &proof_b64).as_bytes()) {
+            StepResult::Done(principal, _) => Ok(principal),
+            StepResult::Failed(e) => Err(e),
+            StepResult::Continue(..) => panic!("server continued past client-final"),
+        }
+    }
+
+    /// Issue #65: the server reads the client-final message with Kafka's
+    /// `ClientFinalMessage` grammar, signs it as the client sent it, decodes
+    /// the proof as Java does, and compares the authzid as the client
+    /// escaped it with the decoded username, as `ScramSaslServer` does.
+    #[test]
+    fn scram_server_reads_client_final_with_kafkas_grammar() {
+        let principal = |name: &str| {
+            Ok(Principal {
+                name: name.into(),
+                auth_method: AuthMethod::SaslScramSha256,
+                groups: vec![],
+            })
+        };
+        let malformed = Err(AuthError::MalformedMessage);
+        let alice_bare = "n=alice,r=client-nonce";
+        for (case, username, gs2_header, bare, template, flip_unused_bit, want) in [
+            (
+                "kafka order",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},p={proof}",
+                false,
+                principal("alice"),
+            ),
+            (
+                "extension before the proof is signed",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},foo=bar,p={proof}",
+                false,
+                principal("alice"),
+            ),
+            (
+                "unused proof bit set",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},p={proof}",
+                true,
+                principal("alice"),
+            ),
+            (
+                "nonce before channel binding",
+                "alice",
+                "n,,",
+                alice_bare,
+                "r={nonce},c={cb},p={proof}",
+                false,
+                malformed.clone(),
+            ),
+            (
+                "proof before nonce",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},p={proof},r={nonce}",
+                false,
+                malformed.clone(),
+            ),
+            (
+                "unknown attribute after the proof",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},p={proof},x=1",
+                false,
+                malformed.clone(),
+            ),
+            (
+                "duplicate channel binding",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},c={cb},r={nonce},p={proof}",
+                false,
+                malformed.clone(),
+            ),
+            (
+                // Kafka reads the second `r=` as an extension.
+                "repeated nonce",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},r={nonce},p={proof}",
+                false,
+                principal("alice"),
+            ),
+            (
+                "trailing comma",
+                "alice",
+                "n,,",
+                alice_bare,
+                "c={cb},r={nonce},p={proof},",
+                false,
+                malformed.clone(),
+            ),
+            (
+                "escaped authzid equal to the decoded username",
+                "a=3D",
+                "n,a=a=3D,",
+                "n=a=3D3D,r=client-nonce",
+                "c={cb},r={nonce},p={proof}",
+                false,
+                principal("a=3D"),
+            ),
+            (
+                "escaped authzid that decodes to the username",
+                "a,b",
+                "n,a=a=2Cb,",
+                "n=a=2Cb,r=client-nonce",
+                "c={cb},r={nonce},p={proof}",
+                false,
+                Err(AuthError::AuthorizationIdMismatch),
+            ),
+        ] {
+            check!(
+                handshake_with_client_final(username, gs2_header, bare, template, flip_unused_bit)
+                    == want,
                 "case {case}"
             );
         }

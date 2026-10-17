@@ -3,14 +3,24 @@
 //! It supports SCRAM-SHA-256 and SCRAM-SHA-512. The mechanism comes from the
 //! credential that the server authenticates against.
 
-use base64::{Engine, engine::general_purpose::STANDARD as B64};
+use base64::{
+    Engine, alphabet,
+    engine::{GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD as B64},
+};
 use hmac::{Hmac, KeyInit, Mac};
 use ring::rand::{SecureRandom, SystemRandom};
 use sha2::{Digest, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 
-use super::{ScramClientFirst, ScramCredential, scram_hash_len};
+use super::{ScramClientFirst, ScramCredential, messages::ScramClientFinal, scram_hash_len};
 use crate::{AuthError, AuthMethod, Principal, SaslMechanism};
+
+/// Standard base64 that, like Java's `Base64` decoder, ignores the unused
+/// bits of the last character.
+const PROOF_B64: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
 
 struct AwaitingClientFirst {
     username: String,
@@ -123,11 +133,13 @@ impl AwaitingClientFirst {
             return StepResult::Failed(AuthError::UnknownUser);
         }
         // `ScramSaslServer`: an authorization id, when the client sends one,
-        // must name the authenticating user.
+        // must name the authenticating user. Kafka compares the authzid as
+        // the client escaped it with the decoded username.
         if client_first
-            .authzid
-            .as_ref()
-            .is_some_and(|authzid| *authzid != client_first.username)
+            .gs2_header
+            .strip_prefix("n,a=")
+            .and_then(|header| header.strip_suffix(','))
+            .is_some_and(|authzid| authzid != client_first.username)
         {
             return StepResult::Failed(AuthError::AuthorizationIdMismatch);
         }
@@ -174,24 +186,14 @@ impl AwaitingClientFinal {
     fn step(self, client_bytes: &[u8]) -> StepResult {
         let client_first_bare = &self.client_first_bare;
         let server_first = &self.server_first;
-        let Ok(s) = std::str::from_utf8(client_bytes) else {
-            return StepResult::Failed(AuthError::MalformedMessage);
+        // Kafka's `ClientFinalMessage` grammar: `c=`, `r=`, any extensions,
+        // then `p=`, in that order. Anything else is malformed.
+        let client_final = match ScramClientFinal::parse(client_bytes) {
+            Ok(client_final) => client_final,
+            Err(e) => return StepResult::Failed(e),
         };
-        let mut channel_binding = None;
-        let mut nonce = None;
-        let mut proof_b64 = None;
-        for attr in s.split(',') {
-            if let Some(v) = attr.strip_prefix("c=") {
-                channel_binding = Some(v);
-            } else if let Some(v) = attr.strip_prefix("r=") {
-                nonce = Some(v);
-            } else if let Some(v) = attr.strip_prefix("p=") {
-                proof_b64 = Some(v);
-            }
-        }
-        let (Some(cb), Some(nonce), Some(proof_b64)) = (channel_binding, nonce, proof_b64) else {
-            return StepResult::Failed(AuthError::MalformedMessage);
-        };
+        let nonce = client_final.nonce;
+        let cb = client_final.channel_binding;
 
         // RFC 5802 §5.1: the client-final `r=` (combined nonce) must
         // equal the nonce the server issued in server-first
@@ -214,16 +216,16 @@ impl AwaitingClientFinal {
         }
 
         let expected_proof_len = scram_hash_len(self.credential.mechanism);
-        let proof = match B64.decode(proof_b64) {
+        // Java's `Base64` decoder ignores the unused bits of the last
+        // character, so the proof decodes as Kafka decodes it.
+        let proof = match PROOF_B64.decode(client_final.proof) {
             Ok(b) if b.len() == expected_proof_len => b,
             _ => return StepResult::Failed(AuthError::MalformedMessage),
         };
 
-        // client-final-without-proof = everything before ",p="
-        let Some(cf_no_proof_end) = s.rfind(",p=") else {
-            return StepResult::Failed(AuthError::MalformedMessage);
-        };
-        let client_final_no_proof = &s[..cf_no_proof_end];
+        // RFC 5802 signs the client-final message as the client sent it, up
+        // to `,p=`, extensions included.
+        let client_final_no_proof = client_final.without_proof;
 
         let auth_message = format!("{client_first_bare},{server_first},{client_final_no_proof}");
 

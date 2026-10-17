@@ -97,10 +97,14 @@ impl ScramClientFirst {
     }
 
     /// The value of extension `key`, if the client sent it.
+    ///
+    /// When the client sent `key` more than once, the last value wins, as in
+    /// the map that Kafka's `ScramExtensions` builds.
     #[must_use]
     pub fn extension(&self, key: &str) -> Option<&str> {
         self.extensions
             .iter()
+            .rev()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
     }
@@ -112,6 +116,86 @@ impl ScramClientFirst {
         self.extension(TOKEN_AUTH_EXTENSION)
             .is_some_and(|v| v.eq_ignore_ascii_case("true"))
     }
+}
+
+/// A SCRAM client-final message, split as Kafka's
+/// `ScramMessages.ClientFinalMessage` matches it.
+///
+/// Kafka's grammar is `c=<base64>,r=<nonce>[,<alpha>=<value>]*,p=<base64>`,
+/// in that order and nothing else. Every field borrows the raw message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ScramClientFinal<'a> {
+    /// The base64 channel binding (`c=`), as the client sent it.
+    pub channel_binding: &'a str,
+    /// The combined nonce (`r=`).
+    pub nonce: &'a str,
+    /// The extensions between the nonce and the proof, in the order the
+    /// client sent them.
+    pub extensions: Vec<(&'a str, &'a str)>,
+    /// The base64 client proof (`p=`), as the client sent it.
+    pub proof: &'a str,
+    /// `client-final-message-without-proof`, everything before `,p=`. It is
+    /// the last part of the `AuthMessage` both sides sign.
+    pub without_proof: &'a str,
+}
+
+impl<'a> ScramClientFinal<'a> {
+    /// Parse a client-final message with Kafka's grammar.
+    ///
+    /// # Errors
+    /// [`AuthError::MalformedMessage`] when the message is not UTF-8 or does
+    /// not match Kafka's client-final grammar as a whole.
+    pub(super) fn parse(bytes: &'a [u8]) -> Result<Self, AuthError> {
+        let message = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
+        // No base64 character is a `,`, so the proof is what follows the
+        // last `,p=`. A later attribute leaves a `,` in it and fails below.
+        let (without_proof, proof) = message
+            .rsplit_once(",p=")
+            .filter(|(_, proof)| is_base64(proof))
+            .ok_or(AuthError::MalformedMessage)?;
+        let mut attributes = without_proof.split(',');
+        let channel_binding = attributes
+            .next()
+            .and_then(|a| a.strip_prefix("c="))
+            .filter(|c| is_base64(c))
+            .ok_or(AuthError::MalformedMessage)?;
+        let nonce = attributes
+            .next()
+            .and_then(|a| a.strip_prefix("r="))
+            .filter(|n| is_printable(n))
+            .ok_or(AuthError::MalformedMessage)?;
+        let extensions = attributes
+            .map(|attribute| {
+                attribute
+                    .split_once('=')
+                    .filter(|(key, value)| is_extension(key, value))
+                    .ok_or(AuthError::MalformedMessage)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            channel_binding,
+            nonce,
+            extensions,
+            proof,
+            without_proof,
+        })
+    }
+}
+
+/// Kafka's `BASE64` grammar: groups of four base64 characters, the last of
+/// which may end in `=` or `==`. It matches the empty string.
+fn is_base64(value: &str) -> bool {
+    let (body, remainder) = if let Some(body) = value.strip_suffix("==") {
+        (body, 2)
+    } else if let Some(body) = value.strip_suffix('=') {
+        (body, 3)
+    } else {
+        (value, 0)
+    };
+    body.len() % 4 == remainder
+        && body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
 }
 
 /// Encode a username as an RFC 5802 `saslname`: `=` becomes `=3D` and `,`
@@ -268,9 +352,121 @@ mod tests {
             ("n,,n=t,r=a,tokenauth=TRUE", true),
             ("n,,n=t,r=a,tokenauth=false", false),
             ("n,,n=t,r=a", false),
+            ("n,,n=t,r=a,tokenauth=true,tokenauth=false", false),
+            ("n,,n=t,r=a,tokenauth=false,tokenauth=true", true),
         ] {
             let parsed = ScramClientFirst::parse(message.as_bytes()).unwrap();
             check!(parsed.token_authenticated() == want, "message {message}");
+        }
+    }
+
+    #[test]
+    fn client_final_parses_kafkas_grammar() {
+        for (case, message, want) in [
+            (
+                "plain",
+                "c=biws,r=NS,p=AAAA",
+                ScramClientFinal {
+                    channel_binding: "biws",
+                    nonce: "NS",
+                    extensions: vec![],
+                    proof: "AAAA",
+                    without_proof: "c=biws,r=NS",
+                },
+            ),
+            (
+                "padded base64",
+                "c=bixhPWFsaWNlLA==,r=N!~,p=AAA=",
+                ScramClientFinal {
+                    channel_binding: "bixhPWFsaWNlLA==",
+                    nonce: "N!~",
+                    extensions: vec![],
+                    proof: "AAA=",
+                    without_proof: "c=bixhPWFsaWNlLA==,r=N!~",
+                },
+            ),
+            (
+                "extensions before the proof",
+                "c=biws,r=NS,foo=1,Bar=a=b,p=x,p=AA==",
+                ScramClientFinal {
+                    channel_binding: "biws",
+                    nonce: "NS",
+                    extensions: vec![("foo", "1"), ("Bar", "a=b"), ("p", "x")],
+                    proof: "AA==",
+                    without_proof: "c=biws,r=NS,foo=1,Bar=a=b,p=x",
+                },
+            ),
+            (
+                // Kafka reads a repeated `r=` or `p=` before the proof as an
+                // extension.
+                "repeated nonce and proof",
+                "c=biws,r=NS,r=NS,p=AAAA,p=AAAA",
+                ScramClientFinal {
+                    channel_binding: "biws",
+                    nonce: "NS",
+                    extensions: vec![("r", "NS"), ("p", "AAAA")],
+                    proof: "AAAA",
+                    without_proof: "c=biws,r=NS,r=NS,p=AAAA",
+                },
+            ),
+            (
+                "empty base64",
+                "c=,r=NS,p=",
+                ScramClientFinal {
+                    channel_binding: "",
+                    nonce: "NS",
+                    extensions: vec![],
+                    proof: "",
+                    without_proof: "c=,r=NS",
+                },
+            ),
+        ] {
+            check!(
+                ScramClientFinal::parse(message.as_bytes()) == Ok(want),
+                "case {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn client_final_rejects_what_kafka_rejects() {
+        for (case, message) in [
+            ("nonce first", &b"r=NS,c=biws,p=AAAA"[..]),
+            ("proof before nonce", b"c=biws,p=AAAA,r=NS"),
+            ("missing channel binding", b"r=NS,p=AAAA"),
+            ("missing nonce", b"c=biws,p=AAAA"),
+            ("missing proof", b"c=biws,r=NS"),
+            (
+                "unknown attribute after the proof",
+                b"c=biws,r=NS,p=AAAA,x=1",
+            ),
+            ("duplicate channel binding", b"c=biws,c=biws,r=NS,p=AAAA"),
+            ("extension before the nonce", b"c=biws,x=1,r=NS,p=AAAA"),
+            ("empty extension value", b"c=biws,r=NS,x=,p=AAAA"),
+            ("extension without value", b"c=biws,r=NS,x,p=AAAA"),
+            ("non-alphabetic extension key", b"c=biws,r=NS,x1=a,p=AAAA"),
+            (
+                "non-ASCII extension value",
+                "c=biws,r=NS,x=\u{e9},p=AAAA".as_bytes(),
+            ),
+            ("channel binding not base64", b"c=bi*s,r=NS,p=AAAA"),
+            ("channel binding unpadded", b"c=biw,r=NS,p=AAAA"),
+            ("proof not base64", b"c=biws,r=NS,p=AA-A"),
+            ("proof unpadded", b"c=biws,r=NS,p=AAAAA"),
+            ("proof over-padded", b"c=biws,r=NS,p=A==="),
+            ("proof padding mid-string", b"c=biws,r=NS,p=AA==AAAA"),
+            ("empty nonce", b"c=biws,r=,p=AAAA"),
+            ("nonce with a space", b"c=biws,r=N S,p=AAAA"),
+            ("nonce with a control byte", b"c=biws,r=N\x7f,p=AAAA"),
+            ("trailing comma", b"c=biws,r=NS,p=AAAA,"),
+            ("trailing newline", b"c=biws,r=NS,p=AAAA\n"),
+            ("leading space", b" c=biws,r=NS,p=AAAA"),
+            ("not UTF-8", b"c=biws,r=\xff,p=AAAA"),
+        ] {
+            check!(
+                ScramClientFinal::parse(message) == Err(AuthError::MalformedMessage),
+                "case {case}"
+            );
         }
     }
 

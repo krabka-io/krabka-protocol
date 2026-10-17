@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `UnsecuredJwsValidator::default()` allows no clock skew, as Kafka's
+  `unsecuredValidatorAllowableClockSkewMs` defaults to 0
+  ([krabka-broker#1430](https://github.com/krabka-io/krabka-broker/issues/1430)).
+  It used to allow 30 s. `SignedJwsValidator::new` keeps Kafka's 30 s
+  `sasl.oauthbearer.clock.skew.seconds`.
+- `ScramServerExchange` now reads the SCRAM client-final message with the
+  grammar of Kafka 4.3.1's `ScramMessages.ClientFinalMessage`
+  ([#65](https://github.com/krabka-io/krabka-protocol/issues/65)):
+  `c=<base64>,r=<nonce>`, any `,<alpha>=<value>` extensions, then
+  `,p=<base64>`. It rejects attributes in another order, an attribute after
+  the proof, a repeated `c=`, a nonce outside Kafka's printable characters,
+  base64 outside Kafka's grammar, and trailing data. It accepts a proof whose
+  last base64 character sets unused bits, as Java's decoder does. The
+  `AuthMessage` still signs the client-final message as the client sent it.
+  A client-first authzid is now compared with the username as the client
+  escaped it, and the last of a repeated SCRAM extension wins, as in Kafka.
 - `parse_client_initial_response` now matches the SASL/OAUTHBEARER client
   initial response with the grammar of Kafka 4.3.1's
   `OAuthBearerClientInitialResponse`
@@ -20,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an authzid that contains `\x01`, and it no longer keeps the extra spaces
   before the token in the token. The authzid stays verbatim: Kafka does not
   decode `=2C` or `=3D` either.
+- `UnsecuredJwsValidator::validate` now checks a token the way Kafka 4.3.1's
+  `OAuthBearerUnsecuredValidatorCallbackHandler` does
+  ([#66](https://github.com/krabka-io/krabka-protocol/issues/66)). It rejects
+  an `exp` that is not after `iat`, an `iat` that is not a number, a blank
+  principal, and a numeric scope claim. The new `scope_claim_name` and
+  `required_scope` fields are Kafka's `unsecuredValidatorScopeClaimName` and
+  `unsecuredValidatorRequiredScope`, and `parse_required_scope` reads the
+  option. A token without a required scope item fails with the new
+  `AuthError::InsufficientScope`. The new `oauth_error_json` renders Kafka's
+  server challenge for any validation failure, such as
+  `{"status":"insufficient_scope", "scope":"[a, b]"}`, and replaces
+  `invalid_token_json`, which is removed.
 
 ## [0.6.0] — 2026-10-08
 

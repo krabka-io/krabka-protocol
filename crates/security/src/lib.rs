@@ -60,8 +60,8 @@ pub use mechanism::SaslMechanism;
 pub use mtls::extract_principal_from_cert;
 pub use oauthbearer::{
     AuthOutcome, ClientInitialResponse, IntrospectionClient, IntrospectionError,
-    IntrospectionValidator, OAuthBearerValidator, SignedJwsValidator, UnsecuredJwsValidator,
-    invalid_token_json, parse_client_initial_response,
+    IntrospectionValidator, InvalidScopeItem, OAuthBearerValidator, SignedJwsValidator,
+    UnsecuredJwsValidator, oauth_error_json, parse_client_initial_response, parse_required_scope,
 };
 pub use plain::verify_plain;
 pub use principal::{AuthError, AuthMethod, KafkaPrincipal, Principal};
