@@ -1253,6 +1253,47 @@ mod tests {
         check!(client.verify_server_final(&s2).is_ok());
     }
 
+    /// A repeated extension key is sent once, at its first position with its
+    /// last value, as Kafka's map-backed client sends it, so the server's
+    /// rebuilt `AuthMessage` matches what the client signed.
+    #[test]
+    fn scram_client_sends_a_repeated_extension_once_and_authenticates() {
+        let password = b"pw";
+        let cred = hash_scram_password_with_salt(
+            password,
+            SaslMechanism::ScramSha256,
+            4096,
+            (0..16).collect::<Vec<u8>>(),
+        );
+        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let client = ScramClientExchange::new(
+            "alice".to_string(),
+            password.to_vec(),
+            SaslMechanism::ScramSha256,
+        )
+        .with_extensions([("foo", "1"), ("bar", "2"), ("foo", "3")])
+        .unwrap();
+
+        let (c1, client) = client.client_first().unwrap();
+        let parsed = ScramClientFirst::parse(&c1).unwrap();
+        check!(
+            parsed.extensions
+                == vec![
+                    ("foo".to_string(), "3".to_string()),
+                    ("bar".to_string(), "2".to_string()),
+                ]
+        );
+        let StepResult::Continue(s1, server) = server.step(&c1) else {
+            panic!("server step 1 must continue");
+        };
+        let (c2, client) = client.step(&s1).unwrap();
+        let StepResult::Done(principal, s2) = server.step(&c2) else {
+            panic!("server step 2 must finish");
+        };
+        check!(principal.name == "alice");
+        check!(client.verify_server_final(&s2).is_ok());
+    }
+
     #[test]
     fn scram_client_rejects_extensions_kafka_cannot_parse() {
         for (case, key, value) in [

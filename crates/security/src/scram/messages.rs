@@ -13,6 +13,8 @@
 //! the bytes it sent, as RFC 5802 reads, authenticates only when the two
 //! agree, as against Kafka.
 
+use std::collections::{HashMap, hash_map::Entry};
+
 use base64::{
     Engine, alphabet,
     engine::{GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD as B64},
@@ -156,12 +158,19 @@ impl ScramClientFirst {
 
 /// Each distinct extension key once, in the order the client first sent it,
 /// with the last value the client sent for it.
+///
+/// The client-first message arrives before authentication, so a key's slot
+/// is found through a hash index rather than a scan of the keys seen so far.
 fn distinct_extensions(extensions: &[(String, String)]) -> Vec<(&str, &str)> {
     let mut distinct: Vec<(&str, &str)> = Vec::with_capacity(extensions.len());
+    let mut slots: HashMap<&str, usize> = HashMap::with_capacity(extensions.len());
     for (key, value) in extensions {
-        match distinct.iter_mut().find(|(seen, _)| seen == key) {
-            Some(entry) => entry.1 = value,
-            None => distinct.push((key, value)),
+        match slots.entry(key) {
+            Entry::Occupied(slot) => distinct[*slot.get()].1 = value,
+            Entry::Vacant(slot) => {
+                slot.insert(distinct.len());
+                distinct.push((key, value));
+            }
         }
     }
     distinct
@@ -417,6 +426,36 @@ mod tests {
                 "case {case}"
             );
         }
+    }
+
+    /// A pre-authentication client-first can carry as many distinct
+    /// extensions as `sasl.server.max.receive.size` holds. They are all kept,
+    /// in order, and a repeat of the first one still takes its last value.
+    #[test]
+    fn client_first_rebuilds_a_large_extension_list_in_order() {
+        let keys: Vec<String> = (0..60_000_u32)
+            .map(|mut n| {
+                let mut key = String::new();
+                loop {
+                    key.push(char::from(b'a' + u8::try_from(n % 26).unwrap()));
+                    n /= 26;
+                    if n == 0 {
+                        break key;
+                    }
+                }
+            })
+            .collect();
+        let mut message = String::from("n,,n=alice,r=cn");
+        let mut expected = String::from("n=alice,r=cn");
+        for key in &keys {
+            let value = if key == "a" { "2" } else { "1" };
+            for (out, value) in [(&mut message, "1"), (&mut expected, value)] {
+                out.extend([",", key.as_str(), "=", value]);
+            }
+        }
+        message.push_str(",a=2");
+        let parsed = ScramClientFirst::parse(message.as_bytes()).unwrap();
+        check!(parsed.bare == expected);
     }
 
     #[test]
