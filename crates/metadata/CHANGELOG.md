@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-20
+
+- Re-released with the 0.7 workspace; library behavior is unchanged.
+
 ## [0.6.0] — 2026-10-08
 
 - First release on crates.io under the `krabka-*` name. 0.5.1 could not

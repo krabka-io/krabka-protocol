@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-20
+
+**Breaking Rust API.** Handle `StepResult::Disconnect` and use
+`oauth_error_json` in place of the removed `invalid_token_json`.
+
 ### Fixed
 
 - `ScramServerExchange` now signs the `AuthMessage` that Kafka 4.3.1's
