@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-20
+
+**Breaking Rust API.** Handle `StepResult::Disconnect` and
+`AuthError::InsufficientScope`, and use `oauth_error_json` in place of the
+removed `invalid_token_json`.
+
 ### Fixed
 
 - `ScramServerExchange` now signs the `AuthMessage` that Kafka 4.3.1's
@@ -40,8 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `,p=<base64>`. It rejects attributes in another order, an attribute after
   the proof, a repeated `c=`, a nonce outside Kafka's printable characters,
   base64 outside Kafka's grammar, and trailing data. It accepts a proof whose
-  last base64 character sets unused bits, as Java's decoder does. The
-  `AuthMessage` still signs the client-final message as the client sent it.
+  last base64 character sets unused bits, as Java's decoder does.
   A client-first authzid is now compared with the username as the client
   escaped it, and the last of a repeated SCRAM extension wins, as in Kafka.
 - `parse_client_initial_response` now matches the SASL/OAUTHBEARER client
