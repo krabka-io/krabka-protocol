@@ -5,8 +5,29 @@
 //! `n,[a=<authzid>],[m=<value>,]n=<saslname>,r=<nonce>[,<alpha>=<value>]*`.
 //! Only the `n` channel-binding flag is accepted: Kafka runs SCRAM without
 //! channel binding, so a `y` or `p` GS2 header is malformed.
+//!
+//! Both sides sign an `AuthMessage` that Kafka's `ScramFormatter.authMessage`
+//! rebuilds from the parsed fields rather than from the bytes the client
+//! sent: `ClientFirstMessage.clientFirstMessageBare` and
+//! `ClientFinalMessage.clientFinalMessageWithoutProof`. A client that signs
+//! the bytes it sent, as RFC 5802 reads, authenticates only when the two
+//! agree, as against Kafka.
+
+use std::collections::{HashMap, hash_map::Entry};
+
+use base64::{
+    Engine, alphabet,
+    engine::{GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD as B64},
+};
 
 use crate::AuthError;
+
+/// Standard base64 that, like Java's `Base64` decoder, ignores the unused
+/// bits of the last character: Java decodes `bh==` to `n`, as it does `bg==`.
+pub(super) const JAVA_B64: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+);
 
 /// The SCRAM extension that marks a KIP-48 delegation-token authentication.
 /// Its value is `true` when the SCRAM username is a token id.
@@ -16,7 +37,6 @@ pub const TOKEN_AUTH_EXTENSION: &str = "tokenauth";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScramClientFirst {
     /// The GS2 header exactly as the client sent it, `n,,` or `n,a=<authzid>,`.
-    /// The client-final `c=` attribute must be its base64 encoding.
     pub gs2_header: String,
     /// The decoded GS2 authorization id, `None` when the header carries none.
     pub authzid: Option<String>,
@@ -27,8 +47,18 @@ pub struct ScramClientFirst {
     /// The SCRAM extensions after the nonce, in the order the client sent
     /// them, for example `("tokenauth", "true")`.
     pub extensions: Vec<(String, String)>,
-    /// `client-first-message-bare`, everything after the GS2 header. It is the
-    /// first part of the `AuthMessage` both sides sign.
+    /// `client-first-message-bare` as Kafka's
+    /// `ClientFirstMessage.clientFirstMessageBare` rebuilds it, the first part
+    /// of the `AuthMessage` both sides sign: `n=<saslname as sent>,r=<nonce>`,
+    /// then `,<key>=<value>` for each distinct extension key. A reserved `m=`
+    /// attribute is dropped, and a repeated key keeps its last value, as the
+    /// map that `ScramExtensions` builds does.
+    ///
+    /// Kafka iterates that map through `Map.copyOf`, whose order is fixed for
+    /// one entry but randomized per JVM for two or more, so no order matches
+    /// Kafka every time for a client that sends several distinct extensions.
+    /// The keys keep the order in which the client first sent them, which is
+    /// the order Kafka's own client signs.
     pub bare: String,
 }
 
@@ -65,11 +95,11 @@ impl ScramClientFirst {
                 return Err(AuthError::MalformedMessage);
             }
         }
-        let username = attributes
+        let saslname = attributes
             .next()
             .and_then(|a| a.strip_prefix("n="))
-            .ok_or(AuthError::MalformedMessage)
-            .and_then(decode_saslname)?;
+            .ok_or(AuthError::MalformedMessage)?;
+        let username = decode_saslname(saslname)?;
         let nonce = attributes
             .next()
             .and_then(|a| a.strip_prefix("r="))
@@ -85,6 +115,14 @@ impl ScramClientFirst {
                     .ok_or(AuthError::MalformedMessage)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let bare = std::iter::once(format!("n={saslname},r={nonce}"))
+            .chain(
+                distinct_extensions(&extensions)
+                    .into_iter()
+                    .map(|(key, value)| format!("{key}={value}")),
+            )
+            .collect::<Vec<_>>()
+            .join(",");
 
         Ok(Self {
             gs2_header,
@@ -92,7 +130,7 @@ impl ScramClientFirst {
             username,
             nonce,
             extensions,
-            bare: bare.to_string(),
+            bare,
         })
     }
 
@@ -118,11 +156,32 @@ impl ScramClientFirst {
     }
 }
 
+/// Each distinct extension key once, in the order the client first sent it,
+/// with the last value the client sent for it.
+///
+/// The client-first message arrives before authentication, so a key's slot
+/// is found through a hash index rather than a scan of the keys seen so far.
+fn distinct_extensions(extensions: &[(String, String)]) -> Vec<(&str, &str)> {
+    let mut distinct: Vec<(&str, &str)> = Vec::with_capacity(extensions.len());
+    let mut slots: HashMap<&str, usize> = HashMap::with_capacity(extensions.len());
+    for (key, value) in extensions {
+        match slots.entry(key) {
+            Entry::Occupied(slot) => distinct[*slot.get()].1 = value,
+            Entry::Vacant(slot) => {
+                slot.insert(distinct.len());
+                distinct.push((key, value));
+            }
+        }
+    }
+    distinct
+}
+
 /// A SCRAM client-final message, split as Kafka's
 /// `ScramMessages.ClientFinalMessage` matches it.
 ///
 /// Kafka's grammar is `c=<base64>,r=<nonce>[,<alpha>=<value>]*,p=<base64>`,
-/// in that order and nothing else. Every field borrows the raw message.
+/// in that order and nothing else. Every field but `without_proof` borrows
+/// the raw message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ScramClientFinal<'a> {
     /// The base64 channel binding (`c=`), as the client sent it.
@@ -134,9 +193,13 @@ pub(super) struct ScramClientFinal<'a> {
     pub extensions: Vec<(&'a str, &'a str)>,
     /// The base64 client proof (`p=`), as the client sent it.
     pub proof: &'a str,
-    /// `client-final-message-without-proof`, everything before `,p=`. It is
-    /// the last part of the `AuthMessage` both sides sign.
-    pub without_proof: &'a str,
+    /// `client-final-message-without-proof` as Kafka's
+    /// `ClientFinalMessage.clientFinalMessageWithoutProof` rebuilds it, the
+    /// last part of the `AuthMessage` both sides sign:
+    /// `c=<channel binding>,r=<nonce>`. The extensions are dropped, and the
+    /// channel binding is decoded and encoded again as Java's `Base64` does,
+    /// so unused bits the client set in its last character are cleared.
+    pub without_proof: String,
 }
 
 impl<'a> ScramClientFinal<'a> {
@@ -149,11 +212,11 @@ impl<'a> ScramClientFinal<'a> {
         let message = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
         // No base64 character is a `,`, so the proof is what follows the
         // last `,p=`. A later attribute leaves a `,` in it and fails below.
-        let (without_proof, proof) = message
+        let (before_proof, proof) = message
             .rsplit_once(",p=")
             .filter(|(_, proof)| is_base64(proof))
             .ok_or(AuthError::MalformedMessage)?;
-        let mut attributes = without_proof.split(',');
+        let mut attributes = before_proof.split(',');
         let channel_binding = attributes
             .next()
             .and_then(|a| a.strip_prefix("c="))
@@ -172,6 +235,10 @@ impl<'a> ScramClientFinal<'a> {
                     .ok_or(AuthError::MalformedMessage)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let channel_binding_bytes = JAVA_B64
+            .decode(channel_binding)
+            .map_err(|_| AuthError::MalformedMessage)?;
+        let without_proof = format!("c={},r={nonce}", B64.encode(channel_binding_bytes));
         Ok(Self {
             channel_binding,
             nonce,
@@ -304,7 +371,23 @@ mod tests {
                     username: "a,b=c".into(),
                     nonce: "x".into(),
                     extensions: vec![("foo".into(), "1".into()), ("bar".into(), "2".into())],
-                    bare: "m=ignored,n=a=2Cb=3Dc,r=x,foo=1,bar=2".into(),
+                    bare: "n=a=2Cb=3Dc,r=x,foo=1,bar=2".into(),
+                },
+            ),
+            (
+                "repeated extension keeps its first place and last value",
+                "n,,n=alice,r=x,a=1,b=2,a=3",
+                ScramClientFirst {
+                    gs2_header: "n,,".into(),
+                    authzid: None,
+                    username: "alice".into(),
+                    nonce: "x".into(),
+                    extensions: vec![
+                        ("a".into(), "1".into()),
+                        ("b".into(), "2".into()),
+                        ("a".into(), "3".into()),
+                    ],
+                    bare: "n=alice,r=x,a=3,b=2".into(),
                 },
             ),
         ] {
@@ -345,6 +428,36 @@ mod tests {
         }
     }
 
+    /// A pre-authentication client-first can carry as many distinct
+    /// extensions as `sasl.server.max.receive.size` holds. They are all kept,
+    /// in order, and a repeat of the first one still takes its last value.
+    #[test]
+    fn client_first_rebuilds_a_large_extension_list_in_order() {
+        let keys: Vec<String> = (0..60_000_u32)
+            .map(|mut n| {
+                let mut key = String::new();
+                loop {
+                    key.push(char::from(b'a' + u8::try_from(n % 26).unwrap()));
+                    n /= 26;
+                    if n == 0 {
+                        break key;
+                    }
+                }
+            })
+            .collect();
+        let mut message = String::from("n,,n=alice,r=cn");
+        let mut expected = String::from("n=alice,r=cn");
+        for key in &keys {
+            let value = if key == "a" { "2" } else { "1" };
+            for (out, value) in [(&mut message, "1"), (&mut expected, value)] {
+                out.extend([",", key.as_str(), "=", value]);
+            }
+        }
+        message.push_str(",a=2");
+        let parsed = ScramClientFirst::parse(message.as_bytes()).unwrap();
+        check!(parsed.bare == expected);
+    }
+
     #[test]
     fn token_authenticated_reads_the_tokenauth_extension() {
         for (message, want) in [
@@ -371,7 +484,7 @@ mod tests {
                     nonce: "NS",
                     extensions: vec![],
                     proof: "AAAA",
-                    without_proof: "c=biws,r=NS",
+                    without_proof: "c=biws,r=NS".into(),
                 },
             ),
             (
@@ -382,7 +495,7 @@ mod tests {
                     nonce: "N!~",
                     extensions: vec![],
                     proof: "AAA=",
-                    without_proof: "c=bixhPWFsaWNlLA==,r=N!~",
+                    without_proof: "c=bixhPWFsaWNlLA==,r=N!~".into(),
                 },
             ),
             (
@@ -393,7 +506,7 @@ mod tests {
                     nonce: "NS",
                     extensions: vec![("foo", "1"), ("Bar", "a=b"), ("p", "x")],
                     proof: "AA==",
-                    without_proof: "c=biws,r=NS,foo=1,Bar=a=b,p=x",
+                    without_proof: "c=biws,r=NS".into(),
                 },
             ),
             (
@@ -406,7 +519,18 @@ mod tests {
                     nonce: "NS",
                     extensions: vec![("r", "NS"), ("p", "AAAA")],
                     proof: "AAAA",
-                    without_proof: "c=biws,r=NS,r=NS,p=AAAA",
+                    without_proof: "c=biws,r=NS".into(),
+                },
+            ),
+            (
+                "unused bits in the channel binding",
+                "c=bixhPWFsaWNlLB==,r=NS,p=AAAA",
+                ScramClientFinal {
+                    channel_binding: "bixhPWFsaWNlLB==",
+                    nonce: "NS",
+                    extensions: vec![],
+                    proof: "AAAA",
+                    without_proof: "c=bixhPWFsaWNlLA==,r=NS".into(),
                 },
             ),
             (
@@ -417,7 +541,7 @@ mod tests {
                     nonce: "NS",
                     extensions: vec![],
                     proof: "",
-                    without_proof: "c=,r=NS",
+                    without_proof: "c=,r=NS".into(),
                 },
             ),
         ] {

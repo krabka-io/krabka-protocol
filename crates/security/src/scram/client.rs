@@ -55,7 +55,7 @@ impl ScramClientExchange {
     }
 
     /// Append SCRAM extensions to client-first, after the nonce, in the given
-    /// order, as Kafka's `ScramSaslClient` does with the extensions its
+    /// order (a repeated key keeps its first position and its last value), as Kafka's `ScramSaslClient` does with the extensions its
     /// callback supplies. A KIP-48 delegation-token login sends
     /// `("tokenauth", "true")` with the token id as the username and the token
     /// HMAC as the password.
@@ -77,7 +77,13 @@ impl ScramClientExchange {
             if !is_extension(&key, &value) {
                 return Err(AuthError::MalformedMessage);
             }
-            self.extensions.push((key, value));
+            // Kafka's `ScramSaslClient` sends its extensions from a map, so a
+            // repeated key keeps its first position and takes the last value,
+            // which is also the form the server signs.
+            match self.extensions.iter_mut().find(|(seen, _)| *seen == key) {
+                Some(entry) => entry.1 = value,
+                None => self.extensions.push((key, value)),
+            }
         }
         Ok(self)
     }
