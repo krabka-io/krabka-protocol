@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ScramServerExchange` now signs the `AuthMessage` that Kafka 4.3.1's
+  `ScramFormatter.authMessage` rebuilds from the parsed fields
+  ([krabka-broker#1390](https://github.com/krabka-io/krabka-broker/issues/1390)),
+  instead of the bytes the client sent. The client-first part drops a reserved
+  `m=` attribute and keeps the last value of a repeated extension. The
+  client-final part is `c=<channel binding>,r=<nonce>`, without the
+  extensions, with the channel binding decoded and encoded again as Java's
+  `Base64` does. `ScramClientFirst::bare` is now that rebuilt message, and the
+  server signature signs it too. Kafka orders two or more distinct extensions
+  differently on each JVM, so they keep the order the client first sent them.
+- `ScramServerExchange` no longer requires the client-final `c=` to be the
+  base64 of the GS2 header the client sent. Kafka checks only that it is
+  base64, and the proof signs it.
+- A client-final proof that does not decode to the length of the
+  mechanism's hash, the empty proof included, now ends the exchange with the
+  new `StepResult::Disconnect`, not `StepResult::Failed`. Kafka's
+  `ScramFormatter.xor` throws `IllegalArgumentException` on it, and the
+  broker closes the connection with no response and no failed-authentication
+  delay. Code that matches `StepResult` must handle the new variant.
 - `UnsecuredJwsValidator::default()` allows no clock skew, as Kafka's
   `unsecuredValidatorAllowableClockSkewMs` defaults to 0
   ([krabka-broker#1430](https://github.com/krabka-io/krabka-broker/issues/1430)).

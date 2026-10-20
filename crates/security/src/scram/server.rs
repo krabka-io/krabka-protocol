@@ -3,24 +3,18 @@
 //! It supports SCRAM-SHA-256 and SCRAM-SHA-512. The mechanism comes from the
 //! credential that the server authenticates against.
 
-use base64::{
-    Engine, alphabet,
-    engine::{GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD as B64},
-};
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use hmac::{Hmac, KeyInit, Mac};
 use ring::rand::{SecureRandom, SystemRandom};
 use sha2::{Digest, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 
-use super::{ScramClientFirst, ScramCredential, messages::ScramClientFinal, scram_hash_len};
+use super::{
+    ScramClientFirst, ScramCredential,
+    messages::{JAVA_B64, ScramClientFinal},
+    scram_hash_len,
+};
 use crate::{AuthError, AuthMethod, Principal, SaslMechanism};
-
-/// Standard base64 that, like Java's `Base64` decoder, ignores the unused
-/// bits of the last character.
-const PROOF_B64: GeneralPurpose = GeneralPurpose::new(
-    &alphabet::STANDARD,
-    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
-);
 
 struct AwaitingClientFirst {
     username: String,
@@ -32,7 +26,6 @@ struct AwaitingClientFinal {
     username: String,
     credential: ScramCredential,
     principal_override: Option<Principal>,
-    gs2_header: String,
     client_first_bare: String,
     server_first: String,
 }
@@ -67,6 +60,14 @@ pub enum StepResult {
     Continue(Vec<u8>, ScramServerExchange),
     Done(Principal, Vec<u8>),
     Failed(AuthError),
+    /// The client-final proof does not decode to the length of the
+    /// mechanism's hash, the empty proof included. Kafka's
+    /// `ScramFormatter.xor` throws `IllegalArgumentException` on it, which no
+    /// `SaslException` handler catches, so `Selector.pollSelectionKeys`
+    /// closes the connection at once: no `SaslAuthenticate` response and no
+    /// `connection.failed.authentication.delay.ms`. The caller closes the
+    /// connection the same way.
+    Disconnect,
 }
 
 impl ScramServerExchange {
@@ -161,7 +162,6 @@ impl AwaitingClientFirst {
             username: self.username,
             credential: self.credential,
             principal_override: self.principal_override,
-            gs2_header: client_first.gs2_header,
             client_first_bare: client_first.bare,
             server_first,
         };
@@ -193,7 +193,6 @@ impl AwaitingClientFinal {
             Err(e) => return StepResult::Failed(e),
         };
         let nonce = client_final.nonce;
-        let cb = client_final.channel_binding;
 
         // RFC 5802 §5.1: the client-final `r=` (combined nonce) must
         // equal the nonce the server issued in server-first
@@ -208,23 +207,21 @@ impl AwaitingClientFinal {
             return StepResult::Failed(AuthError::MalformedMessage);
         }
 
-        // RFC 5802 §5.1: with no channel binding, `c=` is the base64 of the
-        // GS2 header the client sent in client-first: `biws` for `n,,`, and
-        // the encoding of `n,a=<authzid>,` when it named an authorization id.
-        if cb != B64.encode(self.gs2_header.as_bytes()) {
+        // Kafka checks only that `c=` is base64, not that it encodes the GS2
+        // header the client sent: `ScramSaslServer` never reads it, and the
+        // proof signs it as part of the `AuthMessage`.
+
+        // Java's `Base64` decoder ignores the unused bits of the last
+        // character, so the proof decodes as Kafka decodes it. The grammar
+        // already holds it to base64.
+        let Ok(proof) = JAVA_B64.decode(client_final.proof) else {
             return StepResult::Failed(AuthError::MalformedMessage);
+        };
+        if proof.len() != scram_hash_len(self.credential.mechanism) {
+            return StepResult::Disconnect;
         }
 
-        let expected_proof_len = scram_hash_len(self.credential.mechanism);
-        // Java's `Base64` decoder ignores the unused bits of the last
-        // character, so the proof decodes as Kafka decodes it.
-        let proof = match PROOF_B64.decode(client_final.proof) {
-            Ok(b) if b.len() == expected_proof_len => b,
-            _ => return StepResult::Failed(AuthError::MalformedMessage),
-        };
-
-        // RFC 5802 signs the client-final message as the client sent it, up
-        // to `,p=`, extensions included.
+        // Kafka's `ScramFormatter.authMessage`, from the parsed fields.
         let client_final_no_proof = client_final.without_proof;
 
         let auth_message = format!("{client_first_bare},{server_first},{client_final_no_proof}");

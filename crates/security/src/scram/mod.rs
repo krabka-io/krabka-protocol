@@ -477,37 +477,112 @@ mod tests {
         assert2::assert!(client.verify_server_final(b"v=AAAA").is_err());
     }
 
+    /// How a server exchange ended after client-final, comparable as a whole.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Ending {
+        Done(Principal, Vec<u8>),
+        Failed(AuthError),
+        Disconnect,
+    }
+
+    impl From<StepResult> for Ending {
+        fn from(result: StepResult) -> Self {
+            match result {
+                StepResult::Done(principal, server_final) => Self::Done(principal, server_final),
+                StepResult::Failed(e) => Self::Failed(e),
+                StepResult::Disconnect => Self::Disconnect,
+                StepResult::Continue(..) => panic!("server continued past client-final"),
+            }
+        }
+    }
+
+    /// A proof that does not decode to the hash length makes Kafka's
+    /// `ScramFormatter.xor` throw `IllegalArgumentException`, and the
+    /// connection closes with no response. The nonce is checked first, as in
+    /// `ScramSaslServer`, so a wrong nonce still fails as malformed.
     #[test]
-    fn scram_server_rejects_wrong_length_client_proof() {
+    fn scram_server_disconnects_on_a_proof_of_the_wrong_length() {
         let password = b"hunter2";
-        let cred = hash_scram_password_with_salt(
-            password,
-            SaslMechanism::ScramSha256,
-            4096,
-            (0..16).collect::<Vec<u8>>(),
-        );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
-        let client = ScramClientExchange::new(
-            "alice".to_string(),
-            password.to_vec(),
-            SaslMechanism::ScramSha256,
-        );
-
-        let (c1, client) = client.client_first().expect("client first");
-        let (s1, server) = match server.step(&c1) {
-            StepResult::Continue(b, next) => (b, next),
-            other => panic!("server step 1 must continue, got {other:?}"),
-        };
-        let (c2_bytes, _client) = client.step(&s1).expect("client final");
-        let mut c2 = String::from_utf8(c2_bytes).unwrap();
-        let proof_start = c2.find("p=").expect("proof attribute") + 2;
-        c2.truncate(proof_start);
-        c2.push_str("AAAA");
-
-        assert2::assert!(matches!(
-            server.step(c2.as_bytes()),
-            StepResult::Failed(AuthError::MalformedMessage)
-        ));
+        for (case, mechanism, proof_len, wrong_nonce, want) in [
+            (
+                "empty proof",
+                SaslMechanism::ScramSha256,
+                0,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "short proof",
+                SaslMechanism::ScramSha256,
+                3,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "one byte short",
+                SaslMechanism::ScramSha256,
+                31,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "one byte long",
+                SaslMechanism::ScramSha256,
+                33,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "SHA-512 length on SHA-256",
+                SaslMechanism::ScramSha256,
+                64,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "SHA-256 length on SHA-512",
+                SaslMechanism::ScramSha512,
+                32,
+                false,
+                Ending::Disconnect,
+            ),
+            (
+                "right length, wrong value",
+                SaslMechanism::ScramSha256,
+                32,
+                false,
+                Ending::Failed(AuthError::BadProof),
+            ),
+            (
+                "wrong length and wrong nonce",
+                SaslMechanism::ScramSha256,
+                3,
+                true,
+                Ending::Failed(AuthError::MalformedMessage),
+            ),
+        ] {
+            let cred = hash_scram_password_with_salt(
+                password,
+                mechanism,
+                4096,
+                (0..16).collect::<Vec<u8>>(),
+            );
+            let server = ScramServerExchange::new("alice".to_string(), cred);
+            let StepResult::Continue(server_first, server) = server.step(b"n,,n=alice,r=cn") else {
+                panic!("server step 1 must continue");
+            };
+            let server_first = String::from_utf8(server_first).unwrap();
+            let nonce = server_first
+                .strip_prefix("r=")
+                .and_then(|rest| rest.split(',').next())
+                .unwrap();
+            let nonce = if wrong_nonce { "cnX" } else { nonce };
+            let client_final = format!("c=biws,r={nonce},p={}", B64.encode(vec![7u8; proof_len]));
+            check!(
+                Ending::from(server.step(client_final.as_bytes())) == want,
+                "case {case}"
+            );
+        }
     }
 
     #[test]
@@ -674,12 +749,11 @@ mod tests {
         }
     }
 
-    /// RFC 5802 §5.1: the server must reject a client-final whose `c=` channel
-    /// binding is not the base64 of the GS2 header `n,,`, which is `"biws"`.
-    /// This test swaps in a bogus channel binding and expects
-    /// `MalformedMessage`.
+    /// Kafka does not compare `c=` with the GS2 header, but the proof signs
+    /// it: a channel binding swapped in after the client signed fails as a
+    /// bad proof.
     #[test]
-    fn scram_server_rejects_wrong_channel_binding() {
+    fn scram_server_fails_a_channel_binding_the_client_did_not_sign() {
         // Arbitrary, non-secret test password generated at runtime (not a
         // hard-coded credential literal).
         let password: Vec<u8> = (b'A'..=b'Z').collect();
@@ -707,8 +781,8 @@ mod tests {
         let wrong_cb = B64.encode(b"y,,");
         let tampered = c2_str.replacen("c=biws", &format!("c={wrong_cb}"), 1);
         match server.step(tampered.as_bytes()) {
-            StepResult::Failed(crate::AuthError::MalformedMessage) => {}
-            other => panic!("expected MalformedMessage for wrong channel binding, got {other:?}"),
+            StepResult::Failed(crate::AuthError::BadProof) => {}
+            other => panic!("expected BadProof for an unsigned channel binding, got {other:?}"),
         }
     }
 
@@ -735,7 +809,9 @@ mod tests {
         let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
             StepResult::Continue(server_first, next) => (server_first, next),
             StepResult::Failed(e) => return Err(e),
-            StepResult::Done(..) => panic!("server finished on client-first"),
+            StepResult::Done(..) | StepResult::Disconnect => {
+                panic!("server ended the exchange on client-first")
+            }
         };
         let server_first = String::from_utf8(server_first).unwrap();
         let combined_nonce = server_first
@@ -753,16 +829,18 @@ mod tests {
         match server.step(format!("{client_final_no_proof},p={}", B64.encode(proof)).as_bytes()) {
             StepResult::Done(principal, _) => Ok(principal),
             StepResult::Failed(e) => Err(e),
-            StepResult::Continue(..) => panic!("server continued past client-final"),
+            StepResult::Continue(..) | StepResult::Disconnect => {
+                panic!("server did not finish client-final")
+            }
         }
     }
 
     /// Broker issue #764: the server accepts a GS2 header carrying an
-    /// authorization id, as Kafka's `ScramSaslServer` does, and checks the
-    /// client-final `c=` against the header the client actually sent rather
-    /// than the literal `biws`.
+    /// authorization id, as Kafka's `ScramSaslServer` does. Like Kafka, it
+    /// does not hold the client-final `c=` to that header: the proof signs
+    /// whatever channel binding the client sent.
     #[test]
-    fn scram_server_checks_the_gs2_header_the_client_sent() {
+    fn scram_server_reads_the_gs2_header_but_not_the_channel_binding() {
         let alice = Ok(crate::Principal {
             name: "alice".into(),
             auth_method: crate::AuthMethod::SaslScramSha256,
@@ -803,14 +881,14 @@ mod tests {
                 "n,a=alice,",
                 "",
                 "n,,",
-                Err(crate::AuthError::MalformedMessage),
+                alice.clone(),
             ),
             (
                 "plain header but authzid binding",
                 "n,,",
                 "",
                 "n,a=alice,",
-                Err(crate::AuthError::MalformedMessage),
+                alice.clone(),
             ),
             (
                 "channel binding requested",
@@ -838,7 +916,8 @@ mod tests {
     /// client-first (`gs2_header` then `bare`) and a client-final built from
     /// `template`. In `template`, `{cb}` stands for the base64 of
     /// `gs2_header`, `{nonce}` for the combined nonce and `{proof}` for the
-    /// base64 proof. The proof signs the template up to `,p={proof}`. With
+    /// base64 proof. The proof signs `c={cb},r={nonce}`, which is what Kafka
+    /// rebuilds for any of these templates. With
     /// `flip_unused_bit`, the proof's last base64 character has its unused
     /// low bit set. Returns the principal, or the first failure.
     fn handshake_with_client_final(
@@ -860,7 +939,9 @@ mod tests {
         let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
             StepResult::Continue(server_first, next) => (server_first, next),
             StepResult::Failed(e) => return Err(e),
-            StepResult::Done(..) => panic!("server finished on client-first"),
+            StepResult::Done(..) | StepResult::Disconnect => {
+                panic!("server ended the exchange on client-first")
+            }
         };
         let server_first = String::from_utf8(server_first).unwrap();
         let combined_nonce = server_first
@@ -870,7 +951,7 @@ mod tests {
         let client_final = template
             .replace("{cb}", &B64.encode(gs2_header.as_bytes()))
             .replace("{nonce}", combined_nonce);
-        let signed = client_final.split(",p={proof}").next().unwrap();
+        let signed = format!("c={},r={combined_nonce}", B64.encode(gs2_header.as_bytes()));
         let auth_message = format!("{bare},{server_first},{signed}");
         let (proof, _) =
             client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes()).unwrap();
@@ -886,12 +967,14 @@ mod tests {
         match server.step(client_final.replace("{proof}", &proof_b64).as_bytes()) {
             StepResult::Done(principal, _) => Ok(principal),
             StepResult::Failed(e) => Err(e),
-            StepResult::Continue(..) => panic!("server continued past client-final"),
+            StepResult::Continue(..) | StepResult::Disconnect => {
+                panic!("server did not finish client-final")
+            }
         }
     }
 
     /// Issue #65: the server reads the client-final message with Kafka's
-    /// `ClientFinalMessage` grammar, signs it as the client sent it, decodes
+    /// `ClientFinalMessage` grammar, signs it without its extensions, decodes
     /// the proof as Java does, and compares the authzid as the client
     /// escaped it with the decoded username, as `ScramSaslServer` does.
     #[test]
@@ -916,7 +999,7 @@ mod tests {
                 principal("alice"),
             ),
             (
-                "extension before the proof is signed",
+                "extension before the proof is not signed",
                 "alice",
                 "n,,",
                 alice_bare,
@@ -1012,6 +1095,114 @@ mod tests {
                     == want,
                 "case {case}"
             );
+        }
+    }
+
+    /// Kafka's `ScramFormatter.authMessage` signs the messages that
+    /// `ClientFirstMessage.clientFirstMessageBare` and
+    /// `ClientFinalMessage.clientFinalMessageWithoutProof` rebuild from the
+    /// parsed fields, not the bytes the client sent. The expected forms below
+    /// are what Kafka 4.3.1's own `ScramMessages` returns for each message.
+    /// A proof over Kafka's form authenticates, and the server signature is
+    /// over the same form. A proof over the raw bytes, where they differ,
+    /// fails as a bad proof, as it does against Kafka.
+    #[test]
+    fn scram_server_signs_the_auth_message_kafka_rebuilds() {
+        let password: Vec<u8> = (b'a'..=b'z').collect();
+        let salt: Vec<u8> = (0..16).collect();
+        let alice = Principal {
+            name: "alice".into(),
+            auth_method: AuthMethod::SaslScramSha256,
+            groups: vec![],
+        };
+        for (case, client_first, client_final, kafka_bare, kafka_final) in [
+            (
+                "canonical",
+                "n,,n=alice,r=cn",
+                "c=biws,r={nonce},p={proof}",
+                "n=alice,r=cn",
+                "c=biws,r={nonce}",
+            ),
+            (
+                "reserved attribute",
+                "n,,m=ext,n=alice,r=cn",
+                "c=biws,r={nonce},p={proof}",
+                "n=alice,r=cn",
+                "c=biws,r={nonce}",
+            ),
+            (
+                "repeated client-first extension",
+                "n,,n=alice,r=cn,foo=1,foo=2",
+                "c=biws,r={nonce},p={proof}",
+                "n=alice,r=cn,foo=2",
+                "c=biws,r={nonce}",
+            ),
+            (
+                "client-final extension",
+                "n,,n=alice,r=cn",
+                "c=biws,r={nonce},foo=bar,p={proof}",
+                "n=alice,r=cn",
+                "c=biws,r={nonce}",
+            ),
+            (
+                "unused bits in the channel binding",
+                "n,a=alice,n=alice,r=cn",
+                "c=bixhPWFsaWNlLB==,r={nonce},p={proof}",
+                "n=alice,r=cn",
+                "c=bixhPWFsaWNlLA==,r={nonce}",
+            ),
+            (
+                "channel binding of another header",
+                "n,,n=alice,r=cn",
+                "c=bixhPWFsaWNlLA==,r={nonce},p={proof}",
+                "n=alice,r=cn",
+                "c=bixhPWFsaWNlLA==,r={nonce}",
+            ),
+        ] {
+            let raw_bare = client_first.splitn(3, ',').nth(2).unwrap();
+            let raw_final = client_final.split(",p={proof}").next().unwrap();
+            for (signed_bare, signed_final) in [(kafka_bare, kafka_final), (raw_bare, raw_final)] {
+                let cred = hash_scram_password_with_salt(
+                    &password,
+                    SaslMechanism::ScramSha256,
+                    4096,
+                    salt.clone(),
+                );
+                let server = ScramServerExchange::new("alice".to_string(), cred);
+                let StepResult::Continue(server_first, server) =
+                    server.step(client_first.as_bytes())
+                else {
+                    panic!("case {case}: server step 1 must continue");
+                };
+                let server_first = String::from_utf8(server_first).unwrap();
+                let nonce = server_first
+                    .strip_prefix("r=")
+                    .and_then(|rest| rest.split(',').next())
+                    .unwrap();
+                let auth_message = format!(
+                    "{signed_bare},{server_first},{}",
+                    signed_final.replace("{nonce}", nonce)
+                );
+                let (proof, server_key) =
+                    client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes())
+                        .unwrap();
+                let mut server_mac = <Hmac<Sha256>>::new_from_slice(&server_key).unwrap();
+                server_mac.update(auth_message.as_bytes());
+                let server_final =
+                    format!("v={}", B64.encode(server_mac.finalize().into_bytes())).into_bytes();
+                let want = if signed_bare == kafka_bare && signed_final == kafka_final {
+                    Ending::Done(alice.clone(), server_final)
+                } else {
+                    Ending::Failed(AuthError::BadProof)
+                };
+                let message = client_final
+                    .replace("{nonce}", nonce)
+                    .replace("{proof}", &B64.encode(proof));
+                check!(
+                    Ending::from(server.step(message.as_bytes())) == want,
+                    "case {case}, signed {signed_bare} / {signed_final}"
+                );
+            }
         }
     }
 
