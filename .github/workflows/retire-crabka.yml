@@ -48,7 +48,7 @@ concurrency:
 jobs:
   retire:
     name: retire the crabka crates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The GitHub-hosted limit. A run that hits it is safe to start again.
     timeout-minutes: 360
     # Holds CRABKA_CRATES_IO_TOKEN, a crates.io token of robot-head, the owner
@@ -109,6 +109,8 @@ jobs:
         crabka-pgtypes              -                           https://github.com/krabka-io/gres
         crabka-pgwire               -                           https://github.com/krabka-io/gres
     steps:
+      - name: Keep temporary files off the size-limited /tmp tmpfs
+        run: echo "TMPDIR=${RUNNER_TEMP}" >> "${GITHUB_ENV}"
       # The table must name every crate that robot-head owns, and nothing else.
       # A crate that the table misses would stay live under the old name.
       - name: the table names every crabka crate
