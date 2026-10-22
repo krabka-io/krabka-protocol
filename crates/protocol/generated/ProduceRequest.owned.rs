@@ -370,11 +370,7 @@ impl Decode<'_> for PartitionProduceData {
                 match __rb_opt {
                     None => None,
                     Some(__rb_bytes) => {
-                        let mut __rb_cur: &[u8] = &__rb_bytes;
-                        Some(<crate::records::RecordsPayload as crate::Decode>::decode(
-                            &mut __rb_cur,
-                            version,
-                        )?)
+                        Some(crate::records::RecordsPayload::from_bytes(__rb_bytes)?)
                     }
                 }
             };
