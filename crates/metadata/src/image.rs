@@ -28,6 +28,9 @@ use crate::{
 
 pub type EntityKey = Vec<(String, Option<String>)>;
 
+/// Eligible replicas and the last known ELR for one partition.
+type PartitionElrState = (Vec<NodeId>, Vec<NodeId>);
+
 /// In-memory image type for a single delegation
 /// token (KIP-48). Mirrors [`DelegationTokenRecord`] without any tombstone
 /// concerns. The apply path handles tombstones as removals.
@@ -144,7 +147,7 @@ pub struct MetadataImage {
     partitions: HashMap<String, BTreeMap<i32, PartitionRecord>>,
     // Group auxiliary state by topic too: deleting a topic never scans other topics.
     partition_next_offsets: HashMap<String, BTreeMap<i32, i64>>,
-    partition_elr: HashMap<String, BTreeMap<i32, (Vec<NodeId>, Vec<NodeId>)>>,
+    partition_elr: HashMap<String, BTreeMap<i32, PartitionElrState>>,
     partition_recovery: HashMap<String, BTreeMap<i32, LeaderRecoveryState>>,
     brokers: HashMap<NodeId, BrokerRegistrationRecord>,
     controllers: HashMap<NodeId, ControllerRegistrationRecord>,
@@ -1611,7 +1614,6 @@ mod tests {
     use krabka_units::bytes_per_sec;
 
     use super::*;
-    use crate::DeleteTopicRecord;
 
     /// `record_variant` maps each enum variant to its exact discriminant
     /// name. Assertions on concrete mappings kill whole-fn replacements, for
