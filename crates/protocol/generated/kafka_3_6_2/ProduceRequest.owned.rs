@@ -9,9 +9,9 @@ use crate::{
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_bytes_owned,
             get_compact_nullable_string_owned, get_compact_string_owned, get_nullable_bytes_owned,
-            get_nullable_string_owned, get_string_owned, nullable_string_len, put_bytes,
-            put_compact_bytes, put_compact_nullable_bytes, put_compact_nullable_string,
-            put_compact_string, put_nullable_bytes, put_nullable_string, put_string, string_len,
+            get_nullable_string_owned, get_string_owned, nullable_string_len,
+            put_compact_nullable_bytes, put_compact_nullable_string, put_compact_string,
+            put_nullable_bytes, put_nullable_string, put_string, string_len,
         },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
@@ -285,19 +285,7 @@ impl Encode for PartitionProduceData {
                         let () = put_nullable_bytes(buf, None);
                     }
                 }
-                Some(__rb) => {
-                    let mut __rb_buf = bytes::BytesMut::new();
-                    <crate::records::RecordsPayload as crate::Encode>::encode(
-                        __rb,
-                        &mut __rb_buf,
-                        version,
-                    )?;
-                    if flex {
-                        let () = put_compact_bytes(buf, &__rb_buf);
-                    } else {
-                        let () = put_bytes(buf, &__rb_buf);
-                    }
-                }
+                Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
             }
         }
         if flex {

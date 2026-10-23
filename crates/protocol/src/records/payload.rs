@@ -16,7 +16,7 @@
 //! the codec when an old client appears on the wire.
 
 use bytes::{Buf, BufMut, Bytes};
-use krabka_compression::RecordDecompressionPolicy;
+use krabka_compression::{CompressionType, RecordDecompressionPolicy};
 
 use crate::records::{
     RecordsError, borrowed::RecordBatch as RecordBatchBorrowed, owned::RecordBatch,
@@ -54,6 +54,44 @@ pub enum RecordsPayload {
 }
 
 impl RecordsPayload {
+    /// Writes this payload with its Kafka `BYTES` or `COMPACT_BYTES` length
+    /// prefix.
+    ///
+    /// Payloads whose encoded size is exact are written directly to `buf`.
+    /// Compressed v2 batches are first encoded into a temporary buffer because
+    /// their compressed wire size cannot be predicted from
+    /// [`RecordBatch::encoded_len`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the payload cannot be encoded or its length does
+    /// not fit the selected Kafka length prefix.
+    pub fn encode_length_prefixed<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flexible: bool,
+    ) -> Result<(), crate::ProtocolError> {
+        let has_compressed_batch = matches!(
+            self,
+            Self::V2(batches)
+                if batches
+                    .iter()
+                    .any(|batch| batch.attributes.compression() != CompressionType::None)
+        );
+
+        if has_compressed_batch {
+            let mut encoded = bytes::BytesMut::new();
+            <Self as crate::Encode>::encode(self, &mut encoded, version)?;
+            put_payload_length(buf, encoded.len(), flexible)?;
+            buf.put_slice(&encoded);
+        } else {
+            put_payload_length(buf, self.payload_len(), flexible)?;
+            <Self as crate::Encode>::encode(self, buf, version)?;
+        }
+        Ok(())
+    }
+
     /// Constructs a payload from raw records-field bytes.
     ///
     /// When the bytes look like v2, this function decodes every batch in the
@@ -266,6 +304,28 @@ impl RecordsPayload {
         let bytes = buf.copy_to_bytes(buf.remaining());
         Self::from_fetch_bytes(bytes).map_err(Into::into)
     }
+}
+
+fn put_payload_length<B: BufMut>(
+    buf: &mut B,
+    payload_len: usize,
+    flexible: bool,
+) -> Result<(), crate::ProtocolError> {
+    if flexible {
+        let prefixed_len = payload_len
+            .checked_add(1)
+            .and_then(|len| u32::try_from(len).ok())
+            .ok_or(crate::ProtocolError::InvalidValue(
+                "records payload length exceeds compact bytes range",
+            ))?;
+        crate::primitives::varint::put_uvarint(buf, prefixed_len);
+    } else {
+        let payload_len = i32::try_from(payload_len).map_err(|_| {
+            crate::ProtocolError::InvalidValue("records payload length exceeds bytes range")
+        })?;
+        crate::primitives::fixed::put_i32(buf, payload_len);
+    }
+    Ok(())
 }
 
 impl From<RecordBatch> for RecordsPayload {
@@ -507,6 +567,64 @@ mod tests {
         p.encode_to(&mut out).unwrap();
         assert2::assert!(&out[..] == &wire[..]); // verbatim
         assert2::assert!(p.as_v2().is_none()); // Raw is unparsed
+    }
+
+    #[test]
+    fn length_prefixed_raw_encodes_into_fixed_buffer() {
+        let payload = Bytes::from(vec![0x5a; 1024 * 1024]);
+        let records = RecordsPayload::Raw(payload.clone());
+        let mut output = vec![0_u8; 4 + payload.len()];
+        let mut destination = output.as_mut_slice();
+
+        records
+            .encode_length_prefixed(&mut destination, 0, false)
+            .unwrap();
+
+        assert2::assert!(destination.is_empty());
+        let payload_len = i32::try_from(payload.len()).unwrap();
+        assert2::assert!(&output[..4] == &payload_len.to_be_bytes());
+        assert2::assert!(&output[4..] == payload.as_ref());
+    }
+
+    #[test]
+    fn length_prefixed_legacy_encodes_compact_bytes_directly() {
+        let payload = legacy_bytes();
+        let records = RecordsPayload::Legacy(payload.clone());
+        let expected_len =
+            crate::primitives::string_bytes::compact_bytes_len_from_size(payload.len());
+        let mut output = vec![0_u8; expected_len];
+        let mut destination = output.as_mut_slice();
+
+        records
+            .encode_length_prefixed(&mut destination, 0, true)
+            .unwrap();
+
+        assert2::assert!(destination.is_empty());
+        let mut expected = BytesMut::new();
+        crate::primitives::string_bytes::put_compact_bytes(&mut expected, &payload);
+        assert2::assert!(output.as_slice() == expected.as_ref());
+    }
+
+    #[test]
+    fn length_prefixed_compressed_v2_uses_actual_wire_size() {
+        let mut batch = sample_v2();
+        batch.records[0].value = Some(Bytes::from(vec![b'x'; 4096]));
+        batch.attributes = batch.attributes.with_compression(CompressionType::Lz4);
+        let records = RecordsPayload::V2(vec![batch]);
+
+        let mut payload_wire = BytesMut::new();
+        <RecordsPayload as crate::Encode>::encode(&records, &mut payload_wire, 0).unwrap();
+        let mut expected = BytesMut::new();
+        crate::primitives::string_bytes::put_bytes(&mut expected, &payload_wire);
+        let mut actual = BytesMut::new();
+        records
+            .encode_length_prefixed(&mut actual, 0, false)
+            .unwrap();
+
+        assert2::assert!(actual == expected);
+        let prefix = i32::from_be_bytes(actual[..4].try_into().unwrap());
+        assert2::assert!(usize::try_from(prefix).unwrap() == payload_wire.len());
+        assert2::assert!(payload_wire.len() != records.payload_len());
     }
 
     #[test]

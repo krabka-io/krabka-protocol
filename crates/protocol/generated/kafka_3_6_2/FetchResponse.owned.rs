@@ -8,9 +8,8 @@ use crate::{
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_string_len, get_compact_nullable_bytes_owned, get_compact_string_owned,
-            get_nullable_bytes_owned, get_string_owned, put_bytes, put_compact_bytes,
-            put_compact_nullable_bytes, put_compact_string, put_nullable_bytes, put_string,
-            string_len,
+            get_nullable_bytes_owned, get_string_owned, put_compact_nullable_bytes,
+            put_compact_string, put_nullable_bytes, put_string, string_len,
         },
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
@@ -359,19 +358,7 @@ impl PartitionData {
                         let () = put_nullable_bytes(buf, None);
                     }
                 }
-                Some(__rb) => {
-                    let mut __rb_buf = bytes::BytesMut::new();
-                    <crate::records::RecordsPayload as crate::Encode>::encode(
-                        __rb,
-                        &mut __rb_buf,
-                        version,
-                    )?;
-                    if flex {
-                        let () = put_compact_bytes(buf, &__rb_buf);
-                    } else {
-                        let () = put_bytes(buf, &__rb_buf);
-                    }
-                }
+                Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
             }
         }
         Ok(())

@@ -372,19 +372,7 @@ impl PartitionData {
                             let () = put_nullable_bytes(buf, None);
                         }
                     }
-                    Some(__rb) => {
-                        let mut __rb_buf = bytes::BytesMut::new();
-                        <crate::records::RecordsPayload as crate::Encode>::encode(
-                            __rb,
-                            &mut __rb_buf,
-                            version,
-                        )?;
-                        if flex {
-                            let () = put_compact_bytes(buf, &__rb_buf);
-                        } else {
-                            let () = put_bytes(buf, &__rb_buf);
-                        }
-                    }
+                    Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
                 }
             } else {
                 match &self.records {
@@ -396,19 +384,7 @@ impl PartitionData {
                             let () = put_bytes(buf, &__rb_buf);
                         }
                     }
-                    Some(__rb) => {
-                        let mut __rb_buf = bytes::BytesMut::new();
-                        <crate::records::RecordsPayload as crate::Encode>::encode(
-                            __rb,
-                            &mut __rb_buf,
-                            version,
-                        )?;
-                        if flex {
-                            let () = put_compact_bytes(buf, &__rb_buf);
-                        } else {
-                            let () = put_bytes(buf, &__rb_buf);
-                        }
-                    }
+                    Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
                 }
             }
         }
