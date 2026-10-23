@@ -769,7 +769,7 @@ pub(crate) fn encode_call_option_as_non_nullable(schema_type: &str, expr: &str) 
         "records" => format!(
             "match &{expr} {{ \
                 None => {{ let __rb_buf = bytes::BytesMut::new(); if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} }}, \
-                Some(__rb) => {{ let mut __rb_buf = bytes::BytesMut::new(); <crate::records::RecordsPayload as crate::Encode>::encode(__rb, &mut __rb_buf, version)?; if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} }} \
+                Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?, \
             }}"
         ),
         _ => encode_call(schema_type, &format!("({expr}).unwrap_or_default()"), false),
@@ -910,21 +910,11 @@ pub(crate) fn encode_call(schema_type: &str, expr: &str, nullable: bool) -> Stri
         ("bytes", true) => format!(
             "if flex {{ let () = put_compact_nullable_bytes(buf, {expr}.as_deref()); }} else {{ let () = put_nullable_bytes(buf, {expr}.as_deref()); }}"
         ),
-        ("records", false) => format!(
-            "{{ \
-                let mut __rb_buf = bytes::BytesMut::new(); \
-                <crate::records::RecordsPayload as crate::Encode>::encode(&{expr}, &mut __rb_buf, version)?; \
-                if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} \
-            }}"
-        ),
+        ("records", false) => format!("{expr}.encode_length_prefixed(buf, version, flex)?"),
         ("records", true) => format!(
             "match &{expr} {{ \
                 None => if flex {{ let () = put_compact_nullable_bytes(buf, None); }} else {{ let () = put_nullable_bytes(buf, None); }}, \
-                Some(__rb) => {{ \
-                    let mut __rb_buf = bytes::BytesMut::new(); \
-                    <crate::records::RecordsPayload as crate::Encode>::encode(__rb, &mut __rb_buf, version)?; \
-                    if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} \
-                }} \
+                Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?, \
             }}"
         ),
         (t, _) => format!("compile_error!(\"unhandled type in encode_call: {t}\")"),

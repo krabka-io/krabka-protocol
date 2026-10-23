@@ -8,8 +8,7 @@ use crate::{
         fixed::{get_i16, get_i32, get_i64, get_u16, put_i16, put_i32, put_i64, put_u16},
         string_bytes::{
             compact_string_len, get_bytes_owned, get_compact_bytes_owned, get_compact_string_owned,
-            get_string_owned, put_bytes, put_compact_bytes, put_compact_string, put_string,
-            string_len,
+            get_string_owned, put_compact_string, put_string, string_len,
         },
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
@@ -328,19 +327,8 @@ impl Encode for PartitionSnapshot {
             put_i64(buf, self.position);
         }
         if version >= 0 {
-            {
-                let mut __rb_buf = bytes::BytesMut::new();
-                <crate::records::RecordsPayload as crate::Encode>::encode(
-                    &self.unaligned_records,
-                    &mut __rb_buf,
-                    version,
-                )?;
-                if flex {
-                    let () = put_compact_bytes(buf, &__rb_buf);
-                } else {
-                    let () = put_bytes(buf, &__rb_buf);
-                }
-            };
+            self.unaligned_records
+                .encode_length_prefixed(buf, version, flex)?;
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
