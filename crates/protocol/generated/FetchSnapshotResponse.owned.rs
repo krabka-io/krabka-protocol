@@ -422,8 +422,7 @@ impl Decode<'_> for PartitionSnapshot {
                 } else {
                     get_bytes_owned(buf)?
                 };
-                let mut __rb_cur: &[u8] = &__rb_bytes;
-                crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)?
+                crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?
             };
         }
         if flex {

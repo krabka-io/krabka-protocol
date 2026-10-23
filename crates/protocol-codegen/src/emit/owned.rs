@@ -1085,14 +1085,12 @@ pub(crate) fn decode_call(
         ("records", false) => if lenient_records {
             "{ \
                 let __rb_bytes = if flex { get_compact_bytes_owned(buf)? } else { get_bytes_owned(buf)? }; \
-                let mut __rb_cur: &[u8] = &__rb_bytes; \
-                crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)? \
+                crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)? \
             }".into()
         } else {
             "{ \
                 let __rb_bytes = if flex { get_compact_bytes_owned(buf)? } else { get_bytes_owned(buf)? }; \
-                let mut __rb_cur: &[u8] = &__rb_bytes; \
-                <crate::records::RecordsPayload as crate::Decode>::decode(&mut __rb_cur, version)? \
+                crate::records::RecordsPayload::from_bytes(__rb_bytes)? \
             }".into()
         },
         ("records", true) => if lenient_records {
@@ -1101,8 +1099,7 @@ pub(crate) fn decode_call(
                 match __rb_opt { \
                     None => None, \
                     Some(__rb_bytes) => { \
-                        let mut __rb_cur: &[u8] = &__rb_bytes; \
-                        Some(crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)?) \
+                        Some(crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?) \
                     } \
                 } \
             }".into()
@@ -1112,8 +1109,7 @@ pub(crate) fn decode_call(
                 match __rb_opt { \
                     None => None, \
                     Some(__rb_bytes) => { \
-                        let mut __rb_cur: &[u8] = &__rb_bytes; \
-                        Some(<crate::records::RecordsPayload as crate::Decode>::decode(&mut __rb_cur, version)?) \
+                        Some(crate::records::RecordsPayload::from_bytes(__rb_bytes)?) \
                     } \
                 } \
             }".into()

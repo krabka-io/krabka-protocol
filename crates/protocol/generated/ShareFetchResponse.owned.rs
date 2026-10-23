@@ -526,13 +526,9 @@ impl PartitionData {
                     };
                     match __rb_opt {
                         None => None,
-                        Some(__rb_bytes) => {
-                            let mut __rb_cur: &[u8] = &__rb_bytes;
-                            Some(crate::records::RecordsPayload::decode_lenient(
-                                &mut __rb_cur,
-                                version,
-                            )?)
-                        }
+                        Some(__rb_bytes) => Some(crate::records::RecordsPayload::from_fetch_bytes(
+                            __rb_bytes,
+                        )?),
                     }
                 }
             } else {
@@ -542,8 +538,7 @@ impl PartitionData {
                     } else {
                         get_bytes_owned(buf)?
                     };
-                    let mut __rb_cur: &[u8] = &__rb_bytes;
-                    crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)?
+                    crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?
                 })
             };
         }

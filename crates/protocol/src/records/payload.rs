@@ -254,8 +254,8 @@ impl RecordsPayload {
     /// Lenient `Decode`-shaped entry point for records fields in response
     /// messages.
     ///
-    /// The generated codec calls this method. It consumes the whole sliced
-    /// field buffer, which the caller has already framed, and parses the bytes
+    /// It consumes the whole sliced field buffer, which the caller has
+    /// already framed, and parses the bytes
     /// leniently through [`from_fetch_bytes`](Self::from_fetch_bytes).
     /// # Errors
     /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
