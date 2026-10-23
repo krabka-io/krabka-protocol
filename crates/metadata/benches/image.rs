@@ -8,11 +8,12 @@
 //! - `MetadataImage::matching_acls`, called once per `authorize()`.
 //! - `MetadataRecord` serialize and deserialize with wincode.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use krabka_metadata::{
-    AclEntry, AclOperation, BrokerEndpoint, BrokerRegistrationRecord, LeaderEpoch, MetadataImage,
-    MetadataRecord, NodeId, PartitionRecord, PatternType, PermissionType, ResourceType,
-    TopicRecord,
+    AclEntry, AclOperation, BrokerEndpoint, BrokerRegistrationRecord, DeleteTopicRecord,
+    LeaderEpoch, LeaderRecoveryState, MetadataImage, MetadataRecord, NodeId, PartitionElrRecord,
+    PartitionOffsetAdvanceRecord, PartitionRecord, PartitionRecoveryRecord, PatternType,
+    PermissionType, ResourceType, TopicRecord,
 };
 use krabka_security::ListenerProtocol;
 use serde_wincode::SerdeCompat;
@@ -299,9 +300,59 @@ fn bench_record_serde(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_delete_topic_auxiliary_state(c: &mut Criterion) {
+    let mut group = c.benchmark_group("delete_topic_auxiliary_state");
+    for topics in [100, 1_000, 10_000] {
+        let mut image = MetadataImage::new(Uuid::nil());
+        let mut deletes = Vec::new();
+        for topic in 0..topics {
+            let name = format!("topic-{topic}");
+            deletes.push(MetadataRecord::V1DeleteTopic(DeleteTopicRecord {
+                name: name.clone(),
+            }));
+            for partition in 0..10 {
+                image.apply(&MetadataRecord::V1PartitionOffsetAdvance(
+                    PartitionOffsetAdvanceRecord {
+                        topic: name.clone(),
+                        partition,
+                        count: 7,
+                    },
+                ));
+                image.apply(&MetadataRecord::V1PartitionElr(PartitionElrRecord {
+                    topic: name.clone(),
+                    partition,
+                    eligible_leader_replicas: vec![NodeId(1)],
+                    last_known_elr: vec![NodeId(2)],
+                }));
+                image.apply(&MetadataRecord::V1PartitionRecovery(
+                    PartitionRecoveryRecord {
+                        topic: name.clone(),
+                        partition,
+                        state: LeaderRecoveryState::Recovering,
+                    },
+                ));
+            }
+        }
+        group.bench_function(format!("{topics}_topics"), |b| {
+            b.iter_batched(
+                || image.clone(),
+                |mut image| {
+                    for delete in &deletes {
+                        image.apply(black_box(delete));
+                    }
+                    black_box(image);
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_apply,
+    bench_delete_topic_auxiliary_state,
     bench_partitions_by_topic,
     bench_matching_acls,
     bench_record_serde,
