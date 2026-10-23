@@ -438,17 +438,13 @@ impl PartitionData {
                     let __rb_opt = if flex { get_compact_nullable_bytes_owned(buf)? } else { get_nullable_bytes_owned(buf)? };
                     match __rb_opt {
                         None => None,
-                        Some(__rb_bytes) => {
-                            let mut __rb_cur: &[u8] = &__rb_bytes;
-                            Some(crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)?)
-                        }
+                        Some(__rb_bytes) => Some(crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?),
                     }
                 }
             } else {
                 Some({
                     let __rb_bytes = if flex { get_compact_bytes_owned(buf)? } else { get_bytes_owned(buf)? };
-                    let mut __rb_cur: &[u8] = &__rb_bytes;
-                    crate::records::RecordsPayload::decode_lenient(&mut __rb_cur, version)?
+                    crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?
                 })
             };
         }
