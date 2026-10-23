@@ -19,14 +19,17 @@ use crate::{
         BrokerConfigRecord, BrokerRegistrationRecord, ClientMetricsConfigRecord, ClientQuotaRecord,
         ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord,
         FeatureLevelRecord, FeaturesEpochRecord, GroupConfigRecord, KRaftVersionRecord,
-        MetadataRecord, NodeId, PartitionElrRecord, PartitionOffsetAdvanceRecord, PartitionRecord,
-        ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord,
-        VotersRecord,
+        LeaderRecoveryState, MetadataRecord, NodeId, PartitionElrRecord,
+        PartitionOffsetAdvanceRecord, PartitionRecord, PartitionRecoveryRecord, ProducerIdsRecord,
+        QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, VotersRecord,
     },
     write_freeze::TopicFreezeRecord,
 };
 
 pub type EntityKey = Vec<(String, Option<String>)>;
+
+/// Eligible replicas and the last known ELR for one partition.
+type PartitionElrState = (Vec<NodeId>, Vec<NodeId>);
 
 /// In-memory image type for a single delegation
 /// token (KIP-48). Mirrors [`DelegationTokenRecord`] without any tombstone
@@ -142,9 +145,10 @@ pub struct MetadataImage {
     /// `BTreeMap` keys by partition index, so per-topic iteration runs in
     /// ascending-index order.
     partitions: HashMap<String, BTreeMap<i32, PartitionRecord>>,
-    partition_next_offsets: HashMap<(String, i32), i64>,
-    partition_elr: HashMap<(String, i32), (Vec<NodeId>, Vec<NodeId>)>,
-    partition_recovery: HashMap<(String, i32), crate::LeaderRecoveryState>,
+    // Group auxiliary state by topic too: deleting a topic never scans other topics.
+    partition_next_offsets: HashMap<String, BTreeMap<i32, i64>>,
+    partition_elr: HashMap<String, BTreeMap<i32, PartitionElrState>>,
+    partition_recovery: HashMap<String, BTreeMap<i32, LeaderRecoveryState>>,
     brokers: HashMap<NodeId, BrokerRegistrationRecord>,
     controllers: HashMap<NodeId, ControllerRegistrationRecord>,
     topic_configs: HashMap<String, BTreeMap<String, String>>,
@@ -277,23 +281,26 @@ impl MetadataImage {
     #[must_use]
     pub fn partition_next_offset(&self, topic: &str, partition: i32) -> Option<i64> {
         self.partition_next_offsets
-            .get(&(topic.to_string(), partition))
+            .get(topic)
+            .and_then(|partitions| partitions.get(&partition))
             .copied()
     }
 
     #[must_use]
     pub fn partition_elr(&self, topic: &str, partition: i32) -> (&[NodeId], &[NodeId]) {
         self.partition_elr
-            .get(&(topic.to_string(), partition))
+            .get(topic)
+            .and_then(|partitions| partitions.get(&partition))
             .map_or((&[], &[]), |(eligible, last_known)| {
                 (eligible.as_slice(), last_known.as_slice())
             })
     }
 
     #[must_use]
-    pub fn leader_recovery_state(&self, topic: &str, partition: i32) -> crate::LeaderRecoveryState {
+    pub fn leader_recovery_state(&self, topic: &str, partition: i32) -> LeaderRecoveryState {
         self.partition_recovery
-            .get(&(topic.to_string(), partition))
+            .get(topic)
+            .and_then(|partitions| partitions.get(&partition))
             .copied()
             .unwrap_or_default()
     }
@@ -821,9 +828,9 @@ impl MetadataImage {
                 }
                 self.topics.remove(&d.name);
                 self.partitions.remove(&d.name);
-                self.partition_next_offsets.retain(|(t, _), _| t != &d.name);
-                self.partition_elr.retain(|(t, _), _| t != &d.name);
-                self.partition_recovery.retain(|(t, _), _| t != &d.name);
+                self.partition_next_offsets.remove(&d.name);
+                self.partition_elr.remove(&d.name);
+                self.partition_recovery.remove(&d.name);
                 self.topic_configs.remove(&d.name);
             }
             MetadataRecord::V1TopicConfig(c) => {
@@ -985,7 +992,9 @@ impl MetadataImage {
             MetadataRecord::V1PartitionOffsetAdvance(r) => {
                 *self
                     .partition_next_offsets
-                    .entry((r.topic.clone(), r.partition))
+                    .entry(r.topic.clone())
+                    .or_default()
+                    .entry(r.partition)
                     .or_insert(0) += r.count;
             }
             MetadataRecord::V1PartitionElr(r) => self.apply_partition_elr(r),
@@ -1065,17 +1074,24 @@ impl MetadataImage {
     }
 
     fn apply_partition_elr(&mut self, record: &PartitionElrRecord) {
-        let key = (record.topic.clone(), record.partition);
         if record.eligible_leader_replicas.is_empty() && record.last_known_elr.is_empty() {
-            self.partition_elr.remove(&key);
+            if let Some(partitions) = self.partition_elr.get_mut(&record.topic) {
+                partitions.remove(&record.partition);
+                if partitions.is_empty() {
+                    self.partition_elr.remove(&record.topic);
+                }
+            }
         } else {
-            self.partition_elr.insert(
-                key,
-                (
-                    record.eligible_leader_replicas.clone(),
-                    record.last_known_elr.clone(),
-                ),
-            );
+            self.partition_elr
+                .entry(record.topic.clone())
+                .or_default()
+                .insert(
+                    record.partition,
+                    (
+                        record.eligible_leader_replicas.clone(),
+                        record.last_known_elr.clone(),
+                    ),
+                );
         }
     }
 
@@ -1083,13 +1099,20 @@ impl MetadataImage {
         &mut self,
         topic: &str,
         partition: i32,
-        state: crate::LeaderRecoveryState,
+        state: LeaderRecoveryState,
     ) {
-        let key = (topic.to_owned(), partition);
-        if state == crate::LeaderRecoveryState::Recovered {
-            self.partition_recovery.remove(&key);
+        if state == LeaderRecoveryState::Recovered {
+            if let Some(partitions) = self.partition_recovery.get_mut(topic) {
+                partitions.remove(&partition);
+                if partitions.is_empty() {
+                    self.partition_recovery.remove(topic);
+                }
+            }
         } else {
-            self.partition_recovery.insert(key, state);
+            self.partition_recovery
+                .entry(topic.to_owned())
+                .or_default()
+                .insert(partition, state);
         }
     }
 
@@ -1169,17 +1192,31 @@ impl MetadataImage {
             out.push(MetadataRecord::V1Partition(p.clone()));
         }
         self.push_partition_offset_advances(&mut out);
-        for ((topic, partition), (eligible, last_known)) in &self.partition_elr {
-            out.push(MetadataRecord::V1PartitionElr(crate::PartitionElrRecord {
+        for (topic, partition, (eligible, last_known)) in
+            self.partition_elr.iter().flat_map(|(topic, partitions)| {
+                partitions
+                    .iter()
+                    .map(move |(partition, value)| (topic, partition, value))
+            })
+        {
+            out.push(MetadataRecord::V1PartitionElr(PartitionElrRecord {
                 topic: topic.clone(),
                 partition: *partition,
                 eligible_leader_replicas: eligible.clone(),
                 last_known_elr: last_known.clone(),
             }));
         }
-        for ((topic, partition), state) in &self.partition_recovery {
+        for (topic, partition, state) in
+            self.partition_recovery
+                .iter()
+                .flat_map(|(topic, partitions)| {
+                    partitions
+                        .iter()
+                        .map(move |(partition, value)| (topic, partition, value))
+                })
+        {
             out.push(MetadataRecord::V1PartitionRecovery(
-                crate::PartitionRecoveryRecord {
+                PartitionRecoveryRecord {
                     topic: topic.clone(),
                     partition: *partition,
                     state: *state,
@@ -1329,7 +1366,15 @@ impl MetadataImage {
     }
 
     fn push_partition_offset_advances(&self, out: &mut Vec<MetadataRecord>) {
-        for ((topic, partition), count) in &self.partition_next_offsets {
+        for (topic, partition, count) in
+            self.partition_next_offsets
+                .iter()
+                .flat_map(|(topic, partitions)| {
+                    partitions
+                        .iter()
+                        .map(move |(partition, value)| (topic, partition, value))
+                })
+        {
             out.push(MetadataRecord::V1PartitionOffsetAdvance(
                 PartitionOffsetAdvanceRecord {
                     topic: topic.clone(),
@@ -1782,6 +1827,167 @@ mod tests {
                 image.partition_next_offset("payments", 0),
             ) == (None, Some(5))
         );
+    }
+
+    fn auxiliary_records(topic: &str, partition: i32) -> [MetadataRecord; 3] {
+        [
+            MetadataRecord::V1PartitionOffsetAdvance(PartitionOffsetAdvanceRecord {
+                topic: topic.into(),
+                partition,
+                count: 7,
+            }),
+            MetadataRecord::V1PartitionElr(PartitionElrRecord {
+                topic: topic.into(),
+                partition,
+                eligible_leader_replicas: vec![NodeId(3), NodeId(1)],
+                last_known_elr: vec![NodeId(2)],
+            }),
+            MetadataRecord::V1PartitionRecovery(PartitionRecoveryRecord {
+                topic: topic.into(),
+                partition,
+                state: LeaderRecoveryState::Recovering,
+            }),
+        ]
+    }
+
+    #[test]
+    fn deleting_topics_cleans_orphan_auxiliary_state_and_preserves_snapshot_records() {
+        use serde_wincode::SerdeCompat;
+        use wincode::Serialize as _;
+
+        let mut image = MetadataImage::new(Uuid::nil());
+        let mut expected = Vec::new();
+        for topic in ["orders", "payments", "orphan"] {
+            for partition in [7, 0, 2] {
+                for record in auxiliary_records(topic, partition) {
+                    image.apply(&record);
+                    if topic == "payments" {
+                        expected.push(record);
+                    }
+                }
+            }
+        }
+        // No TopicRecord was required to create these auxiliary entries.
+        let original = image.clone();
+        for topic in ["unknown", "orders", "orphan", "orders"] {
+            image.apply(&MetadataRecord::V1DeleteTopic(DeleteTopicRecord {
+                name: topic.into(),
+            }));
+        }
+        let records = image.to_records();
+        let bytes = |records: &[MetadataRecord]| {
+            let mut encoded: Vec<_> = records
+                .iter()
+                .map(|record| <SerdeCompat<MetadataRecord>>::serialize(record).unwrap())
+                .collect();
+            encoded.sort();
+            encoded
+        };
+        // HashMap order is unspecified; every persisted record and its bytes
+        // must remain identical, with the same dependency-category order.
+        assert2::assert!(bytes(&records) == bytes(&expected));
+        let kinds: Vec<_> = records
+            .iter()
+            .map(|record| match record {
+                MetadataRecord::V1PartitionOffsetAdvance(_) => 0,
+                MetadataRecord::V1PartitionElr(_) => 1,
+                MetadataRecord::V1PartitionRecovery(_) => 2,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert2::assert!(kinds == vec![0, 0, 0, 1, 1, 1, 2, 2, 2]);
+        assert2::assert!(MetadataImage::from_records(Uuid::nil(), &records) == image);
+        assert2::assert!(
+            MetadataImage::from_records(Uuid::nil(), &original.to_records()) == original
+        );
+        for partition in [0, 2, 7] {
+            assert2::assert!(image.partition_next_offset("orders", partition).is_none());
+            assert2::assert!(image.partition_elr("orders", partition) == (&[][..], &[][..]));
+            assert2::assert!(
+                image.leader_recovery_state("orders", partition) == LeaderRecoveryState::Recovered
+            );
+            assert2::assert!(image.partition_next_offset("payments", partition) == Some(7));
+            assert2::assert!(
+                image.partition_elr("payments", partition)
+                    == (&[NodeId(3), NodeId(1)][..], &[NodeId(2)][..])
+            );
+        }
+        // Reusing the name starts fresh, without sequencer or ELR remnants.
+        for record in auxiliary_records("orders", 0) {
+            image.apply(&record);
+        }
+        assert2::assert!(image.partition_next_offset("orders", 0) == Some(7));
+    }
+
+    #[test]
+    fn clearing_last_auxiliary_partition_leaves_no_empty_topic_groups() {
+        let mut image = MetadataImage::new(Uuid::nil());
+        for record in auxiliary_records("orders", 0) {
+            image.apply(&record);
+        }
+        image.apply(&MetadataRecord::V1PartitionElr(PartitionElrRecord {
+            topic: "orders".into(),
+            partition: 0,
+            eligible_leader_replicas: vec![],
+            last_known_elr: vec![],
+        }));
+        image.apply(&MetadataRecord::V1PartitionRecovery(
+            PartitionRecoveryRecord {
+                topic: "orders".into(),
+                partition: 0,
+                state: LeaderRecoveryState::Recovered,
+            },
+        ));
+        assert2::assert!(image.partition_elr.is_empty());
+        assert2::assert!(image.partition_recovery.is_empty());
+        assert2::assert!(MetadataImage::from_records(Uuid::nil(), &image.to_records()) == image);
+    }
+
+    #[test]
+    fn partition_updates_preserve_absent_fields_and_other_auxiliary_partitions() {
+        use crate::PartitionUpdateRecord;
+
+        let mut image = MetadataImage::new(Uuid::nil());
+        for partition in [0, 1] {
+            for record in auxiliary_records("orders", partition) {
+                image.apply(&record);
+            }
+        }
+        let partition = PartitionRecord {
+            topic: "orders".into(),
+            partition: 0,
+            ..PartitionRecord::default()
+        };
+        image.apply(&MetadataRecord::V1PartitionUpdate(PartitionUpdateRecord {
+            partition: partition.clone(),
+            eligible_leader_replicas: None,
+            last_known_elr: None,
+            recovery_state: None,
+        }));
+        assert2::assert!(
+            image.partition_elr("orders", 0) == (&[NodeId(3), NodeId(1)][..], &[NodeId(2)][..])
+        );
+        assert2::assert!(
+            image.leader_recovery_state("orders", 0) == LeaderRecoveryState::Recovering
+        );
+        image.apply(&MetadataRecord::V1PartitionUpdate(PartitionUpdateRecord {
+            partition,
+            eligible_leader_replicas: Some(vec![]),
+            last_known_elr: Some(vec![]),
+            recovery_state: Some(LeaderRecoveryState::Recovered),
+        }));
+        assert2::assert!(image.partition_elr("orders", 0) == (&[][..], &[][..]));
+        assert2::assert!(
+            image.leader_recovery_state("orders", 0) == LeaderRecoveryState::Recovered
+        );
+        assert2::assert!(
+            image.partition_elr("orders", 1) == (&[NodeId(3), NodeId(1)][..], &[NodeId(2)][..])
+        );
+        assert2::assert!(
+            image.leader_recovery_state("orders", 1) == LeaderRecoveryState::Recovering
+        );
+        assert2::assert!(image.partition_next_offset("orders", 0) == Some(7));
+        assert2::assert!(MetadataImage::from_records(Uuid::nil(), &image.to_records()) == image);
     }
 
     fn broker_at(node_id: NodeId, epoch: i64) -> MetadataRecord {
@@ -3512,7 +3718,7 @@ mod tests {
 
     #[test]
     fn applies_voters_and_version() {
-        let mut image = MetadataImage::default();
+        let mut image = MetadataImage::new(Uuid::nil());
         image.apply(&MetadataRecord::V1KRaftVersion(
             crate::records::KRaftVersionRecord { kraft_version: 1 },
         ));

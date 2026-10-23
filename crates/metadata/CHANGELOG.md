@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Group partition offset, ELR and recovery state by topic so topic deletion touches only its own auxiliary state (#77).
+
 ## [0.7.0] — 2026-10-20
 
 - Re-released with the 0.7 workspace; library behavior is unchanged.
