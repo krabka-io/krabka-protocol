@@ -12,7 +12,7 @@ use crate::{
     records::{
         RecordsError,
         crc::{crc32c, crc32c_append},
-        header::{Attributes, HEADER_LEN},
+        header::{Attributes, CRC_COVERAGE_START, HEADER_LEN, RecordBatchHeader},
     },
 };
 
@@ -648,36 +648,29 @@ impl RecordBatch {
         buf: &mut B,
         policy: RecordDecompressionPolicy,
     ) -> Result<Self, RecordsError> {
-        // batch_length field semantics: bytes after itself.
-        // Header tail = partition_leader_epoch(4) + magic(1) + crc(4) +
-        //   attributes(2) + last_offset_delta(4) + base_timestamp(8) +
-        //   max_timestamp(8) + producer_id(8) + producer_epoch(2) +
-        //   base_sequence(4) + records_count(4) = 49 bytes.
-        const HEADER_TAIL_LEN: i32 = 49;
-
         // Need the full header before doing anything.
         if buf.remaining() < HEADER_LEN {
             return Err(RecordsError::HeaderTooShort {
                 needed: HEADER_LEN - buf.remaining(),
             });
         }
+        // When the whole batch sits in the current chunk, its covered header
+        // and body are one contiguous region: CRC it in a single pass.
+        let contiguous_crc = contiguous_covered_crc(buf.chunk());
         // Copy out the header to a stack buffer so we can use zerocopy.
         let mut hdr_bytes = [0u8; HEADER_LEN];
         buf.copy_to_slice(&mut hdr_bytes);
 
-        let hdr = crate::records::header::RecordBatchHeader::ref_from_bytes(&hdr_bytes[..])
+        let hdr = RecordBatchHeader::ref_from_bytes(&hdr_bytes[..])
             .map_err(|_| RecordsError::ZerocopyFailure)?;
 
         if hdr.magic != 2 {
             return Err(RecordsError::UnsupportedMagic { found: hdr.magic });
         }
 
-        // body_len = batch_length - HEADER_TAIL_LEN
-        let body_len = i32::checked_sub(hdr.batch_length.get(), HEADER_TAIL_LEN)
-            .and_then(|n| usize::try_from(n).ok())
-            .ok_or_else(|| {
-                RecordsError::RecordParse("negative or oversized batch_length".into())
-            })?;
+        let body_len = declared_body_len(hdr.batch_length.get()).ok_or_else(|| {
+            RecordsError::RecordParse("negative or oversized batch_length".into())
+        })?;
 
         if buf.remaining() < body_len {
             return Err(RecordsError::BodyTooShort {
@@ -686,10 +679,13 @@ impl RecordBatch {
         }
 
         // CRC is computed over: header bytes 21..HEADER_LEN (attributes through
-        // records_count), then the body bytes.
+        // records_count), then the body bytes. Fragmented input continues the
+        // header CRC over the separately staged body.
         let expected_crc = hdr.crc.get();
         let verify_crc = |body: &[u8]| {
-            let computed = crc32c_append(crc32c(&hdr_bytes[21..HEADER_LEN]), body);
+            let computed = contiguous_crc.unwrap_or_else(|| {
+                crc32c_append(crc32c(&hdr_bytes[CRC_COVERAGE_START..HEADER_LEN]), body)
+            });
             if computed == expected_crc {
                 Ok(())
             } else {
@@ -813,18 +809,30 @@ impl RecordBatch {
     ///
     /// Returns the same encoding errors as [`Self::encode`].
     pub fn encode_to_bytes(&self) -> Result<Bytes, RecordsError> {
-        let mut wire = BytesMut::with_capacity(self.encoded_len());
         if self.attributes.compression() == krabka_compression::CompressionType::None {
-            wire.resize(HEADER_LEN, 0);
-            for record in &self.records {
-                record.encode(&mut wire)?;
-            }
-            let (mut header, body) = wire.split_at_mut(HEADER_LEN);
-            self.encode_header(&mut header, body)?;
-        } else {
-            self.encode(&mut wire)?;
+            return Ok(self.encode_uncompressed()?.freeze());
         }
+        let mut wire = BytesMut::with_capacity(self.encoded_len());
+        self.encode(&mut wire)?;
         Ok(wire.freeze())
+    }
+
+    /// Encodes an uncompressed batch: the records go directly behind a
+    /// reserved header, then the header is filled in and the CRC taken over
+    /// the contiguous covered region in one pass.
+    fn encode_uncompressed(&self) -> Result<BytesMut, RecordsError> {
+        let mut wire = BytesMut::with_capacity(self.encoded_len());
+        wire.resize(HEADER_LEN, 0);
+        for record in &self.records {
+            record.encode(&mut wire)?;
+        }
+        let body_len = wire.len() - HEADER_LEN;
+        let batch_length = batch_length_for(body_len)?;
+        let covered_head = self.covered_head()?;
+        wire[CRC_COVERAGE_START..HEADER_LEN].copy_from_slice(&covered_head);
+        let crc = crc32c(&wire[CRC_COVERAGE_START..]);
+        self.put_header_prefix(&mut &mut wire[..CRC_COVERAGE_START], batch_length, crc);
+        Ok(wire)
     }
 
     /// Encode this batch into `buf`, and compress the records at `level`.
@@ -845,6 +853,12 @@ impl RecordBatch {
         buf: &mut B,
         level: Option<i32>,
     ) -> Result<(), RecordsError> {
+        let codec = self.attributes.compression();
+        if level.is_none() && codec == krabka_compression::CompressionType::None {
+            buf.put_slice(&self.encode_uncompressed()?);
+            return Ok(());
+        }
+
         // 1. Encode records into a temporary buffer.
         let mut raw_body =
             BytesMut::with_capacity(self.records.iter().map(Record::encoded_len).sum());
@@ -853,11 +867,9 @@ impl RecordBatch {
         }
         let raw_body = raw_body.freeze();
 
-        // 2. Compress if needed.
-        let codec = self.attributes.compression();
+        // 2. Compress.
         let body: Bytes = match level {
             Some(level) => krabka_compression::compress_with_level(codec, &raw_body, level)?,
-            None if codec == krabka_compression::CompressionType::None => raw_body,
             None => krabka_compression::compress(codec, &raw_body)?,
         };
 
@@ -866,16 +878,21 @@ impl RecordBatch {
         Ok(())
     }
 
+    /// Writes the header for a `body` held apart from it, such as a
+    /// compressor's output: the CRC continues from the covered header into
+    /// the body.
     fn encode_header<B: BufMut>(&self, buf: &mut B, body: &[u8]) -> Result<(), RecordsError> {
-        const HEADER_TAIL_LEN: i32 = 49;
+        let batch_length = batch_length_for(body.len())?;
+        let covered_head = self.covered_head()?;
+        let crc = crc32c_append(crc32c(&covered_head), body);
+        self.put_header_prefix(buf, batch_length, crc);
+        buf.put_slice(&covered_head);
+        Ok(())
+    }
 
-        // batch_length = HEADER_TAIL_LEN + body_len
-        let batch_length = HEADER_TAIL_LEN
-            + i32::try_from(body.len())
-                .map_err(|_| RecordsError::RecordParse("body length exceeds i32".into()))?;
-
-        // CRC-covered header portion (attributes through records_count = 40 bytes).
-        let mut covered_head = [0_u8; 40];
+    /// The CRC-covered header fields, attributes through `records_count`.
+    fn covered_head(&self) -> Result<[u8; HEADER_LEN - CRC_COVERAGE_START], RecordsError> {
+        let mut covered_head = [0_u8; HEADER_LEN - CRC_COVERAGE_START];
         let mut covered = covered_head.as_mut_slice();
         covered.put_i16(self.attributes.0);
         covered.put_i32(self.last_offset_delta);
@@ -888,18 +905,17 @@ impl RecordBatch {
             i32::try_from(self.records.len())
                 .map_err(|_| RecordsError::RecordParse("records_count exceeds i32".into()))?,
         );
-        // Compute CRC over covered_head then body.
-        let mut crc = crc32c(&covered_head);
-        crc = crc32c_append(crc, body);
+        Ok(covered_head)
+    }
 
-        // Emit the full header.
+    /// Writes the header fields before the CRC-covered region: base offset,
+    /// batch length, leader epoch, magic and CRC.
+    fn put_header_prefix<B: BufMut>(&self, buf: &mut B, batch_length: i32, crc: u32) {
         buf.put_i64(self.base_offset);
         buf.put_i32(batch_length);
         buf.put_i32(self.partition_leader_epoch);
         buf.put_i8(2); // magic v2
         buf.put_u32(crc);
-        buf.put_slice(&covered_head);
-        Ok(())
     }
 
     /// Predicted total bytes that `encode` will write, for an uncompressed batch.
@@ -909,6 +925,39 @@ impl RecordBatch {
         let body: usize = self.records.iter().map(Record::encoded_len).sum();
         HEADER_LEN + body
     }
+}
+
+/// Header fields counted by `batch_length`, which counts the bytes after
+/// itself: `partition_leader_epoch`(4) + magic(1) + crc(4) + attributes(2) +
+/// `last_offset_delta`(4) + `base_timestamp`(8) + `max_timestamp`(8) +
+/// `producer_id`(8) + `producer_epoch`(2) + `base_sequence`(4) +
+/// `records_count`(4) = 49 bytes.
+const HEADER_TAIL_LEN: i32 = 49;
+
+/// The body length a `batch_length` declares, or `None` when it is shorter
+/// than the header tail.
+fn declared_body_len(batch_length: i32) -> Option<usize> {
+    i32::checked_sub(batch_length, HEADER_TAIL_LEN).and_then(|n| usize::try_from(n).ok())
+}
+
+/// The `batch_length` of a batch with a `body_len`-byte body.
+fn batch_length_for(body_len: usize) -> Result<i32, RecordsError> {
+    i32::try_from(body_len)
+        .ok()
+        .and_then(|body_len| HEADER_TAIL_LEN.checked_add(body_len))
+        .ok_or_else(|| RecordsError::RecordParse("body length exceeds i32".into()))
+}
+
+/// The CRC-32C of a v2 batch's covered region, when `chunk` starts with the
+/// whole batch; `None` otherwise, or when `chunk` is no v2 batch.
+fn contiguous_covered_crc(chunk: &[u8]) -> Option<u32> {
+    let hdr = RecordBatchHeader::ref_from_bytes(chunk.get(..HEADER_LEN)?).ok()?;
+    if hdr.magic != 2 {
+        return None;
+    }
+    let body_len = declared_body_len(hdr.batch_length.get())?;
+    let covered = chunk.get(CRC_COVERAGE_START..HEADER_LEN.checked_add(body_len)?)?;
+    Some(crc32c(covered))
 }
 
 #[cfg(test)]
@@ -992,6 +1041,78 @@ mod batch_tests {
             let mut cur: &[u8] = &buf[..];
             let decoded = RecordBatch::decode(&mut cur).unwrap();
             assert2::assert!((decoded, cur.is_empty()) == (batch, true));
+        }
+    }
+
+    /// `encode` and `encode_to_bytes` write the same bytes, and the stored
+    /// CRC is the reference CRC-32C of everything after the CRC field.
+    #[test]
+    fn encodings_agree_and_store_the_reference_crc() {
+        for codec in [
+            CompressionType::None,
+            CompressionType::Gzip,
+            CompressionType::Lz4,
+        ] {
+            for fixture in [
+                fixture_empty_batch,
+                fixture_single_record_batch,
+                fixture_multi_record_batch,
+            ] {
+                let mut batch = fixture();
+                batch.attributes = batch.attributes.with_compression(codec);
+                let mut encoded = BytesMut::new();
+                batch.encode(&mut encoded).unwrap();
+                let to_bytes = batch.encode_to_bytes().unwrap();
+                let stored = u32::from_be_bytes(encoded[17..21].try_into().unwrap());
+                assert2::assert!(
+                    (
+                        to_bytes[..] == encoded[..],
+                        stored == crc32c::crc32c(&encoded[CRC_COVERAGE_START..]),
+                    ) == (true, true),
+                    "{codec:?}"
+                );
+            }
+        }
+    }
+
+    /// A batch split across `Buf` chunks decodes as the contiguous batch does,
+    /// and a corrupt one reports the same CRC mismatch, wherever the split
+    /// falls: in the uncovered header, in the covered header, at the body or
+    /// inside it.
+    #[test]
+    fn fragmented_input_decodes_like_contiguous_input() {
+        for codec in [CompressionType::None, CompressionType::Lz4] {
+            let mut batch = fixture_multi_record_batch();
+            batch.attributes = batch.attributes.with_compression(codec);
+            let mut encoded = BytesMut::new();
+            batch.encode(&mut encoded).unwrap();
+            let mut corrupt = encoded.to_vec();
+            *corrupt.last_mut().unwrap() ^= 0xFF;
+            let contiguous_error = RecordBatch::decode(&mut &corrupt[..]).unwrap_err();
+            let RecordsError::CrcMismatch { expected, computed } = contiguous_error else {
+                panic!("{codec:?}: {contiguous_error:?}");
+            };
+            assert2::assert!(computed == crc32c::crc32c(&corrupt[CRC_COVERAGE_START..]));
+
+            for split in [0, 10, 30, HEADER_LEN, HEADER_LEN + 1, encoded.len() - 1] {
+                let mut fragmented = (&encoded[..split]).chain(&encoded[split..]);
+                let decoded = RecordBatch::decode(&mut fragmented).unwrap();
+                assert2::assert!(
+                    (decoded == batch, fragmented.has_remaining()) == (true, false),
+                    "{codec:?} split at {split}"
+                );
+
+                let mut fragmented = (&corrupt[..split]).chain(&corrupt[split..]);
+                let error = RecordBatch::decode(&mut fragmented).unwrap_err();
+                assert2::assert!(
+                    matches!(
+                        error,
+                        RecordsError::CrcMismatch { expected: e, computed: c }
+                            if (e, c) == (expected, computed)
+                    ),
+                    "{codec:?} split at {split}: {error:?}"
+                );
+            }
         }
     }
 
@@ -1203,9 +1324,7 @@ mod batch_tests {
         buf[rc_off..HEADER_LEN].copy_from_slice(&1_000_000_000i32.to_be_bytes());
 
         // Recompute CRC over header[21..HEADER_LEN] + body (body is empty here).
-        let body = &buf[HEADER_LEN..];
-        let mut computed = crc32c(&buf[21..HEADER_LEN]);
-        computed = crc32c_append(computed, body);
+        let computed = crc32c(&buf[CRC_COVERAGE_START..]);
         buf[17..21].copy_from_slice(&computed.to_be_bytes());
 
         let mut cur: &[u8] = &buf[..];

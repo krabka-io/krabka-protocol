@@ -1,22 +1,35 @@
 //! CRC-32C (Castagnoli), using the runtime-dispatched `crc-fast` backend.
 //!
 //! Kafka v2 record batches use this CRC over everything after the `crc` field of
-//! the header.
+//! the header. [`records`](super) re-exports both functions so that every
+//! krabka crate takes the checksum through one entry point.
 
-/// CRC-32C of the input.
+/// Returns the CRC-32C of `data`.
+///
+/// This is the checksum a v2 record batch stores, taken over the bytes from
+/// [`CRC_COVERAGE_START`](super::CRC_COVERAGE_START) to the end of the batch.
+/// Prefer one call over a contiguous region to [`crc32c_append`]: it is a
+/// single pass with no digest set-up.
 #[must_use]
-pub(crate) fn crc32c(data: &[u8]) -> u32 {
+pub fn crc32c(data: &[u8]) -> u32 {
     crc_fast::crc32_iscsi(data)
 }
 
-/// Continue a CRC-32C computation over additional `data`, starting from `seed`.
+/// Continues a CRC-32C over `data` from `seed`, the finished CRC-32C of the
+/// bytes before it.
+///
+/// `crc32c_append(crc32c(a), b)` equals the CRC-32C of `a` followed by `b`.
+/// Use it only when the two parts are not contiguous in memory: each call
+/// builds a digest from `seed`.
 #[must_use]
-pub(crate) fn crc32c_append(seed: u32, data: &[u8]) -> u32 {
+pub fn crc32c_append(seed: u32, data: &[u8]) -> u32 {
     // `seed` is finalized; the digest starts with the unfinalized state.
     let mut digest =
         crc_fast::Digest::new_with_init_state(crc_fast::CrcAlgorithm::Crc32Iscsi, u64::from(!seed));
     digest.update(data);
-    u32::try_from(digest.finalize()).expect("CRC-32C fits in u32")
+    // A finalized CRC-32 occupies the low 32 bits of the digest's `u64`.
+    let [b0, b1, b2, b3, ..] = digest.finalize().to_le_bytes();
+    u32::from_le_bytes([b0, b1, b2, b3])
 }
 
 #[cfg(test)]
