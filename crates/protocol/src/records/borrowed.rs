@@ -49,6 +49,28 @@ pub struct RecordHeader<'a> {
     pub value: Option<&'a [u8]>,
 }
 
+/// A borrowed record without its headers.
+///
+/// [`ValidatedBatch::validate_record_summaries_with`] hands one to its visitor
+/// for every record. The walk checks every header, the UTF-8 of its key
+/// included, but collects none, so it allocates nothing per record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordSummary<'a> {
+    pub attributes: i8,
+    pub timestamp_delta: i64,
+    pub offset_delta: i32,
+    pub key: Option<&'a [u8]>,
+    pub value: Option<&'a [u8]>,
+    /// Number of headers the record carries.
+    pub header_count: usize,
+    /// Size of the record's body in bytes, as its varlong length prefix
+    /// declares it: Kafka's `sizeOfBodyInBytes`.
+    ///
+    /// For a record whose varints use their shortest encoding, which every
+    /// Kafka client writes, this equals [`Record::body_len`].
+    pub body_len: usize,
+}
+
 impl Record<'_> {
     /// Size of this record's body in bytes: what Kafka's `DefaultRecord` calls
     /// `sizeOfBodyInBytes`, and what its varlong length prefix declares.
@@ -204,13 +226,15 @@ impl ValidatedBatch<'_> {
     /// exceeds the decompression policy, contains fewer records than declared,
     /// or has trailing bytes after the declared records.
     pub fn validate_records(&self, policy: RecordDecompressionPolicy) -> Result<(), RecordsError> {
-        self.validate_records_with(policy, |_| {})
+        self.validate_record_summaries_with(policy, |_| {})
     }
 
     /// Validates the records and calls `visit` for each borrowed record.
     ///
     /// This combines structural validation with callers' metadata checks while
-    /// keeping compressed batches on the borrowed path.
+    /// keeping compressed batches on the borrowed path. Every record's headers
+    /// are collected into a `Vec`; a visitor that reads no header should use
+    /// [`Self::validate_record_summaries_with`], which allocates none.
     ///
     /// # Errors
     ///
@@ -219,6 +243,40 @@ impl ValidatedBatch<'_> {
         &self,
         policy: RecordDecompressionPolicy,
         mut visit: impl FnMut(&Record<'_>),
+    ) -> Result<(), RecordsError> {
+        self.walk_records(policy, |remaining| {
+            visit(&parse_one_record(remaining)?);
+            Ok(())
+        })
+    }
+
+    /// Validates the records and calls `visit` with each record's
+    /// [`RecordSummary`].
+    ///
+    /// The validation is the one [`Self::validate_records_with`] performs,
+    /// every header included, but no header is collected, so an uncompressed
+    /// batch is validated without a heap allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::validate_records`].
+    pub fn validate_record_summaries_with(
+        &self,
+        policy: RecordDecompressionPolicy,
+        mut visit: impl FnMut(&RecordSummary<'_>),
+    ) -> Result<(), RecordsError> {
+        self.walk_records(policy, |remaining| {
+            visit(&parse_one_record_into(remaining, &mut SkipHeaders)?);
+            Ok(())
+        })
+    }
+
+    /// Decompresses the body if needed, then calls `parse` once per declared
+    /// record with the bytes that remain, and rejects trailing bytes.
+    fn walk_records(
+        &self,
+        policy: RecordDecompressionPolicy,
+        mut parse: impl FnMut(&mut &[u8]) -> Result<(), RecordsError>,
     ) -> Result<(), RecordsError> {
         let count = self.header.records_count.get();
         if count < 0 {
@@ -239,9 +297,8 @@ impl ValidatedBatch<'_> {
         };
         let mut remaining = decompressed.as_deref().unwrap_or(self.raw_body);
         for i in 0..count {
-            let record = parse_one_record(&mut remaining)
+            parse(&mut remaining)
                 .map_err(|error| RecordsError::RecordParse(format!("record[{i}]: {error}")))?;
-            visit(&record);
         }
         if !remaining.is_empty() {
             return Err(RecordsError::RecordParse(format!(
@@ -402,6 +459,25 @@ impl<'a> Iterator for RecordIter<'a> {
 
 #[inline]
 pub(crate) fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
+    let mut headers = Vec::new();
+    let summary = parse_one_record_into(buf, &mut headers)?;
+    Ok(Record {
+        attributes: summary.attributes,
+        timestamp_delta: summary.timestamp_delta,
+        offset_delta: summary.offset_delta,
+        key: summary.key,
+        value: summary.value,
+        headers,
+    })
+}
+
+/// Parses one length-prefixed record, hands each of its headers to `headers`,
+/// and returns the rest of the record.
+#[inline]
+fn parse_one_record_into<'a>(
+    buf: &mut &'a [u8],
+    headers: &mut impl HeaderSink<'a>,
+) -> Result<RecordSummary<'a>, RecordsError> {
     let body_len =
         get_varlong(buf).map_err(|e| RecordsError::RecordParse(format!("record length: {e}")))?;
     let body_len = usize::try_from(body_len).map_err(|_| {
@@ -415,7 +491,7 @@ pub(crate) fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, Rec
     let (body, rest) = buf.split_at(body_len);
     *buf = rest;
     let mut body_cur = body;
-    let r = parse_body(&mut body_cur)?;
+    let r = parse_body(&mut body_cur, body_len, headers)?;
     if !body_cur.is_empty() {
         return Err(RecordsError::RecordParse(format!(
             "trailing bytes inside record (left={})",
@@ -425,7 +501,42 @@ pub(crate) fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, Rec
     Ok(r)
 }
 
-fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
+/// Where [`parse_body`] puts the headers it reads.
+///
+/// A `Vec` collects them for a [`Record`]. [`SkipHeaders`] checks each header
+/// and keeps none, so a validating walk allocates nothing per record.
+trait HeaderSink<'a> {
+    /// Called once with the declared header count, clamped to the bytes left
+    /// in the record body, before the first header.
+    fn reserve(&mut self, count: usize);
+
+    fn push(&mut self, header: RecordHeader<'a>);
+}
+
+impl<'a> HeaderSink<'a> for Vec<RecordHeader<'a>> {
+    fn reserve(&mut self, count: usize) {
+        self.reserve_exact(count);
+    }
+
+    fn push(&mut self, header: RecordHeader<'a>) {
+        Vec::push(self, header);
+    }
+}
+
+/// A [`HeaderSink`] that discards every header it is given.
+struct SkipHeaders;
+
+impl HeaderSink<'_> for SkipHeaders {
+    fn reserve(&mut self, _count: usize) {}
+
+    fn push(&mut self, _header: RecordHeader<'_>) {}
+}
+
+fn parse_body<'a>(
+    buf: &mut &'a [u8],
+    body_len: usize,
+    headers: &mut impl HeaderSink<'a>,
+) -> Result<RecordSummary<'a>, RecordsError> {
     if buf.is_empty() {
         return Err(RecordsError::RecordParse("record body empty".into()));
     }
@@ -446,13 +557,12 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
             "negative header count {header_count}"
         )));
     }
+    let header_count_usize =
+        usize::try_from(header_count).expect("non-negative header count must fit in usize");
     // Bound pre-allocation: a record header is at least 1 byte on the wire, so
     // an honest `header_count` can never exceed the bytes left in the record
     // body. Clamp the capacity hint to reject huge declared counts.
-    let header_capacity = usize::try_from(header_count)
-        .expect("non-negative header count must fit in usize")
-        .min(buf.len());
-    let mut headers = Vec::with_capacity(header_capacity);
+    headers.reserve(header_count_usize.min(buf.len()));
     for i in 0..header_count {
         let key_len = get_varint(buf)
             .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key length: {e}")))?;
@@ -479,13 +589,14 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
         });
     }
 
-    Ok(Record {
+    Ok(RecordSummary {
         attributes,
         timestamp_delta,
         offset_delta,
         key,
         value,
-        headers,
+        header_count: header_count_usize,
+        body_len,
     })
 }
 
@@ -921,6 +1032,117 @@ mod tests {
             .unwrap();
 
         assert2::assert!(timestamps == vec![3, 8]);
+    }
+
+    #[test]
+    fn validated_batch_visits_record_summaries_during_validation() {
+        use super::super::owned::{Record as OwnedRecord, RecordHeader as OwnedHeader};
+
+        for codec in [CompressionType::None, CompressionType::Lz4] {
+            let owned = super::super::owned::RecordBatch {
+                attributes: Attributes::default().with_compression(codec),
+                last_offset_delta: 1,
+                records: vec![
+                    OwnedRecord {
+                        timestamp_delta: 3,
+                        value: Some(Bytes::from_static(b"first")),
+                        ..Default::default()
+                    },
+                    OwnedRecord {
+                        attributes: 0,
+                        timestamp_delta: 8,
+                        offset_delta: 1,
+                        key: Some(Bytes::from_static(b"k")),
+                        value: None,
+                        headers: vec![
+                            OwnedHeader {
+                                key: "trace-id".to_string(),
+                                value: Some(Bytes::from_static(b"abc")),
+                            },
+                            OwnedHeader {
+                                key: "null-val".to_string(),
+                                value: None,
+                            },
+                        ],
+                    },
+                ],
+                ..Default::default()
+            };
+            let encoded = encode_owned_then_borrow(&owned);
+            let validated = validate_one_v2_batch(&encoded).unwrap();
+            let mut summaries = Vec::new();
+            validated
+                .validate_record_summaries_with(RecordDecompressionPolicy::default(), |summary| {
+                    summaries.push((
+                        summary.attributes,
+                        summary.timestamp_delta,
+                        summary.offset_delta,
+                        summary.key.map(<[u8]>::to_vec),
+                        summary.value.map(<[u8]>::to_vec),
+                        summary.header_count,
+                        summary.body_len,
+                    ));
+                })
+                .unwrap();
+
+            let expected: Vec<_> = owned
+                .records
+                .iter()
+                .map(|record| {
+                    (
+                        record.attributes,
+                        record.timestamp_delta,
+                        record.offset_delta,
+                        record.key.as_deref().map(<[u8]>::to_vec),
+                        record.value.as_deref().map(<[u8]>::to_vec),
+                        record.headers.len(),
+                        record.body_len(),
+                    )
+                })
+                .collect();
+            assert2::assert!(summaries == expected, "{codec:?}");
+        }
+    }
+
+    /// The summary walk rejects every malformed header the collecting walk
+    /// rejects, with the same message.
+    #[test]
+    fn summary_walk_rejects_malformed_headers_like_the_collecting_walk() {
+        let owned = super::super::owned::RecordBatch {
+            records: vec![super::super::owned::Record {
+                headers: vec![super::super::owned::RecordHeader {
+                    key: "ab".to_string(),
+                    value: Some(Bytes::from_static(b"v")),
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let encoded = encode_owned_then_borrow(&owned);
+        // Record body: length, attributes, timestamp_delta, offset_delta, key,
+        // value, header_count, then the header key length at HEADER_LEN + 7
+        // and its two key bytes.
+        let key_len_at = HEADER_LEN + 7;
+        for (case, offset, byte) in [
+            ("invalid utf-8 key", key_len_at + 1, 0xFF),
+            ("negative key length", key_len_at, 0x01),
+            ("key overruns record", key_len_at, 0x7E),
+        ] {
+            let mut corrupt = encoded.clone();
+            corrupt[offset] = byte;
+            refresh_batch_crc(&mut corrupt);
+            let validated = validate_one_v2_batch(&corrupt).unwrap();
+            let policy = RecordDecompressionPolicy::default();
+            let collected = validated
+                .validate_records_with(policy, |_| {})
+                .unwrap_err()
+                .to_string();
+            let summarized = validated
+                .validate_record_summaries_with(policy, |_| {})
+                .unwrap_err()
+                .to_string();
+            assert2::assert!(summarized == collected, "{case}");
+        }
     }
 
     #[test]
