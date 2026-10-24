@@ -2,6 +2,8 @@
 //! [`MetadataImage::apply`] mutates it, and the Raft state machine calls that
 //! method. Everywhere else reads it through shared references and `Arc` clones.
 
+mod acl_index;
+
 use std::{
     collections::{BTreeMap, HashMap},
     ops::Bound,
@@ -11,6 +13,7 @@ use krabka_security::{KafkaPrincipal, SaslMechanism, ScramCredential};
 use krabka_units::{ByteRate, convert::ByteRateExt};
 use uuid::Uuid;
 
+use self::acl_index::AclIndex;
 use crate::{
     acl::{AclEntry, PatternType, ResourceType},
     break_glass::{BreakGlassApproval, BreakGlassProposalRecord},
@@ -156,12 +159,11 @@ pub struct MetadataImage {
     client_metrics_configs: HashMap<String, BTreeMap<String, String>>,
     group_configs: HashMap<String, BTreeMap<String, String>>,
     scram_credentials: HashMap<(String, SaslMechanism), ScramCredential>,
-    acls_literal: HashMap<(ResourceType, String), Vec<AclEntry>>,
-    acls_prefixed: HashMap<ResourceType, Vec<AclEntry>>,
+    acls: AclIndex,
     /// KFC-9 write-freeze registry, split by pattern type. The prefixed side
-    /// is a `BTreeMap` and not the `Vec` that `acls_prefixed` uses, because
-    /// the resolve runs one hop from the produce path and needs the ordered
-    /// reverse walk that finds the longest matching prefix.
+    /// is a `BTreeMap`, because the resolve runs one hop from the produce
+    /// path and needs the ordered reverse walk that finds the longest
+    /// matching prefix.
     freezes_literal: HashMap<String, TopicFreezeRecord>,
     freezes_prefixed: BTreeMap<String, TopicFreezeRecord>,
     /// KFC-9 break-glass proposals, keyed by proposal id.
@@ -214,8 +216,7 @@ impl MetadataImage {
             client_metrics_configs: HashMap::new(),
             group_configs: HashMap::new(),
             scram_credentials: HashMap::new(),
-            acls_literal: HashMap::new(),
-            acls_prefixed: HashMap::new(),
+            acls: AclIndex::default(),
             freezes_literal: HashMap::new(),
             freezes_prefixed: BTreeMap::new(),
             break_glass: HashMap::new(),
@@ -489,40 +490,23 @@ impl MetadataImage {
     ///   matches every resource of that type. See Kafka's `AclAuthorizer` and
     ///   `StandardAuthorizer`. This is what `kafka-acls --topic '*'` produces.
     /// - all prefixed entries whose `resource_name` is a prefix of `rn`
+    ///
+    /// Each matching entry is yielded once, also when `rn` is `"*"`. The
+    /// lookup allocates nothing, and finds the prefixed entries with one
+    /// hash probe per distinct prefix length, not a scan of every prefixed
+    /// entry. The order of the entries is unspecified.
     pub fn matching_acls<'a>(
         &'a self,
         rt: ResourceType,
         rn: &'a str,
     ) -> impl Iterator<Item = &'a AclEntry> + 'a {
-        let literal_iter = self
-            .acls_literal
-            .get(&(rt, rn.to_string()))
-            .into_iter()
-            .flatten();
-        // Literal "*" is the WILDCARD_RESOURCE and matches every resource of
-        // this type. Skip it when `rn` is already "*" to avoid duplicating the
-        // entries already produced by `literal_iter`.
-        let wildcard_iter = (rn != "*")
-            .then(|| self.acls_literal.get(&(rt, "*".to_string())))
-            .into_iter()
-            .flatten()
-            .flatten();
-        let prefixed_iter = self
-            .acls_prefixed
-            .get(&rt)
-            .into_iter()
-            .flatten()
-            .filter(move |e| rn.starts_with(&e.resource_name));
-        literal_iter.chain(wildcard_iter).chain(prefixed_iter)
+        self.acls.matching(rt, rn)
     }
 
-    /// All ACL entries, both literal and prefixed, across all resource types.
-    /// `DescribeAcls` uses this.
+    /// All ACL entries, both literal and prefixed, across all resource types,
+    /// in unspecified order. `DescribeAcls` uses this.
     pub fn all_acls(&self) -> impl Iterator<Item = &AclEntry> {
-        self.acls_literal
-            .values()
-            .flatten()
-            .chain(self.acls_prefixed.values().flatten())
+        self.acls.iter()
     }
 
     /// The write-freeze entry that covers `topic`, or `None` when the topic
@@ -857,29 +841,9 @@ impl MetadataImage {
                 self.scram_credentials
                     .remove(&(r.user.clone(), r.mechanism));
             }
-            MetadataRecord::V1AccessControlEntry(entry) => {
-                let bucket = match entry.pattern_type {
-                    PatternType::Literal => self
-                        .acls_literal
-                        .entry((entry.resource_type, entry.resource_name.clone()))
-                        .or_default(),
-                    PatternType::Prefixed => {
-                        self.acls_prefixed.entry(entry.resource_type).or_default()
-                    }
-                };
-                // Last-write-wins on full-tuple equality.
-                bucket.retain(|e| e != entry);
-                bucket.push(entry.clone());
-            }
+            MetadataRecord::V1AccessControlEntry(entry) => self.acls.insert(entry),
             MetadataRecord::V1DeleteAccessControlEntry(filter) => {
-                self.acls_literal.retain(|_, v| {
-                    v.retain(|e| !filter.matches(e));
-                    !v.is_empty()
-                });
-                self.acls_prefixed.retain(|_, v| {
-                    v.retain(|e| !filter.matches(e));
-                    !v.is_empty()
-                });
+                self.acls.remove_matching(filter);
             }
             MetadataRecord::V1BrokerConfig(rec) => {
                 let entry = self.broker_configs.entry(rec.node_id).or_default();
