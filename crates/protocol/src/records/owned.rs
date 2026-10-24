@@ -749,6 +749,7 @@ impl RecordBatch {
             .expect("non-negative record count must fit in usize")
             .min(body_for_records.len());
         let mut records = Vec::with_capacity(record_capacity);
+        let mut names = crate::records::borrowed::HeaderNames::default();
         for i in 0..count {
             // Parse the record into borrowed slices, then materialise its
             // key / value / header-values as zero-copy `Bytes` views into
@@ -756,7 +757,7 @@ impl RecordBatch {
             // allocation instead of copying every field into its own `Bytes`,
             // which removes ~2 heap allocations + memcpys per record on the
             // common (header-free) path.
-            let r = crate::records::borrowed::parse_one_record(&mut body_cur)
+            let r = crate::records::borrowed::parse_one_record(&mut body_cur, &mut names)
                 .map_err(|e| RecordsError::RecordParse(format!("record[{i}]: {e}")))?;
             records.push(Record {
                 attributes: r.attributes,

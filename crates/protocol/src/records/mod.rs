@@ -17,8 +17,8 @@ pub mod remote_log_metadata;
 
 pub use borrowed::{
     Record as RecordBorrowed, RecordBatch as RecordBatchBorrowed,
-    RecordHeader as RecordHeaderBorrowed, ValidatedBatch, count_records_in_v2_batches,
-    validate_one_v2_batch,
+    RecordHeader as RecordHeaderBorrowed, RecordHeaderIter, RecordHeaders, ValidatedBatch,
+    count_records_in_v2_batches, validate_one_v2_batch,
 };
 pub use error::RecordsError;
 pub use file_region::FileRegion;

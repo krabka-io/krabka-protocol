@@ -6,7 +6,7 @@ use krabka_units::{ByteSize, convert::ByteSizeExt as _};
 use zerocopy::FromBytes as _;
 
 use crate::{
-    primitives::varint::{get_varint, get_varlong},
+    primitives::varint::{get_varint_from_slice, get_varlong_from_slice},
     records::{
         RecordsError,
         crc::crc32c,
@@ -38,14 +38,145 @@ pub struct Record<'a> {
     pub offset_delta: i32,
     pub key: Option<&'a [u8]>,
     pub value: Option<&'a [u8]>,
-    pub headers: Vec<RecordHeader<'a>>,
+    pub headers: RecordHeaders<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordHeader<'a> {
     pub key: &'a str,
     pub value: Option<&'a [u8]>,
 }
+
+/// The headers of one borrowed [`Record`], read on demand from the record's
+/// header bytes.
+///
+/// The record parser checks every header before it hands a record out, then
+/// keeps only the header bytes and their count. Collecting them into a `Vec`
+/// instead cost one allocation per record that carries headers, which the
+/// produce path pays for every record of every client batch it validates.
+/// Reading them again allocates nothing, and [`Self::find`], which a caller
+/// looking for one header by name wants, does not check any name's UTF-8 a
+/// second time.
+#[derive(Clone, Copy, Default)]
+pub struct RecordHeaders<'a> {
+    /// The record's header region, checked by the parser.
+    bytes: &'a [u8],
+    count: usize,
+}
+
+impl<'a> RecordHeaders<'a> {
+    /// The number of headers.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Whether the record carries no header.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// The headers in wire order.
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> RecordHeaderIter<'a> {
+        RecordHeaderIter {
+            rest: self.bytes,
+            left: self.count,
+            names: HeaderNames::default(),
+        }
+    }
+
+    /// The value of the first header named `name`: `Some(None)` for a header
+    /// whose value is null, and `None` when no header has the name.
+    ///
+    /// It compares each name's bytes with `name`'s, so it reads no name as
+    /// UTF-8: a name with the same bytes as a `&str` is that `&str`.
+    #[inline]
+    #[must_use]
+    pub fn find(&self, name: &str) -> Option<Option<&'a [u8]>> {
+        let mut rest = self.bytes;
+        for _ in 0..self.count {
+            // The parser checked these bytes, so the reads cannot fail; a
+            // failure ends the search rather than panicking.
+            let header = read_raw_header(rest)?;
+            if same_bytes(header.key, name.as_bytes()) {
+                return Some(header.value);
+            }
+            rest = header.rest;
+        }
+        None
+    }
+}
+
+impl<'a> IntoIterator for RecordHeaders<'a> {
+    type Item = RecordHeader<'a>;
+    type IntoIter = RecordHeaderIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &RecordHeaders<'a> {
+    type Item = RecordHeader<'a>;
+    type IntoIter = RecordHeaderIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl std::fmt::Debug for RecordHeaders<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for RecordHeaders<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for RecordHeaders<'_> {}
+
+/// An iterator over [`RecordHeaders`].
+#[derive(Debug)]
+pub struct RecordHeaderIter<'a> {
+    rest: &'a [u8],
+    left: usize,
+    names: HeaderNames<'a>,
+}
+
+impl<'a> Iterator for RecordHeaderIter<'a> {
+    type Item = RecordHeader<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.left == 0 {
+            return None;
+        }
+        self.left -= 1;
+        // The parser checked these bytes before it built the record, so the
+        // read cannot fail. Ending the iteration is the answer if it did
+        // anyway, rather than a panic.
+        let Ok((header, rest)) = parse_header(self.rest, 0, &mut self.names) else {
+            self.left = 0;
+            return None;
+        };
+        self.rest = rest;
+        Some(header)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.left, Some(self.left))
+    }
+}
+
+impl ExactSizeIterator for RecordHeaderIter<'_> {}
 
 impl Record<'_> {
     /// Size of this record's body in bytes: what Kafka's `DefaultRecord` calls
@@ -236,8 +367,9 @@ impl ValidatedBatch<'_> {
             )?)
         };
         let mut remaining = decompressed.as_deref().unwrap_or(self.raw_body);
+        let mut names = HeaderNames::default();
         for i in 0..count {
-            let record = parse_one_record(&mut remaining)
+            let record = parse_one_record(&mut remaining, &mut names)
                 .map_err(|error| RecordsError::RecordParse(format!("record[{i}]: {error}")))?;
             visit(&record);
         }
@@ -367,6 +499,7 @@ impl RecordBatch<'_> {
             remaining: body,
             count,
             index: 0,
+            names: HeaderNames::default(),
         }
     }
 }
@@ -384,6 +517,7 @@ pub struct RecordIter<'a> {
     remaining: &'a [u8],
     count: usize,
     index: usize,
+    names: HeaderNames<'a>,
 }
 
 impl<'a> Iterator for RecordIter<'a> {
@@ -394,88 +528,71 @@ impl<'a> Iterator for RecordIter<'a> {
             return None;
         }
         self.index += 1;
-        Some(parse_one_record(&mut self.remaining))
+        Some(parse_one_record(&mut self.remaining, &mut self.names))
     }
 }
 
 #[inline]
-pub(crate) fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
-    let body_len =
-        get_varlong(buf).map_err(|e| RecordsError::RecordParse(format!("record length: {e}")))?;
+pub(crate) fn parse_one_record<'a>(
+    buf: &mut &'a [u8],
+    names: &mut HeaderNames<'a>,
+) -> Result<Record<'a>, RecordsError> {
+    let mut cur = *buf;
+    let body_len = get_varlong_from_slice(&mut cur)
+        .map_err(|e| RecordsError::RecordParse(format!("record length: {e}")))?;
     let body_len = usize::try_from(body_len).map_err(|_| {
         RecordsError::RecordParse(format!("record length negative or too large: {body_len}"))
     })?;
-    if buf.len() < body_len {
+    let Some((body, rest)) = cur.split_at_checked(body_len) else {
         return Err(RecordsError::BodyTooShort {
-            needed: body_len - buf.len(),
+            needed: body_len - cur.len(),
         });
-    }
-    let (body, rest) = buf.split_at(body_len);
+    };
     *buf = rest;
-    let mut body_cur = body;
-    let r = parse_body(&mut body_cur)?;
-    if !body_cur.is_empty() {
-        return Err(RecordsError::RecordParse(format!(
-            "trailing bytes inside record (left={})",
-            body_cur.len()
-        )));
-    }
-    Ok(r)
+    parse_body(body, names)
 }
 
-fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
-    if buf.is_empty() {
+/// One record body, which must fill `body` exactly.
+///
+/// Every reader below takes its slice by value and hands back what is left,
+/// so the cursor stays in a register: a cursor behind `&mut` that a call can
+/// see is stored to memory after every field.
+fn parse_body<'a>(body: &'a [u8], names: &mut HeaderNames<'a>) -> Result<Record<'a>, RecordsError> {
+    let Some((&attributes, mut cur)) = body.split_first() else {
         return Err(RecordsError::RecordParse("record body empty".into()));
-    }
-    let attributes = i8::from_ne_bytes([buf[0]]);
-    *buf = &buf[1..];
-    let timestamp_delta =
-        get_varlong(buf).map_err(|e| RecordsError::RecordParse(format!("timestamp_delta: {e}")))?;
-    let offset_delta =
-        get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("offset_delta: {e}")))?;
+    };
+    let attributes = i8::from_ne_bytes([attributes]);
+    let timestamp_delta = get_varlong_from_slice(&mut cur)
+        .map_err(|e| RecordsError::RecordParse(format!("timestamp_delta: {e}")))?;
+    let offset_delta = get_varint_from_slice(&mut cur)
+        .map_err(|e| RecordsError::RecordParse(format!("offset_delta: {e}")))?;
 
-    let key = read_nullable_slice(buf, "key")?;
-    let value = read_nullable_slice(buf, "value")?;
+    let (key, cur) = read_nullable_slice(cur, || "key".into())?;
+    let (value, mut cur) = read_nullable_slice(cur, || "value".into())?;
 
-    let header_count =
-        get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("header_count: {e}")))?;
+    let header_count = get_varint_from_slice(&mut cur)
+        .map_err(|e| RecordsError::RecordParse(format!("header_count: {e}")))?;
     if header_count < 0 {
         return Err(RecordsError::RecordParse(format!(
             "negative header count {header_count}"
         )));
     }
-    // Bound pre-allocation: a record header is at least 1 byte on the wire, so
-    // an honest `header_count` can never exceed the bytes left in the record
-    // body. Clamp the capacity hint to reject huge declared counts.
-    let header_capacity = usize::try_from(header_count)
-        .expect("non-negative header count must fit in usize")
-        .min(buf.len());
-    let mut headers = Vec::with_capacity(header_capacity);
-    for i in 0..header_count {
-        let key_len = get_varint(buf)
-            .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key length: {e}")))?;
-        if key_len < 0 {
-            return Err(RecordsError::RecordParse(format!(
-                "header[{i}] negative key length"
-            )));
-        }
-        let n = usize::try_from(key_len).expect("non-negative key length must fit in usize");
-        if buf.len() < n {
-            return Err(RecordsError::BodyTooShort {
-                needed: n - buf.len(),
-            });
-        }
-        let (key_bytes, rest) = buf.split_at(n);
-        *buf = rest;
-        let key_str = std::str::from_utf8(key_bytes)
-            .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key utf-8: {e}")))?;
-
-        let value = read_nullable_slice(buf, &format!("header[{i}] value"))?;
-        headers.push(RecordHeader {
-            key: key_str,
-            value,
-        });
+    let header_count =
+        usize::try_from(header_count).expect("non-negative header count must fit in usize");
+    let header_bytes = cur;
+    for index in 0..header_count {
+        cur = parse_header(cur, index, names)?.1;
     }
+    if !cur.is_empty() {
+        return Err(RecordsError::RecordParse(format!(
+            "trailing bytes inside record (left={})",
+            cur.len()
+        )));
+    }
+    let headers = RecordHeaders {
+        bytes: header_bytes,
+        count: header_count,
+    };
 
     Ok(Record {
         attributes,
@@ -487,25 +604,145 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
     })
 }
 
-fn read_nullable_slice<'a>(
-    buf: &mut &'a [u8],
-    label: &str,
-) -> Result<Option<&'a [u8]>, RecordsError> {
-    let len =
-        get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("{label} length: {e}")))?;
-    if len < 0 {
-        Ok(None)
-    } else {
-        let n = usize::try_from(len).expect("non-negative value length must fit in usize");
-        if buf.len() < n {
-            return Err(RecordsError::BodyTooShort {
-                needed: n - buf.len(),
-            });
+/// The header names a walk over one batch has already checked are UTF-8.
+///
+/// Every record of a batch usually carries the same header names, and
+/// checking each name's UTF-8 again was a sixth of the cost of reading a
+/// record with one header. A name whose bytes equal the last checked one is
+/// answered with that checked `&str`: it points into the same buffer and holds
+/// the same bytes, so nothing a reader sees changes.
+#[derive(Debug, Default)]
+pub(crate) struct HeaderNames<'a> {
+    last: Option<&'a str>,
+}
+
+impl<'a> HeaderNames<'a> {
+    fn name(&mut self, bytes: &'a [u8], index: usize) -> Result<&'a str, RecordsError> {
+        if let Some(last) = self.last
+            && same_bytes(last.as_bytes(), bytes)
+        {
+            return Ok(last);
         }
-        let (head, rest) = buf.split_at(n);
-        *buf = rest;
-        Ok(Some(head))
+        let name = std::str::from_utf8(bytes)
+            .map_err(|e| RecordsError::RecordParse(format!("header[{index}] key utf-8: {e}")))?;
+        self.last = Some(name);
+        Ok(name)
     }
+}
+
+/// Whether two byte strings are equal.
+///
+/// Header names are short, and a call to `memcmp` cost more than the rest of
+/// reading a header. A name of up to 16 bytes is compared as two overlapping
+/// words instead.
+#[inline]
+fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    if let (Some(a_head), Some(a_tail), Some(b_head), Some(b_tail)) = (
+        a.first_chunk::<8>(),
+        a.last_chunk::<8>(),
+        b.first_chunk::<8>(),
+        b.last_chunk::<8>(),
+    ) && a.len() <= 16
+    {
+        return u64::from_ne_bytes(*a_head) == u64::from_ne_bytes(*b_head)
+            && u64::from_ne_bytes(*a_tail) == u64::from_ne_bytes(*b_tail);
+    }
+    if let (Some(a_head), Some(a_tail), Some(b_head), Some(b_tail)) = (
+        a.first_chunk::<4>(),
+        a.last_chunk::<4>(),
+        b.first_chunk::<4>(),
+        b.last_chunk::<4>(),
+    ) && a.len() < 8
+    {
+        return u32::from_ne_bytes(*a_head) == u32::from_ne_bytes(*b_head)
+            && u32::from_ne_bytes(*a_tail) == u32::from_ne_bytes(*b_tail);
+    }
+    if a.len() < 4 {
+        return a.iter().zip(b).all(|(x, y)| x == y);
+    }
+    a == b
+}
+
+/// One header's raw name bytes and nullable value, and the bytes after it.
+struct RawHeader<'a> {
+    key: &'a [u8],
+    value: Option<&'a [u8]>,
+    rest: &'a [u8],
+}
+
+/// The [`RawHeader`] at the start of bytes the parser already checked; `None`
+/// if they do not hold one.
+#[inline]
+fn read_raw_header(mut bytes: &[u8]) -> Option<RawHeader<'_>> {
+    let key_len = usize::try_from(get_varint_from_slice(&mut bytes).ok()?).ok()?;
+    let (key, mut rest) = bytes.split_at_checked(key_len)?;
+    let value_len = get_varint_from_slice(&mut rest).ok()?;
+    let Ok(value_len) = usize::try_from(value_len) else {
+        return Some(RawHeader {
+            key,
+            value: None,
+            rest,
+        });
+    };
+    let (value, rest) = rest.split_at_checked(value_len)?;
+    Some(RawHeader {
+        key,
+        value: Some(value),
+        rest,
+    })
+}
+
+/// One header of a record body, a UTF-8 key and a nullable value, and the
+/// bytes after it. `index` is the header's position, which only an error
+/// message reads.
+#[inline]
+fn parse_header<'a>(
+    mut bytes: &'a [u8],
+    index: usize,
+    names: &mut HeaderNames<'a>,
+) -> Result<(RecordHeader<'a>, &'a [u8]), RecordsError> {
+    let key_len = get_varint_from_slice(&mut bytes)
+        .map_err(|e| RecordsError::RecordParse(format!("header[{index}] key length: {e}")))?;
+    if key_len < 0 {
+        return Err(RecordsError::RecordParse(format!(
+            "header[{index}] negative key length"
+        )));
+    }
+    let n = usize::try_from(key_len).expect("non-negative key length must fit in usize");
+    let Some((key_bytes, rest)) = bytes.split_at_checked(n) else {
+        return Err(RecordsError::BodyTooShort {
+            needed: n - bytes.len(),
+        });
+    };
+    let key = names.name(key_bytes, index)?;
+    let (value, rest) = read_nullable_slice(rest, || format!("header[{index}] value"))?;
+    Ok((RecordHeader { key, value }, rest))
+}
+
+/// A length-prefixed byte string, where a negative length is null, and the
+/// bytes after it. `label` names the field in an error message, and is only
+/// built for one: the produce path reads every record of every batch through
+/// here, and a label formatted for each successful read cost an allocation
+/// per header.
+#[inline]
+fn read_nullable_slice(
+    mut bytes: &[u8],
+    label: impl FnOnce() -> String,
+) -> Result<(Option<&[u8]>, &[u8]), RecordsError> {
+    let len = get_varint_from_slice(&mut bytes)
+        .map_err(|e| RecordsError::RecordParse(format!("{} length: {e}", label())))?;
+    let Ok(n) = usize::try_from(len) else {
+        return Ok((None, bytes));
+    };
+    let Some((head, rest)) = bytes.split_at_checked(n) else {
+        return Err(RecordsError::BodyTooShort {
+            needed: n - bytes.len(),
+        });
+    };
+    Ok((Some(head), rest))
 }
 
 // ── to_owned bridge ───────────────────────────────────────────────────────────
@@ -664,7 +901,7 @@ mod tests {
                 offset_delta: 0,
                 key: Some(b"key".as_slice()),
                 value: Some(b"value".as_slice()),
-                headers: vec![],
+                headers: RecordHeaders::default(),
             }];
             assert2::assert!(records == expected_records);
 
@@ -1084,5 +1321,119 @@ mod tests {
         let mut out = BytesMut::new();
         borrowed.encode(&mut out, 0).unwrap();
         assert2::assert!(&out[..] == &bytes_in[..]);
+    }
+
+    /// Encodes one record carrying `headers` and returns its batch bytes.
+    fn batch_with_headers(headers: &[(&str, Option<&'static [u8]>)]) -> Vec<u8> {
+        encode_owned_then_borrow(&super::super::owned::RecordBatch {
+            records: vec![super::super::owned::Record {
+                headers: headers
+                    .iter()
+                    .map(|&(key, value)| super::super::owned::RecordHeader {
+                        key: key.to_owned(),
+                        value: value.map(Bytes::from_static),
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+    }
+
+    /// The one record of the uncompressed batch `encoded`.
+    fn only_record(encoded: &[u8]) -> Record<'_> {
+        let mut cur = encoded;
+        let batch = RecordBatch::decode_borrow(&mut cur, 0).unwrap();
+        let RecordBody::Borrowed(mut body) = batch.body else {
+            panic!("an uncompressed batch borrows its body");
+        };
+        parse_one_record(&mut body, &mut HeaderNames::default()).unwrap()
+    }
+
+    #[test]
+    fn record_headers_find_cases() {
+        // Names of 2, 5, 8, 12 and 20 bytes take each comparison `same_bytes`
+        // makes: bytewise, two 4-byte words, two 8-byte words, and `memcmp`.
+        let headers: &[(&str, Option<&'static [u8]>)] = &[
+            ("ab", Some(b"two")),
+            ("trace", None),
+            ("dedup-id", Some(b"first")),
+            ("dedup-id", Some(b"second")),
+            ("idempotency1", Some(b"twelve")),
+            ("a-twenty-byte-header", Some(b"twenty")),
+        ];
+        let cases: &[(&str, Option<Option<&[u8]>>)] = &[
+            ("ab", Some(Some(b"two"))),
+            ("ac", None),
+            ("trace", Some(None)),
+            ("tracf", None),
+            ("dedup-id", Some(Some(b"first"))),
+            ("dedup-ie", None),
+            ("dedup-i", None),
+            ("dedup-idx", None),
+            ("idempotency1", Some(Some(b"twelve"))),
+            ("idempotency2", None),
+            ("a-twenty-byte-header", Some(Some(b"twenty"))),
+            ("a-twenty-byte-headex", None),
+            ("", None),
+        ];
+        let encoded = batch_with_headers(headers);
+        let record = only_record(&encoded);
+        let found: Vec<_> = cases
+            .iter()
+            .map(|&(name, _)| (name, record.headers.find(name)))
+            .collect();
+
+        assert2::assert!(found == cases);
+    }
+
+    #[test]
+    fn record_headers_iterate_in_wire_order() {
+        let encoded = batch_with_headers(&[
+            ("dedup-id", Some(b"first")),
+            ("trace", None),
+            ("dedup-id", Some(b"second")),
+        ]);
+        let expected = vec![
+            RecordHeader {
+                key: "dedup-id",
+                value: Some(b"first"),
+            },
+            RecordHeader {
+                key: "trace",
+                value: None,
+            },
+            RecordHeader {
+                key: "dedup-id",
+                value: Some(b"second"),
+            },
+        ];
+        let record = only_record(&encoded);
+        let seen = (
+            record.headers.len(),
+            record.headers.iter().size_hint(),
+            record.headers.iter().collect::<Vec<_>>(),
+        );
+
+        assert2::assert!(seen == (3, (3, Some(3)), expected));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn same_bytes_agrees_with_slice_equality(
+            a in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..24),
+            flip in proptest::option::of(proptest::prelude::any::<proptest::sample::Index>()),
+            other in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..24),
+        ) {
+            // Equal pairs, pairs of one length that differ in one byte, and
+            // pairs of unrelated bytes.
+            let mut b = a.clone();
+            if let Some(flip) = flip.filter(|_| !b.is_empty()) {
+                let at = flip.index(b.len());
+                b[at] ^= 1;
+            }
+            assert2::assert!(same_bytes(&a, &b) == (a == b));
+            assert2::assert!(same_bytes(&a, &other) == (a == other));
+        }
     }
 }
