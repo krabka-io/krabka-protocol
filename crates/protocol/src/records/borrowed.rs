@@ -1,5 +1,7 @@
 //! Borrowed `RecordBatch<'a>`, `Record<'a>`, and `RecordHeader<'a>`.
 
+use std::fmt;
+
 use bytes::Bytes;
 use krabka_compression::RecordDecompressionPolicy;
 use krabka_units::{ByteSize, convert::ByteSizeExt as _};
@@ -434,8 +436,8 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
     let offset_delta =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("offset_delta: {e}")))?;
 
-    let key = read_nullable_slice(buf, "key")?;
-    let value = read_nullable_slice(buf, "value")?;
+    let key = read_nullable_slice(buf, SliceLabel::Key)?;
+    let value = read_nullable_slice(buf, SliceLabel::Value)?;
 
     let header_count =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("header_count: {e}")))?;
@@ -470,7 +472,7 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
         let key_str = std::str::from_utf8(key_bytes)
             .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key utf-8: {e}")))?;
 
-        let value = read_nullable_slice(buf, &format!("header[{i}] value"))?;
+        let value = read_nullable_slice(buf, SliceLabel::HeaderValue(i))?;
         headers.push(RecordHeader {
             key: key_str,
             value,
@@ -487,9 +489,31 @@ fn parse_body<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
     })
 }
 
+/// Names the nullable field [`read_nullable_slice`] reads, for its error
+/// message.
+///
+/// The label is formatted only when a read fails, so the per-record decode
+/// path allocates no label string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SliceLabel {
+    Key,
+    Value,
+    HeaderValue(i32),
+}
+
+impl fmt::Display for SliceLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Key => f.write_str("key"),
+            Self::Value => f.write_str("value"),
+            Self::HeaderValue(index) => write!(f, "header[{index}] value"),
+        }
+    }
+}
+
 fn read_nullable_slice<'a>(
     buf: &mut &'a [u8],
-    label: &str,
+    label: SliceLabel,
 ) -> Result<Option<&'a [u8]>, RecordsError> {
     let len =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("{label} length: {e}")))?;
@@ -620,7 +644,7 @@ mod tests {
     use krabka_units::{bytes, fraction};
 
     use super::*;
-    use crate::DecodeBorrow;
+    use crate::{DecodeBorrow, primitives::varint::put_varlong};
 
     fn encode_owned_then_borrow(b: &super::super::owned::RecordBatch) -> Vec<u8> {
         let mut buf = BytesMut::new();
@@ -1064,6 +1088,54 @@ mod tests {
         // the break and index past the buffer.
         let buf = v2_header_only(100, 9);
         assert2::assert!(count_records_in_v2_batches(&buf) == 0);
+    }
+
+    /// Frames `body` as one record: its varlong length prefix, then the body.
+    fn framed_record(body: &[u8]) -> Vec<u8> {
+        let mut framed = Vec::new();
+        put_varlong(&mut framed, i64::try_from(body.len()).unwrap());
+        framed.extend_from_slice(body);
+        framed
+    }
+
+    #[test]
+    fn slice_labels_name_the_field() {
+        for (label, expected) in [
+            (SliceLabel::Key, "key"),
+            (SliceLabel::Value, "value"),
+            (SliceLabel::HeaderValue(0), "header[0] value"),
+            (SliceLabel::HeaderValue(17), "header[17] value"),
+        ] {
+            assert2::assert!(label.to_string() == expected);
+        }
+    }
+
+    /// A truncated length varint names the field it belongs to, in the
+    /// message the eagerly formatted labels produced.
+    #[test]
+    fn truncated_nullable_length_reports_the_field_label() {
+        let varint_error = get_varint(&mut &[0x80_u8][..]).unwrap_err();
+        // attributes, timestamp_delta 0, offset_delta 0.
+        let prefix: &[u8] = &[0, 0, 0];
+        for (case, tail, label) in [
+            ("key", &[0x80_u8][..], "key"),
+            ("value", &[0x01, 0x80][..], "value"),
+            // null key and value, two headers: "a" with a null value, then "b"
+            // whose value length is truncated.
+            (
+                "second header value",
+                &[0x01, 0x01, 0x04, 0x02, b'a', 0x01, 0x02, b'b', 0x80][..],
+                "header[1] value",
+            ),
+        ] {
+            let framed = framed_record(&[prefix, tail].concat());
+            let error = parse_one_record(&mut framed.as_slice()).unwrap_err();
+            let expected = format!("{label} length: {varint_error}");
+            assert2::assert!(
+                matches!(&error, RecordsError::RecordParse(message) if *message == expected),
+                "{case}: {error:?}"
+            );
+        }
     }
 
     #[test]
