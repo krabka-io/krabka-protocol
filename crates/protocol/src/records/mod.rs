@@ -20,6 +20,7 @@ pub use borrowed::{
     RecordHeader as RecordHeaderBorrowed, RecordSummary, ValidatedBatch,
     count_records_in_v2_batches, validate_one_v2_batch,
 };
+pub use crc::{crc32c, crc32c_append};
 pub use error::RecordsError;
 pub use file_region::FileRegion;
 pub use header::{

@@ -3,7 +3,10 @@
 use assert2::assert;
 use bytes::{Buf, Bytes, BytesMut};
 use krabka_compression::{CompressionType, RecordDecompressionPolicy};
-use krabka_protocol::records::{Attributes, Record, RecordBatch, RecordHeader, RecordsError};
+use krabka_protocol::records::{
+    Attributes, CRC_COVERAGE_START, HEADER_LEN, Record, RecordBatch, RecordHeader, RecordsError,
+    crc32c, crc32c_append,
+};
 use krabka_units::{bytes, fraction};
 
 const CODECS: [CompressionType; 5] = [
@@ -121,6 +124,25 @@ fn buffer_shapes_preserve_crc_errors_limits_and_cursor_consumption() {
             assert!(RecordBatch::decode(&mut cur).is_err());
             assert!(cur.is_empty());
             compare_buffers(&corrupt, RecordDecompressionPolicy::default());
+        }
+    }
+}
+
+/// The public CRC entry point reproduces every encoded batch's stored CRC, in
+/// one pass over the covered region or continued across any split of it.
+#[test]
+fn public_crc32c_reproduces_the_stored_batch_crc() {
+    for codec in CODECS {
+        let wire = fixture(codec).encode_to_bytes().unwrap();
+        let covered = &wire[CRC_COVERAGE_START..];
+        let stored = u32::from_be_bytes(wire[17..21].try_into().unwrap());
+        assert!(crc32c(covered) == stored, "{codec:?}");
+        for split in [0, 1, HEADER_LEN - CRC_COVERAGE_START, covered.len()] {
+            let (head, tail) = covered.split_at(split);
+            assert!(
+                crc32c_append(crc32c(head), tail) == stored,
+                "{codec:?} at {split}"
+            );
         }
     }
 }
