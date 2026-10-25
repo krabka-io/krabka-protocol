@@ -163,33 +163,42 @@ mod tests {
         );
     }
 
+    /// Whether this test build has the GSSAPI provider.
+    const GSSAPI: bool = cfg!(all(feature = "gssapi", not(target_family = "wasm")));
+
     #[test]
     fn availability_follows_the_gssapi_feature() {
-        let gssapi = cfg!(all(feature = "gssapi", not(target_family = "wasm")));
-        let mut want = vec![
-            SaslMechanism::Plain,
-            SaslMechanism::ScramSha256,
-            SaslMechanism::ScramSha512,
-            SaslMechanism::OAuthBearer,
-        ];
-        if gssapi {
-            want.push(SaslMechanism::Gssapi);
-        }
-        assert2::assert!(SaslMechanism::available().collect::<Vec<_>>() == want);
+        let available = SaslMechanism::ALL.map(|m| (m, m.is_available()));
+        let listed: Vec<_> = SaslMechanism::available().collect();
+        let want_listed: Vec<_> = SaslMechanism::ALL
+            .into_iter()
+            .filter(|m| *m != SaslMechanism::Gssapi || GSSAPI)
+            .collect();
+        assert2::assert!(
+            (available, listed)
+                == (
+                    [
+                        (SaslMechanism::Plain, true),
+                        (SaslMechanism::ScramSha256, true),
+                        (SaslMechanism::ScramSha512, true),
+                        (SaslMechanism::OAuthBearer, true),
+                        (SaslMechanism::Gssapi, GSSAPI),
+                    ],
+                    want_listed,
+                )
+        );
     }
 
     #[test]
     fn require_available_rejects_gssapi_without_the_feature() {
-        let want = if cfg!(all(feature = "gssapi", not(target_family = "wasm"))) {
-            Ok(SaslMechanism::Gssapi)
-        } else {
-            Err(AuthError::UnsupportedMechanism)
-        };
+        let want_gssapi = GSSAPI
+            .then_some(SaslMechanism::Gssapi)
+            .ok_or(AuthError::UnsupportedMechanism);
         assert2::assert!(
             (
                 SaslMechanism::Gssapi.require_available(),
                 SaslMechanism::Plain.require_available(),
-            ) == (want, Ok(SaslMechanism::Plain))
+            ) == (want_gssapi, Ok(SaslMechanism::Plain))
         );
     }
 
