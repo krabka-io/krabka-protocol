@@ -15,7 +15,7 @@ Nothing in this repository depends on either.
 | `krabka-protocol` | Kafka request/response codecs, generated from the upstream JSON schemas. |
 | `krabka-protocol-codegen` | The generator that emits those codecs. Driven by `tools/regenerate.sh`. |
 | `krabka-metadata` | KRaft metadata records and the in-memory metadata image. |
-| `krabka-security` | SASL (SCRAM, OAUTHBEARER, GSSAPI, PLAIN) and TLS configuration. |
+| `krabka-security` | SASL (SCRAM, OAUTHBEARER, PLAIN, and GSSAPI behind the `gssapi` feature) and TLS configuration. |
 | `krabka-compression` | gzip, snappy, lz4 and zstd record-batch codecs. |
 | `krabka-voters` | KRaft voter-set model. |
 | `krabka-ids` | Topic, partition, broker and producer identifiers. |

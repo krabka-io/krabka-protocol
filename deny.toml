@@ -21,11 +21,14 @@ ignore = [
     # SQL-reachable parser.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
-    # RSA "Marvin" timing side-channel. Pulled in transitively by `picky`
-    # (a hard dependency of the vendored `sspi` Kerberos stack). Our GSSAPI
-    # path is auth-only over AES keytab keys and performs no RSA private-key
-    # operations (no PKINIT), so the network-observable timing leak does not
-    # apply. The advisory has no fixed release available.
+    # RSA "Marvin" timing side-channel; no fixed release exists. This ignore
+    # applies only to builds with `krabka-security`'s `gssapi` feature, which
+    # pulls in `rsa` through `krabka-sspi` and `picky`. `[graph]` above turns
+    # every feature on, so cargo-deny sees that build. A default build has no
+    # `rsa` at all, and the `rsa reachability` CI job fails if it gains one.
+    # With `gssapi`, the GSSAPI path uses only AES keytab keys and performs no
+    # RSA private-key operations (no PKINIT, PKU2U or certificate keys). See
+    # docs/rustsec-2023-0071.md before extending this to any other parent.
     "RUSTSEC-2023-0071",
     # bincode is unmaintained (the team ceased development; v2.0.1 is considered
     # feature-complete and "no safe upgrade is available"). This is an

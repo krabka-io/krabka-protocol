@@ -58,9 +58,23 @@ tempfile.workspace = true
 criterion = { version = "5.0.2", package = "codspeed-criterion-compat" }
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 
+[features]
+# SASL/GSSAPI (Kerberos), off by default. It pulls in `krabka-sspi` and through
+# it `rsa` 0.10, which carries RUSTSEC-2023-0071 (the Marvin timing attack)
+# with no patched release. A build that never speaks GSSAPI must not compile
+# `rsa`, so only a crate that needs Kerberos turns this on. Without it,
+# `SaslMechanism::Gssapi` is still a valid wire name and metadata value, but
+# `SaslMechanism::is_available` reports it as unavailable and the `gssapi`
+# module is absent. See docs/rustsec-2023-0071.md.
+gssapi = ["dep:sspi"]
+
 [[bench]]
 name = "scram"
 harness = false
+
+[[example]]
+name = "gssapi_spike"
+required-features = ["gssapi"]
 
 # SASL/GSSAPI (Kerberos) rides on `sspi`, a pure-Rust SSPI implementation. It
 # provides the server-side accept_security_context path backed by a service
@@ -70,6 +84,7 @@ harness = false
 # provider to match the rest of the workspace (rustls/rcgen already ride on
 # ring). That transport does not build for WebAssembly, and the website
 # playground compiles `krabka-metadata`, and through it this crate, for
-# `wasm32-unknown-unknown`, so the GSSAPI surface is native-only.
+# `wasm32-unknown-unknown`, so the GSSAPI surface is native-only. The
+# dependency is optional, and the `gssapi` feature turns it on.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-sspi.workspace = true
+sspi = { workspace = true, optional = true }

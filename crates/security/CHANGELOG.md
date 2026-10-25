@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Breaking Rust API.** The `gssapi` module now needs the `gssapi` feature.
+
+### Changed
+
+- SASL/GSSAPI moved behind a new `gssapi` Cargo feature, off by default
+  ([#71](https://github.com/krabka-io/krabka-protocol/issues/71)). The
+  `krabka-sspi` dependency, and with it `rsa` 0.10 (RUSTSEC-2023-0071), is
+  now optional, so a default build compiles no `rsa`. A crate that serves or
+  initiates GSSAPI turns the feature on.
+- `rustls` 0.23.46 and `rustls-webpki` 0.103.16 in the lockfile
+  ([#72](https://github.com/krabka-io/krabka-protocol/issues/72)). The same
+  lockfile refresh takes `crypto-bigint` 0.7.6 (RUSTSEC-2026-0387), `ctutils`
+  0.4.5 (RUSTSEC-2026-0385) and `tokio` 1.53.3 (RUSTSEC-2026-0386), and moves
+  off the yanked `num-modular` 0.6.6.
+
+### Added
+
+- `SaslMechanism::ALL`, `SaslMechanism::is_available`,
+  `SaslMechanism::available` and `SaslMechanism::require_available`, which
+  report whether this build can run a mechanism. Without the `gssapi` feature,
+  GSSAPI is unavailable and `require_available` returns
+  `AuthError::UnsupportedMechanism`, which a broker maps to Kafka's
+  `UNSUPPORTED_SASL_MECHANISM`.
+
 ## [0.7.0] — 2026-10-20
 
 **Breaking Rust API.** Handle `StepResult::Disconnect` and
