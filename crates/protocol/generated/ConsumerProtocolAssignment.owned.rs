@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_nullable_bytes_len, compact_string_len, get_compact_nullable_bytes_owned,
@@ -38,21 +39,17 @@ impl Encode for ConsumerProtocolAssignment {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.assigned_partitions).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.assigned_partitions).len(), flex)?;
                 for it in &self.assigned_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.user_data.as_deref());
+                put_compact_nullable_bytes(buf, self.user_data.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.user_data.as_deref());
+                put_nullable_bytes(buf, self.user_data.as_deref())?;
             }
         }
         Ok(())
@@ -62,10 +59,7 @@ impl Encode for ConsumerProtocolAssignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.assigned_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.assigned_partitions).len(), flex);
                 let body: usize = (self.assigned_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -94,7 +88,7 @@ impl Decode<'_> for ConsumerProtocolAssignment {
         let mut out = Self::default();
         if version >= 0 {
             out.assigned_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicPartition::decode(buf, version)?);
@@ -137,18 +131,18 @@ impl Encode for TopicPartition {
         let flex = version == i16::MAX;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -164,8 +158,7 @@ impl Encode for TopicPartition {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -186,7 +179,7 @@ impl Decode<'_> for TopicPartition {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -203,7 +196,7 @@ impl TopicPartition {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![1i32];
@@ -218,9 +211,9 @@ impl TopicPartition {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "assignedPartitions".to_string(),
+        "assignedPartitions".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    obj.insert("userData".to_string(), ::serde_json::Value::Null);
+    obj.insert("userData".to_owned(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }

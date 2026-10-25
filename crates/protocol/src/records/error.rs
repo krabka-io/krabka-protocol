@@ -29,7 +29,7 @@ pub enum RecordsError {
 
 impl From<RecordsError> for crate::ProtocolError {
     fn from(e: RecordsError) -> Self {
-        crate::ProtocolError::InvalidValue(match e {
+        Self::InvalidValue(match e {
             RecordsError::HeaderTooShort { .. } => "records: header too short",
             RecordsError::UnsupportedMagic { .. } => "records: unsupported magic",
             RecordsError::CrcMismatch { .. } => "records: CRC mismatch",

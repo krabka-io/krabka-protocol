@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -55,32 +56,32 @@ impl Encode for CreateDelegationTokenRequest {
         let flex = is_flexible(version);
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.owner_principal_type.as_deref());
+                put_compact_nullable_string(buf, self.owner_principal_type.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.owner_principal_type.as_deref());
+                put_nullable_string(buf, self.owner_principal_type.as_deref())?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.owner_principal_name.as_deref());
+                put_compact_nullable_string(buf, self.owner_principal_name.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.owner_principal_name.as_deref());
+                put_nullable_string(buf, self.owner_principal_name.as_deref())?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.renewers).len(), flex);
+                put_array_len(buf, (self.renewers).len(), flex)?;
                 for it in &self.renewers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i64(buf, self.max_lifetime_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -103,8 +104,7 @@ impl Encode for CreateDelegationTokenRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.renewers).len(), flex);
+                let prefix = array_len_prefix_len((self.renewers).len(), flex);
                 let body: usize = (self.renewers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -148,7 +148,7 @@ impl Decode<'_> for CreateDelegationTokenRequest {
         }
         if version >= 0 {
             out.renewers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(CreatableRenewers::decode(buf, version)?);
@@ -171,10 +171,10 @@ impl CreateDelegationTokenRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 3 {
-            m.owner_principal_type = Some("x".to_string());
+            m.owner_principal_type = Some("x".to_owned());
         }
         if version >= 3 {
-            m.owner_principal_name = Some("x".to_string());
+            m.owner_principal_name = Some("x".to_owned());
         }
         if version >= 0 {
             m.renewers = vec![CreatableRenewers::populated(version)];
@@ -196,21 +196,21 @@ impl Encode for CreatableRenewers {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal_type);
+                put_compact_string(buf, &self.principal_type)?;
             } else {
-                let () = put_string(buf, &self.principal_type);
+                put_string(buf, &self.principal_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal_name);
+                put_compact_string(buf, &self.principal_name)?;
             } else {
-                let () = put_string(buf, &self.principal_name);
+                put_string(buf, &self.principal_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -268,10 +268,10 @@ impl CreatableRenewers {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.principal_type = "x".to_string();
+            m.principal_type = "x".to_owned();
         }
         if version >= 0 {
-            m.principal_name = "x".to_string();
+            m.principal_name = "x".to_owned();
         }
         m
     }
@@ -284,18 +284,18 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 3 {
         obj.insert(
-            "ownerPrincipalType".to_string(),
+            "ownerPrincipalType".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version >= 3 {
         obj.insert(
-            "ownerPrincipalName".to_string(),
+            "ownerPrincipalName".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
-    obj.insert("renewers".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("maxLifetimeMs".to_string(), ::serde_json::json!(0));
+    obj.insert("renewers".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("maxLifetimeMs".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for CreateDelegationTokenRequest {

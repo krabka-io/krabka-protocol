@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{
             compact_nullable_string_len, get_compact_nullable_string_owned,
@@ -40,15 +41,15 @@ impl Encode for DeleteAclsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.filters).len(), flex);
+                put_array_len(buf, (self.filters).len(), flex)?;
                 for it in &self.filters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -57,8 +58,7 @@ impl Encode for DeleteAclsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.filters).len(), flex);
+                let prefix = array_len_prefix_len((self.filters).len(), flex);
                 let body: usize = (self.filters)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -85,7 +85,7 @@ impl Decode<'_> for DeleteAclsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteAclsFilter::decode(buf, version)?);
@@ -143,9 +143,9 @@ impl Encode for DeleteAclsFilter {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.resource_name_filter.as_deref());
+                put_compact_nullable_string(buf, self.resource_name_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.resource_name_filter.as_deref());
+                put_nullable_string(buf, self.resource_name_filter.as_deref())?;
             }
         }
         if version >= 1 {
@@ -153,16 +153,16 @@ impl Encode for DeleteAclsFilter {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.principal_filter.as_deref());
+                put_compact_nullable_string(buf, self.principal_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.principal_filter.as_deref());
+                put_nullable_string(buf, self.principal_filter.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.host_filter.as_deref());
+                put_compact_nullable_string(buf, self.host_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.host_filter.as_deref());
+                put_nullable_string(buf, self.host_filter.as_deref())?;
             }
         }
         if version >= 0 {
@@ -173,7 +173,7 @@ impl Encode for DeleteAclsFilter {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -272,16 +272,16 @@ impl DeleteAclsFilter {
             m.resource_type_filter = 1i8;
         }
         if version >= 0 {
-            m.resource_name_filter = Some("x".to_string());
+            m.resource_name_filter = Some("x".to_owned());
         }
         if version >= 1 {
             m.pattern_type_filter = 1i8;
         }
         if version >= 0 {
-            m.principal_filter = Some("x".to_string());
+            m.principal_filter = Some("x".to_owned());
         }
         if version >= 0 {
-            m.host_filter = Some("x".to_string());
+            m.host_filter = Some("x".to_owned());
         }
         if version >= 0 {
             m.operation = 1i8;
@@ -298,7 +298,7 @@ impl DeleteAclsFilter {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("filters".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("filters".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DeleteAclsRequest {

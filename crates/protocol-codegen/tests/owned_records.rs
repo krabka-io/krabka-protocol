@@ -1,5 +1,6 @@
 //! Records framing and parse policy for owned codecs, including non-nullable
 //! request fields absent from the upstream Produce schemas.
+#![cfg(test)]
 
 use assert2::assert;
 use krabka_protocol_codegen::{emit::owned_quote, ir::MessageSpec};

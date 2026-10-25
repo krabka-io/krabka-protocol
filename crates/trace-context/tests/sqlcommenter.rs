@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use assert2::{assert, check};
 use krabka_trace_context::{SqlCommenterTrace, TraceCarrier, extract_sqlcommenter};
 
@@ -211,7 +213,7 @@ fn extract_sqlcommenter_survives_unterminated_input() {
         format!("SELECT 1 /*traceparent='{TRACEPARENT}'"),
         format!("SELECT 'unterminated /*traceparent='{TRACEPARENT}'*/"),
         format!("SELECT $body$ /*traceparent='{TRACEPARENT}'*/"),
-        format!("SELECT 1 /*traceparent='{}", &TRACEPARENT[..20]),
+        format!("SELECT 1 /*traceparent='{}", TRACEPARENT.get(..20).unwrap()),
     ];
 
     for sql in cases {

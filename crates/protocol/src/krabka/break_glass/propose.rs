@@ -11,6 +11,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -69,10 +71,10 @@ impl Encode for ProposeBreakGlassRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i8(buf, self.action);
-        put_compact_string(buf, &self.target);
-        put_compact_string(buf, &self.reason);
+        put_compact_string(buf, &self.target)?;
+        put_compact_string(buf, &self.reason)?;
         put_i64(buf, self.ttl_ms);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -134,10 +136,10 @@ impl Encode for ProposeBreakGlassResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         put_uuid(buf, self.proposal_id);
         put_i64(buf, self.expires_at_ms);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -171,10 +173,10 @@ impl ProposeBreakGlassRequest {
     fn populated() -> Self {
         Self {
             action: 6,
-            target: "doomed".to_string(),
-            reason: "topic holds test data only".to_string(),
+            target: "doomed".to_owned(),
+            reason: "topic holds test data only".to_owned(),
             ttl_ms: 1_800_000,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -191,7 +193,7 @@ impl ProposeBreakGlassResponse {
                 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,
             ]),
             expires_at_ms: 1_770_000_180_000,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -212,7 +214,7 @@ mod tests {
                 "configured lifetime and no reason",
                 ProposeBreakGlassRequest {
                     action: 1,
-                    target: "literal:orders".to_string(),
+                    target: "literal:orders".to_owned(),
                     reason: String::new(),
                     ttl_ms: 0,
                     unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -236,7 +238,7 @@ mod tests {
                 ProposeBreakGlassResponse {
                     throttle_time_ms: 0,
                     error_code: 1008,
-                    error_message: Some("principal is not an approver".to_string()),
+                    error_message: Some("principal is not an approver".to_owned()),
                     proposal_id: Uuid::ZERO,
                     expires_at_ms: 0,
                     unknown_tagged_fields: UnknownTaggedFields::default(),

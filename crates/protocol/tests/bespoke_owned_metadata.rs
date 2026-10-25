@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned Metadata wrappers that verify specific semantic
 // behaviour (e.g. None-topics encoding quirk at v0). Relocated from
 // hand-written wrappers.
@@ -57,12 +59,12 @@ fn owned_metadata_response_max_version_roundtrips_with_broker() {
         throttle_time_ms: 0,
         brokers: vec![MetadataResponseBroker {
             node_id: 1,
-            host: "localhost".to_string(),
+            host: "localhost".to_owned(),
             port: 9092,
             rack: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }],
-        cluster_id: Some("test-cluster".to_string()),
+        cluster_id: Some("test-cluster".to_owned()),
         controller_id: 1,
         topics: vec![],
         cluster_authorized_operations: -2_147_483_648,

@@ -33,7 +33,7 @@ impl Encode for ResponseHeader {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,6 +85,6 @@ impl ResponseHeader {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("correlationId".to_string(), ::serde_json::json!(0));
+    obj.insert("correlationId".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

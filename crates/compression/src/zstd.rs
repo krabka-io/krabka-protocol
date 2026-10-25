@@ -6,6 +6,11 @@ use std::{
 };
 
 use bytes::Bytes;
+use zstd::{
+    bulk::{self, Compressor},
+    stream::Decoder,
+    zstd_safe::{self, DCtx},
+};
 
 use crate::CompressionError;
 
@@ -21,7 +26,7 @@ const REUSE_MAX_INPUT: usize = 128 * 1024;
 const MAX_DIRECT_OUTPUT: usize = 1024 * 1024;
 
 thread_local! {
-    static COMPRESSOR: RefCell<Option<zstd::bulk::Compressor<'static>>> = const { RefCell::new(None) };
+    static COMPRESSOR: RefCell<Option<Compressor<'static>>> = const { RefCell::new(None) };
 }
 
 pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
@@ -33,16 +38,14 @@ pub fn compress_with_level(data: &[u8], level: i32) -> Result<Bytes, Compression
     let out = if level == DEFAULT_LEVEL && data.len() <= REUSE_MAX_INPUT {
         COMPRESSOR.with(|cell| {
             let mut cached = cell.borrow_mut();
-            if cached.is_none() {
-                *cached = Some(zstd::bulk::Compressor::new(DEFAULT_LEVEL)?);
-            }
-            cached
-                .as_mut()
-                .expect("compressor initialized")
-                .compress(data)
+            let compressor = match &mut *cached {
+                Some(compressor) => compressor,
+                None => cached.insert(Compressor::new(DEFAULT_LEVEL)?),
+            };
+            compressor.compress(data)
         })?
     } else {
-        zstd::bulk::compress(data, level)?
+        bulk::compress(data, level)?
     };
     Ok(Bytes::from(out))
 }
@@ -53,27 +56,27 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
     }
     // The streaming path owns errors: malformed frames can differ in when
     // direct and incremental decoders report a size mismatch or output cap.
-    if let Ok(Some(size)) = zstd::zstd_safe::get_frame_content_size(data)
+    if let Ok(Some(size)) = zstd_safe::get_frame_content_size(data)
         && let Ok(size) = usize::try_from(size)
         && size <= max_output.min(MAX_DIRECT_OUTPUT)
         // Single-segment frames use the content size as their window size.
         // Other frames retain the streaming decoder's window limit.
         && data.get(4).is_some_and(|descriptor| descriptor & 0x20 != 0)
-        && zstd::zstd_safe::find_frame_compressed_size(data) == Ok(data.len())
+        && zstd_safe::find_frame_compressed_size(data) == Ok(data.len())
         && let Some(out) = direct_decompress(data, size)
     {
         return out.map(Bytes::from);
     }
-    let decoder = zstd::stream::Decoder::with_buffer(ChunkedSlice {
-        data,
-        chunk_remaining: 0,
+    let decoder = Decoder::with_buffer(ChunkedSlice {
+        chunk: &[],
+        rest: data,
     })
     .map_err(|e| CompressionError::InvalidData(format!("zstd open: {e}")))?;
     // Read at most `max_output + 1` bytes so we can detect overflow without
     // materializing the oversized output.
-    let mut limited = std::io::Read::take(decoder, (max_output as u64).saturating_add(1));
+    let mut limited = Read::take(decoder, (max_output as u64).saturating_add(1));
     let mut out = Vec::with_capacity(data.len().saturating_mul(2).min(max_output));
-    std::io::Read::read_to_end(&mut limited, &mut out)
+    Read::read_to_end(&mut limited, &mut out)
         .map_err(|e| CompressionError::InvalidData(format!("zstd decode: {e}")))?;
     if out.len() > max_output {
         return Err(CompressionError::TooLarge { limit: max_output });
@@ -85,26 +88,24 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
 // fallibly; a reservation/decode failure returns to the capped stream.
 fn direct_decompress(data: &[u8], size: usize) -> Option<Result<Vec<u8>, CompressionError>> {
     if size <= 128 * 1024 {
-        return zstd::bulk::decompress(data, size).ok().map(Ok);
+        return bulk::decompress(data, size).ok().map(Ok);
     }
-    let mut decoder = zstd::zstd_safe::DCtx::try_create()?;
+    let mut decoder = DCtx::try_create()?;
     let mut output = Vec::new();
     output.try_reserve_exact(size).ok()?;
     match decoder.decompress(&mut output, data) {
         Ok(_) => Some(Ok(output)),
         Err(code) => {
-            let name = zstd::zstd_safe::get_error_name(code);
+            let name = zstd_safe::get_error_name(code);
             // Native bulk decode checks the actual content size before the checksum.
             // A checksum failure on this complete frame cannot compete with
             // TooLarge: its verified size fits the caller's cap. Other errors
             // retry the stream, which owns their ordering and acceptance.
-            if name == "Restored data doesn't match checksum" {
-                Some(Err(CompressionError::InvalidData(format!(
+            (name == "Restored data doesn't match checksum").then(|| {
+                Err(CompressionError::InvalidData(format!(
                     "zstd decode: {name}"
-                ))))
-            } else {
-                None
-            }
+                )))
+            })
         }
     }
 }
@@ -112,22 +113,28 @@ fn direct_decompress(data: &[u8], size: usize) -> Option<Result<Vec<u8>, Compres
 // Expose the same input boundaries as Decoder::new's staging buffer without
 // allocating or copying the slice. Boundaries affect checksum/cap error order.
 struct ChunkedSlice<'a> {
-    data: &'a [u8],
-    chunk_remaining: usize,
+    /// The unconsumed part of the current input chunk.
+    chunk: &'a [u8],
+    /// The input after the current chunk.
+    rest: &'a [u8],
 }
 
 impl BufRead for ChunkedSlice<'_> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        if self.chunk_remaining == 0 {
-            self.chunk_remaining = self.data.len().min(zstd::zstd_safe::DCtx::in_size());
+        if self.chunk.is_empty()
+            && let Some((chunk, rest)) = self
+                .rest
+                .split_at_checked(self.rest.len().min(DCtx::in_size()))
+        {
+            self.chunk = chunk;
+            self.rest = rest;
         }
-        Ok(&self.data[..self.chunk_remaining])
+        Ok(self.chunk)
     }
 
     fn consume(&mut self, amount: usize) {
-        let amount = amount.min(self.chunk_remaining);
-        self.data = &self.data[amount..];
-        self.chunk_remaining -= amount;
+        // Consuming more than the chunk holds consumes the whole chunk.
+        self.chunk = self.chunk.get(amount..).unwrap_or_default();
     }
 }
 
@@ -135,7 +142,10 @@ impl Read for ChunkedSlice<'_> {
     fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
         let input = self.fill_buf()?;
         let len = input.len().min(output.len());
-        output[..len].copy_from_slice(&input[..len]);
+        output
+            .iter_mut()
+            .zip(input)
+            .for_each(|(out, byte)| *out = *byte);
         self.consume(len);
         Ok(len)
     }
@@ -144,6 +154,8 @@ impl Read for ChunkedSlice<'_> {
 #[cfg(test)]
 mod tests {
 
+    use std::thread;
+
     use super::*;
 
     const HELLO: &[u8] = b"hello kafka, this is a moderately repetitive payload to compress";
@@ -151,7 +163,7 @@ mod tests {
 
     #[test]
     fn cached_workspace_stays_bounded() {
-        std::thread::spawn(|| {
+        thread::spawn(|| {
             compress(&vec![0xAB; REUSE_MAX_INPUT]).unwrap();
             let retained =
                 COMPRESSOR.with(|cell| cell.borrow_mut().as_mut().unwrap().context_mut().sizeof());

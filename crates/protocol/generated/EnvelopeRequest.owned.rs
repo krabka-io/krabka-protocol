@@ -50,28 +50,28 @@ impl Encode for EnvelopeRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.request_data);
+                put_compact_bytes(buf, &self.request_data)?;
             } else {
-                let () = put_bytes(buf, &self.request_data);
+                put_bytes(buf, &self.request_data)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.request_principal.as_deref());
+                put_compact_nullable_bytes(buf, self.request_principal.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.request_principal.as_deref());
+                put_nullable_bytes(buf, self.request_principal.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.client_host_address);
+                put_compact_bytes(buf, &self.client_host_address)?;
             } else {
-                let () = put_bytes(buf, &self.client_host_address);
+                put_bytes(buf, &self.client_host_address)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -167,15 +167,15 @@ impl EnvelopeRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "requestData".to_string(),
+        "requestData".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "requestPrincipal".to_string(),
+        "requestPrincipal".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "clientHostAddress".to_string(),
+        "clientHostAddress".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

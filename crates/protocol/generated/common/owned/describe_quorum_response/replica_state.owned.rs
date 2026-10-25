@@ -3,13 +3,16 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i32, get_i64, put_i32, put_i64},
+    primitives::{
+        fixed::{get_i32, get_i64, put_i32, put_i64},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplicaState {
     pub replica_id: i32,
-    pub replica_directory_id: crate::primitives::uuid::Uuid,
+    pub replica_directory_id: Uuid,
     pub log_end_offset: i64,
     pub last_fetch_timestamp: i64,
     pub last_caught_up_timestamp: i64,
@@ -19,7 +22,7 @@ impl Default for ReplicaState {
     fn default() -> Self {
         Self {
             replica_id: 0i32,
-            replica_directory_id: crate::primitives::uuid::Uuid::default(),
+            replica_directory_id: Uuid::default(),
             log_end_offset: 0i64,
             last_fetch_timestamp: -1i64,
             last_caught_up_timestamp: -1i64,
@@ -34,7 +37,7 @@ impl Encode for ReplicaState {
             put_i32(buf, self.replica_id);
         }
         if version >= 2 {
-            crate::primitives::uuid::put_uuid(buf, self.replica_directory_id);
+            put_uuid(buf, self.replica_directory_id);
         }
         if version >= 0 {
             put_i64(buf, self.log_end_offset);
@@ -47,7 +50,7 @@ impl Encode for ReplicaState {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -84,7 +87,7 @@ impl Decode<'_> for ReplicaState {
             out.replica_id = get_i32(buf)?;
         }
         if version >= 2 {
-            out.replica_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.replica_directory_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.log_end_offset = get_i64(buf)?;
@@ -110,7 +113,7 @@ impl ReplicaState {
             m.replica_id = 1i32;
         }
         if version >= 2 {
-            m.replica_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.replica_directory_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.log_end_offset = 1i64;

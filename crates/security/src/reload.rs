@@ -88,16 +88,22 @@ impl DynamicServerConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write, path::PathBuf};
+    use std::{
+        fs::{self, File},
+        io::Write,
+        path::{Path, PathBuf},
+    };
+
+    use rustls::crypto::ring::default_provider;
 
     use super::*;
     use crate::tls::ClientAuthMode;
 
     fn install_provider() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = default_provider().install_default();
     }
 
-    fn write_pair(dir: &std::path::Path, cert_pem: &str, key_pem: &str) -> (PathBuf, PathBuf) {
+    fn write_pair(dir: &Path, cert_pem: &str, key_pem: &str) -> (PathBuf, PathBuf) {
         let cp = dir.join("cert.pem");
         let kp = dir.join("key.pem");
         File::create(&cp)
@@ -134,8 +140,8 @@ mod tests {
         let snap_before = dynamic.current();
 
         // Overwrite the cert files with the alt fixture and reload.
-        std::fs::write(&cp, include_str!("../tests/fixtures/dev_cert_alt.pem")).unwrap();
-        std::fs::write(&kp, include_str!("../tests/fixtures/dev_key_alt.pem")).unwrap();
+        fs::write(&cp, include_str!("../tests/fixtures/dev_cert_alt.pem")).unwrap();
+        fs::write(&kp, include_str!("../tests/fixtures/dev_key_alt.pem")).unwrap();
         dynamic.reload_from(&cfg).expect("reload must succeed");
         let snap_after = dynamic.current();
 

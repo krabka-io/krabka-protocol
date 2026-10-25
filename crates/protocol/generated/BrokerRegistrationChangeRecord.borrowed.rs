@@ -3,7 +3,16 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
+    codegen_helpers::is_default,
+    owned::broker_registration_change_record,
+    primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
+        fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -20,19 +29,14 @@ pub struct BrokerRegistrationChangeRecord {
     pub broker_epoch: i64,
     pub fenced: i8,
     pub in_controlled_shutdown: i8,
-    pub log_dirs: Vec<crate::primitives::uuid::Uuid>,
-    pub cordoned_log_dirs: Option<Vec<crate::primitives::uuid::Uuid>>,
+    pub log_dirs: Vec<Uuid>,
+    pub cordoned_log_dirs: Option<Vec<Uuid>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl BrokerRegistrationChangeRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::broker_registration_change_record::BrokerRegistrationChangeRecord {
-        crate::owned::broker_registration_change_record::BrokerRegistrationChangeRecord {
+    pub fn to_owned(&self) -> broker_registration_change_record::BrokerRegistrationChangeRecord {
+        broker_registration_change_record::BrokerRegistrationChangeRecord {
             broker_id: (self.broker_id),
             broker_epoch: (self.broker_epoch),
             fenced: (self.fenced),
@@ -59,69 +63,63 @@ impl Encode for BrokerRegistrationChangeRecord {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.fenced)) {
+            if !(is_default(&self.fenced)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_i8(b, self.fenced);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
+            if version >= 1 && !(is_default(&self.in_controlled_shutdown)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_i8(b, self.in_controlled_shutdown);
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
-            if version >= 2 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 2 && !(is_default(&self.log_dirs)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.log_dirs).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.log_dirs).len(), flex);
                         let body: usize = (self.log_dirs).iter().map(|_| 16).sum();
                         prefix + body
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(b, (self.log_dirs).len(), flex);
+                            put_array_len(b, (self.log_dirs).len(), flex)?;
                             for it in &self.log_dirs {
-                                crate::primitives::uuid::put_uuid(b, *it);
+                                put_uuid(b, *it);
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(2, payload);
             }
             if version >= 3 && self.cordoned_log_dirs.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.cordoned_log_dirs).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.cordoned_log_dirs {
                                 for it in v {
-                                    crate::primitives::uuid::put_uuid(b, *it);
+                                    put_uuid(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(3, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -136,16 +134,15 @@ impl Encode for BrokerRegistrationChangeRecord {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.fenced)) {
+            if !(is_default(&self.fenced)) {
                 known_pairs.push((0, 1));
             }
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.in_controlled_shutdown)) {
+            if version >= 1 && !(is_default(&self.in_controlled_shutdown)) {
                 known_pairs.push((1, 1));
             }
-            if version >= 2 && !(crate::codegen_helpers::is_default(&self.log_dirs)) {
+            if version >= 2 && !(is_default(&self.log_dirs)) {
                 known_pairs.push((2, {
-                    let prefix =
-                        crate::primitives::array::array_len_prefix_len((self.log_dirs).len(), flex);
+                    let prefix = array_len_prefix_len((self.log_dirs).len(), flex);
                     let body: usize = (self.log_dirs).iter().map(|_| 16).sum();
                     prefix + body
                 }));
@@ -153,10 +150,7 @@ impl Encode for BrokerRegistrationChangeRecord {
             if version >= 3 && self.cordoned_log_dirs.is_some() {
                 known_pairs.push((3, {
                     let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                     prefix + body
                 }));
@@ -206,10 +200,10 @@ impl<'de> DecodeBorrow<'de> for BrokerRegistrationChangeRecord {
                     tag_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(crate::primitives::uuid::get_uuid(b)?);
+                                v.push(get_uuid(b)?);
                             }
                             v
                         }
@@ -221,13 +215,13 @@ impl<'de> DecodeBorrow<'de> for BrokerRegistrationChangeRecord {
                     tag_cordoned_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
                                     let mut v = Vec::with_capacity(n);
                                     for _ in 0..n {
-                                        v.push(crate::primitives::uuid::get_uuid(b)?);
+                                        v.push(get_uuid(b)?);
                                     }
                                     Some(v)
                                 }
@@ -273,10 +267,10 @@ impl BrokerRegistrationChangeRecord {
             m.in_controlled_shutdown = 1i8;
         }
         if version >= 2 {
-            m.log_dirs = vec![crate::primitives::uuid::Uuid([1u8; 16])];
+            m.log_dirs = vec![Uuid([1u8; 16])];
         }
         if version >= 3 {
-            m.cordoned_log_dirs = Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]);
+            m.cordoned_log_dirs = Some(vec![Uuid([1u8; 16])]);
         }
         m
     }

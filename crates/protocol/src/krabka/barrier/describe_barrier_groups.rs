@@ -5,6 +5,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -52,8 +54,8 @@ pub struct DescribeBarrierGroupsRequest {
 impl Encode for DescribeBarrierGroupsRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        encode_string_array(buf, &self.groups);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        encode_string_array(buf, &self.groups)?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -127,15 +129,15 @@ impl Default for DescribedBarrierGroup {
 
 impl Encode for DescribedBarrierGroup {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.group);
+        put_compact_string(buf, &self.group)?;
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
-        encode_string_array(buf, &self.topics);
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
+        encode_string_array(buf, &self.topics)?;
         put_i64(buf, self.interval_ms);
         put_i32(buf, self.retained_cuts);
         put_i64(buf, self.last_epoch);
         put_i32(buf, self.coordinator_id);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -185,7 +187,7 @@ impl Encode for DescribeBarrierGroupsResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         encode_array(buf, &self.groups, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -212,8 +214,8 @@ impl DescribeBarrierGroupsRequest {
     /// Builds a request with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            groups: vec!["orders".to_string(), "audit".to_string()],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            groups: vec!["orders".to_owned(), "audit".to_owned()],
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -226,20 +228,20 @@ impl DescribeBarrierGroupsResponse {
             throttle_time_ms: 5,
             groups: vec![
                 DescribedBarrierGroup {
-                    group: "orders".to_string(),
+                    group: "orders".to_owned(),
                     error_code: 0,
                     error_message: None,
-                    topics: vec!["orders".to_string(), "payments".to_string()],
+                    topics: vec!["orders".to_owned(), "payments".to_owned()],
                     interval_ms: 30_000,
                     retained_cuts: 64,
                     last_epoch: 12,
                     coordinator_id: 3,
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
                 DescribedBarrierGroup {
-                    group: "audit".to_string(),
+                    group: "audit".to_owned(),
                     error_code: 69,
-                    error_message: Some("barrier group not found".to_string()),
+                    error_message: Some("barrier group not found".to_owned()),
                     ..DescribedBarrierGroup::default()
                 },
             ],

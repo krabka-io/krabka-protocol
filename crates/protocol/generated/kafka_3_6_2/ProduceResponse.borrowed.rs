@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    kafka_3_6_2::owned::produce_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,12 +35,9 @@ pub struct ProduceResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ProduceResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::kafka_3_6_2::owned::produce_response::ProduceResponse {
-        crate::kafka_3_6_2::owned::produce_response::ProduceResponse {
+    pub fn to_owned(&self) -> produce_response::ProduceResponse {
+        produce_response::ProduceResponse {
             responses: (self.responses)
                 .iter()
                 .map(TopicProduceResponse::to_owned)
@@ -59,18 +58,18 @@ impl Encode for ProduceResponse<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i32(buf, self.throttle_time_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -79,8 +78,7 @@ impl Encode for ProduceResponse<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -110,7 +108,7 @@ impl<'de> DecodeBorrow<'de> for ProduceResponse<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicProduceResponse::decode_borrow(buf, version)?);
@@ -148,13 +146,10 @@ pub struct TopicProduceResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicProduceResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::kafka_3_6_2::owned::produce_response::TopicProduceResponse {
-        crate::kafka_3_6_2::owned::produce_response::TopicProduceResponse {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> produce_response::TopicProduceResponse {
+        produce_response::TopicProduceResponse {
+            name: (self.name).to_owned(),
             partition_responses: (self.partition_responses)
                 .iter()
                 .map(PartitionProduceResponse::to_owned)
@@ -168,26 +163,22 @@ impl Encode for TopicProduceResponse<'_> {
         let flex = version >= 9;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.partition_responses).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.partition_responses).len(), flex)?;
                 for it in &self.partition_responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -203,10 +194,7 @@ impl Encode for TopicProduceResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_responses).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_responses).len(), flex);
                 let body: usize = (self.partition_responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -234,7 +222,7 @@ impl<'de> DecodeBorrow<'de> for TopicProduceResponse<'de> {
         }
         if version >= 0 {
             out.partition_responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionProduceResponse::decode_borrow(buf, version)?);
@@ -288,14 +276,9 @@ impl Default for PartitionProduceResponse<'_> {
     }
 }
 impl PartitionProduceResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::kafka_3_6_2::owned::produce_response::PartitionProduceResponse {
-        crate::kafka_3_6_2::owned::produce_response::PartitionProduceResponse {
+    pub fn to_owned(&self) -> produce_response::PartitionProduceResponse {
+        produce_response::PartitionProduceResponse {
             index: (self.index),
             error_code: (self.error_code),
             base_offset: (self.base_offset),
@@ -305,7 +288,7 @@ impl PartitionProduceResponse<'_> {
                 .iter()
                 .map(BatchIndexAndErrorMessage::to_owned)
                 .collect(),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -330,22 +313,22 @@ impl Encode for PartitionProduceResponse<'_> {
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.record_errors).len(), flex);
+                put_array_len(buf, (self.record_errors).len(), flex)?;
                 for it in &self.record_errors {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 8 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -369,10 +352,7 @@ impl Encode for PartitionProduceResponse<'_> {
         }
         if version >= 8 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.record_errors).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.record_errors).len(), flex);
                 let body: usize = (self.record_errors)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -415,7 +395,7 @@ impl<'de> DecodeBorrow<'de> for PartitionProduceResponse<'de> {
         }
         if version >= 8 {
             out.record_errors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(BatchIndexAndErrorMessage::decode_borrow(buf, version)?);
@@ -472,17 +452,11 @@ pub struct BatchIndexAndErrorMessage<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl BatchIndexAndErrorMessage<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::kafka_3_6_2::owned::produce_response::BatchIndexAndErrorMessage {
-        crate::kafka_3_6_2::owned::produce_response::BatchIndexAndErrorMessage {
+    pub fn to_owned(&self) -> produce_response::BatchIndexAndErrorMessage {
+        produce_response::BatchIndexAndErrorMessage {
             batch_index: (self.batch_index),
-            batch_index_error_message: (self.batch_index_error_message)
-                .map(std::string::ToString::to_string),
+            batch_index_error_message: (self.batch_index_error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -495,14 +469,14 @@ impl Encode for BatchIndexAndErrorMessage<'_> {
         }
         if version >= 8 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.batch_index_error_message);
+                put_compact_nullable_string(buf, self.batch_index_error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.batch_index_error_message);
+                put_nullable_string(buf, self.batch_index_error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

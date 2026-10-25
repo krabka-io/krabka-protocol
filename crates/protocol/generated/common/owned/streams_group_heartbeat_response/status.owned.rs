@@ -26,14 +26,14 @@ impl Encode for Status {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.status_detail);
+                put_compact_string(buf, &self.status_detail)?;
             } else {
-                let () = put_string(buf, &self.status_detail);
+                put_string(buf, &self.status_detail)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,7 +86,7 @@ impl Status {
             m.status_code = 1i8;
         }
         if version >= 0 {
-            m.status_detail = "x".to_string();
+            m.status_detail = "x".to_owned();
         }
         m
     }

@@ -3,7 +3,11 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i16, get_i32, put_i16, put_i32},
+    owned::leader_change_message,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i16, get_i32, put_i16, put_i32},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -23,12 +27,9 @@ pub struct LeaderChangeMessage {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaderChangeMessage {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::leader_change_message::LeaderChangeMessage {
-        crate::owned::leader_change_message::LeaderChangeMessage {
+    pub fn to_owned(&self) -> leader_change_message::LeaderChangeMessage {
+        leader_change_message::LeaderChangeMessage {
             version: (self.version),
             leader_id: (self.leader_id),
             voters: (self.voters)
@@ -59,23 +60,23 @@ impl Encode for LeaderChangeMessage {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.voters).len(), flex);
+                put_array_len(buf, (self.voters).len(), flex)?;
                 for it in &self.voters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.granting_voters).len(), flex);
+                put_array_len(buf, (self.granting_voters).len(), flex)?;
                 for it in &self.granting_voters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -90,18 +91,14 @@ impl Encode for LeaderChangeMessage {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.voters).len(), flex);
+                let prefix = array_len_prefix_len((self.voters).len(), flex);
                 let body: usize = (self.voters).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.granting_voters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.granting_voters).len(), flex);
                 let body: usize = (self.granting_voters)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -133,7 +130,7 @@ impl<'de> DecodeBorrow<'de> for LeaderChangeMessage {
         }
         if version >= 0 {
             out.voters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(
@@ -147,7 +144,7 @@ impl<'de> DecodeBorrow<'de> for LeaderChangeMessage {
         }
         if version >= 0 {
             out.granting_voters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(

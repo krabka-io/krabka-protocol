@@ -28,10 +28,10 @@ where
     I: IntoIterator<Item = (&'a str, V)>,
     V: AsRef<[u8]>,
 {
-    headers
+    let value = headers
         .into_iter()
         .filter(|(key, _)| *key == HLC_HEADER)
         .map(|(_, value)| value)
-        .last()
-        .and_then(|value| Hlc::decode(value.as_ref()).ok())
+        .last()?;
+    Hlc::decode(value.as_ref()).ok()
 }

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for borrowed RequestHeader and ResponseHeader: the to_owned
 // conversion tests and specific-value roundtrips. Relocated from hand-written
 // wrappers.

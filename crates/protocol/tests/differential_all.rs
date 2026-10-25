@@ -14,6 +14,7 @@
 //!
 //! Each sweep collects all failures and reports them at the end, so a single
 //! run reveals every divergence and not only the first one.
+#![cfg(test)]
 
 mod support;
 use serde_json::json;
@@ -27,14 +28,13 @@ include!(concat!(
 #[test]
 #[ignore = "requires JVM oracle"]
 fn every_pair_byte_equal() {
-    let mut o = oracle::shared();
     let mut failures: Vec<String> = Vec::new();
     for case in CASES {
         if !oracle_supports(case.name, case.version) {
             continue;
         }
-        let rust_bytes = encode_default(case.name, case.version);
-        let jval = default_json_for(case.name, case.version);
+        let rust_bytes = encode_default(case.name, case.version).unwrap();
+        let jval = default_json_for(case.name, case.version).unwrap();
 
         let req = match case.kind {
             Kind::Request => json!({
@@ -67,7 +67,7 @@ fn every_pair_byte_equal() {
             }),
         };
 
-        let result = o.try_call(&req);
+        let result = oracle::shared().try_call(&req);
         match result {
             Err(e) => {
                 failures.push(format!(
@@ -96,22 +96,22 @@ fn every_pair_byte_equal() {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn every_tagged_field_byte_equal() {
-    let mut o = oracle::shared();
     let mut failures: Vec<String> = Vec::new();
     for case in TAGGED_CASES {
         if !oracle_supports(case.name, case.version) {
             continue;
         }
         let label = format!("{}[tagged] v{}", case.name, case.version);
-        let (owned, borrowed) = encode_tagged_fixture(case.name, case.version);
+        let (owned, borrowed) = encode_tagged_fixture(case.name, case.version).unwrap();
         let req = json!({
             "op": "encode",
             "messageName": case.name,
             "version": case.version,
             "isRequest": case.name.ends_with("Request"),
-            "value": tagged_fixture_json_for(case.name, case.version),
+            "value": tagged_fixture_json_for(case.name, case.version).unwrap(),
         });
-        match o.try_call(&req) {
+        let result = oracle::shared().try_call(&req);
+        match result {
             Err(e) => failures.push(format!("{label}: ORACLE_ERROR: {e}")),
             Ok(resp) => {
                 let jvm_bytes = hex::decode(resp["hex"].as_str().unwrap()).unwrap();

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_client_quotas_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_f64, put_bool, put_f64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -34,12 +36,9 @@ pub struct AlterClientQuotasRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterClientQuotasRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_client_quotas_request::AlterClientQuotasRequest {
-        crate::owned::alter_client_quotas_request::AlterClientQuotasRequest {
+    pub fn to_owned(&self) -> alter_client_quotas_request::AlterClientQuotasRequest {
+        alter_client_quotas_request::AlterClientQuotasRequest {
             entries: (self.entries).iter().map(EntryData::to_owned).collect(),
             validate_only: (self.validate_only),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -57,18 +56,18 @@ impl Encode for AlterClientQuotasRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.entries).len(), flex);
+                put_array_len(buf, (self.entries).len(), flex)?;
                 for it in &self.entries {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.validate_only);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -77,8 +76,7 @@ impl Encode for AlterClientQuotasRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.entries).len(), flex);
+                let prefix = array_len_prefix_len((self.entries).len(), flex);
                 let body: usize = (self.entries)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -108,7 +106,7 @@ impl<'de> DecodeBorrow<'de> for AlterClientQuotasRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.entries = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(EntryData::decode_borrow(buf, version)?);
@@ -146,12 +144,9 @@ pub struct EntryData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EntryData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_client_quotas_request::EntryData {
-        crate::owned::alter_client_quotas_request::EntryData {
+    pub fn to_owned(&self) -> alter_client_quotas_request::EntryData {
+        alter_client_quotas_request::EntryData {
             entity: (self.entity).iter().map(EntityData::to_owned).collect(),
             ops: (self.ops).iter().map(OpData::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -163,23 +158,23 @@ impl Encode for EntryData<'_> {
         let flex = version >= 1;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.entity).len(), flex);
+                put_array_len(buf, (self.entity).len(), flex)?;
                 for it in &self.entity {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.ops).len(), flex);
+                put_array_len(buf, (self.ops).len(), flex)?;
                 for it in &self.ops {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -188,15 +183,14 @@ impl Encode for EntryData<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.entity).len(), flex);
+                let prefix = array_len_prefix_len((self.entity).len(), flex);
                 let body: usize = (self.entity).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len((self.ops).len(), flex);
+                let prefix = array_len_prefix_len((self.ops).len(), flex);
                 let body: usize = (self.ops).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -214,7 +208,7 @@ impl<'de> DecodeBorrow<'de> for EntryData<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.entity = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(EntityData::decode_borrow(buf, version)?);
@@ -224,7 +218,7 @@ impl<'de> DecodeBorrow<'de> for EntryData<'de> {
         }
         if version >= 0 {
             out.ops = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OpData::decode_borrow(buf, version)?);
@@ -268,14 +262,11 @@ impl Default for EntityData<'_> {
     }
 }
 impl EntityData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_client_quotas_request::EntityData {
-        crate::owned::alter_client_quotas_request::EntityData {
-            entity_type: (self.entity_type).to_string(),
-            entity_name: (self.entity_name).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> alter_client_quotas_request::EntityData {
+        alter_client_quotas_request::EntityData {
+            entity_type: (self.entity_type).to_owned(),
+            entity_name: (self.entity_name).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -285,21 +276,21 @@ impl Encode for EntityData<'_> {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.entity_type);
+                put_compact_string(buf, self.entity_type)?;
             } else {
-                let () = put_string(buf, self.entity_type);
+                put_string(buf, self.entity_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.entity_name);
+                put_compact_nullable_string(buf, self.entity_name)?;
             } else {
-                let () = put_nullable_string(buf, self.entity_name);
+                put_nullable_string(buf, self.entity_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -383,13 +374,10 @@ impl Default for OpData<'_> {
     }
 }
 impl OpData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_client_quotas_request::OpData {
-        crate::owned::alter_client_quotas_request::OpData {
-            key: (self.key).to_string(),
+    pub fn to_owned(&self) -> alter_client_quotas_request::OpData {
+        alter_client_quotas_request::OpData {
+            key: (self.key).to_owned(),
             value: (self.value),
             remove: (self.remove),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -401,9 +389,9 @@ impl Encode for OpData<'_> {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.key);
+                put_compact_string(buf, self.key)?;
             } else {
-                let () = put_string(buf, self.key);
+                put_string(buf, self.key)?;
             }
         }
         if version >= 0 {
@@ -414,7 +402,7 @@ impl Encode for OpData<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

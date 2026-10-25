@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_replica_log_dirs_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,14 +28,9 @@ pub struct AlterReplicaLogDirsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDirsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDirsRequest {
-        crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDirsRequest {
+    pub fn to_owned(&self) -> alter_replica_log_dirs_request::AlterReplicaLogDirsRequest {
+        alter_replica_log_dirs_request::AlterReplicaLogDirsRequest {
             dirs: (self.dirs)
                 .iter()
                 .map(AlterReplicaLogDir::to_owned)
@@ -53,15 +50,15 @@ impl Encode for AlterReplicaLogDirsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.dirs).len(), flex);
+                put_array_len(buf, (self.dirs).len(), flex)?;
                 for it in &self.dirs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -70,8 +67,7 @@ impl Encode for AlterReplicaLogDirsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.dirs).len(), flex);
+                let prefix = array_len_prefix_len((self.dirs).len(), flex);
                 let body: usize = (self.dirs).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -95,7 +91,7 @@ impl<'de> DecodeBorrow<'de> for AlterReplicaLogDirsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.dirs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterReplicaLogDir::decode_borrow(buf, version)?);
@@ -127,13 +123,10 @@ pub struct AlterReplicaLogDir<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDir<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDir {
-        crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDir {
-            path: (self.path).to_string(),
+    pub fn to_owned(&self) -> alter_replica_log_dirs_request::AlterReplicaLogDir {
+        alter_replica_log_dirs_request::AlterReplicaLogDir {
+            path: (self.path).to_owned(),
             topics: (self.topics)
                 .iter()
                 .map(AlterReplicaLogDirTopic::to_owned)
@@ -147,22 +140,22 @@ impl Encode for AlterReplicaLogDir<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.path);
+                put_compact_string(buf, self.path)?;
             } else {
-                let () = put_string(buf, self.path);
+                put_string(buf, self.path)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -178,8 +171,7 @@ impl Encode for AlterReplicaLogDir<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -204,7 +196,7 @@ impl<'de> DecodeBorrow<'de> for AlterReplicaLogDir<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterReplicaLogDirTopic::decode_borrow(buf, version)?);
@@ -239,15 +231,10 @@ pub struct AlterReplicaLogDirTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDirTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDirTopic {
-        crate::owned::alter_replica_log_dirs_request::AlterReplicaLogDirTopic {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> alter_replica_log_dirs_request::AlterReplicaLogDirTopic {
+        alter_replica_log_dirs_request::AlterReplicaLogDirTopic {
+            name: (self.name).to_owned(),
             partitions: (self.partitions).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -258,22 +245,22 @@ impl Encode for AlterReplicaLogDirTopic<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -289,8 +276,7 @@ impl Encode for AlterReplicaLogDirTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -315,7 +301,7 @@ impl<'de> DecodeBorrow<'de> for AlterReplicaLogDirTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

@@ -9,6 +9,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -79,12 +81,12 @@ impl Default for AlterableBarrierGroup {
 
 impl Encode for AlterableBarrierGroup {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.group);
-        encode_string_array(buf, &self.topics);
+        put_compact_string(buf, &self.group)?;
+        encode_string_array(buf, &self.topics)?;
         put_i64(buf, self.interval_ms);
         put_i32(buf, self.retained_cuts);
         put_bool(buf, self.delete);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -124,7 +126,7 @@ impl Encode for AlterBarrierGroupsRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         encode_array(buf, &self.groups, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -169,10 +171,10 @@ pub struct AlterBarrierGroupResult {
 
 impl Encode for AlterBarrierGroupResult {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.group);
+        put_compact_string(buf, &self.group)?;
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -211,7 +213,7 @@ impl Encode for AlterBarrierGroupsResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         encode_array(buf, &self.results, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -240,15 +242,15 @@ impl AlterBarrierGroupsRequest {
         Self {
             groups: vec![
                 AlterableBarrierGroup {
-                    group: "orders".to_string(),
-                    topics: vec!["orders".to_string(), "payments".to_string()],
+                    group: "orders".to_owned(),
+                    topics: vec!["orders".to_owned(), "payments".to_owned()],
                     interval_ms: 60_000,
                     retained_cuts: 32,
                     delete: false,
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
                 AlterableBarrierGroup {
-                    group: "retired".to_string(),
+                    group: "retired".to_owned(),
                     topics: Vec::new(),
                     interval_ms: -1,
                     retained_cuts: 0,
@@ -256,7 +258,7 @@ impl AlterBarrierGroupsRequest {
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
             ],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -269,16 +271,16 @@ impl AlterBarrierGroupsResponse {
             throttle_time_ms: 17,
             results: vec![
                 AlterBarrierGroupResult {
-                    group: "orders".to_string(),
+                    group: "orders".to_owned(),
                     error_code: 0,
                     error_message: None,
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
                 AlterBarrierGroupResult {
-                    group: "retired".to_string(),
+                    group: "retired".to_owned(),
                     error_code: 69,
-                    error_message: Some("barrier group not found".to_string()),
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    error_message: Some("barrier group not found".to_owned()),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
             ],
             unknown_tagged_fields: UnknownTaggedFields::default(),

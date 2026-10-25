@@ -20,6 +20,8 @@
 use bytes::{Buf, BufMut};
 
 use super::PATTERN_TYPE_LITERAL;
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -108,15 +110,15 @@ impl Default for SetTopicFreezeRequest {
 impl Encode for SetTopicFreezeRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        put_compact_string(buf, &self.scope);
+        put_compact_string(buf, &self.scope)?;
         put_i8(buf, self.pattern_type);
         put_bool(buf, self.frozen);
-        put_compact_string(buf, &self.reason);
+        put_compact_string(buf, &self.reason)?;
         put_uuid(buf, self.proposal_id);
         put_i64(buf, self.set_at_ms);
-        put_compact_string(buf, &self.key_id);
-        put_compact_bytes(buf, &self.signature);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        put_compact_string(buf, &self.key_id)?;
+        put_compact_bytes(buf, &self.signature)?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -179,8 +181,8 @@ impl Encode for SetTopicFreezeResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -209,15 +211,15 @@ impl SetTopicFreezeRequest {
     /// Builds a signed freeze with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            scope: "orders".to_string(),
+            scope: "orders".to_owned(),
             pattern_type: PATTERN_TYPE_LITERAL,
             frozen: true,
-            reason: "DR cutover".to_string(),
+            reason: "DR cutover".to_owned(),
             proposal_id: Uuid::ZERO,
             set_at_ms: 1_770_000_000_000,
-            key_id: "alice-yubi".to_string(),
+            key_id: "alice-yubi".to_owned(),
             signature: (0..64).collect(),
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -229,8 +231,8 @@ impl SetTopicFreezeResponse {
         Self {
             throttle_time_ms: 21,
             error_code: 1011,
-            error_message: Some("freeze scope names an internal topic".to_string()),
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            error_message: Some("freeze scope names an internal topic".to_owned()),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -253,9 +255,9 @@ mod tests {
             (
                 "unsigned prefixed freeze",
                 SetTopicFreezeRequest {
-                    scope: "tenant-a.".to_string(),
+                    scope: "tenant-a.".to_owned(),
                     pattern_type: PATTERN_TYPE_PREFIXED,
-                    reason: "tenant offboarding".to_string(),
+                    reason: "tenant offboarding".to_owned(),
                     ..SetTopicFreezeRequest::default()
                 },
             ),

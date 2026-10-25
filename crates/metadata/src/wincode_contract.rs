@@ -441,7 +441,7 @@ fn partition_and_kfc_rows() -> Vec<(MetadataRecord, &'static str)> {
 }
 
 /// Lower-case hex of `bytes`, so a fixture mismatch reads as a diff.
-pub(crate) fn hex(bytes: &[u8]) -> String {
+pub fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     bytes
         .iter()
@@ -451,10 +451,13 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 /// The bytes of a hex fixture.
-pub(crate) fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+pub fn unhex(s: &str) -> Vec<u8> {
+    s.as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let pair = <[u8; 2]>::try_from(pair).unwrap();
+            u8::from_str_radix(str::from_utf8(&pair).unwrap(), 16).unwrap()
+        })
         .collect()
 }
 

@@ -6,8 +6,8 @@ pub mod frame;
 
 use std::{
     io::{self, Read, Write},
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-    sync::{Arc, Mutex},
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
+    sync::{Arc, Mutex, PoisonError},
     thread,
 };
 
@@ -22,21 +22,25 @@ pub type Recorder = Arc<dyn Fn(CapturedFrame) + Send + Sync>;
 /// The function returns the bound local address, which is useful when the
 /// caller passes port 0. The accept loop runs on a background thread for the
 /// lifetime of the process.
+///
+/// # Errors
+///
+/// If `listen` cannot be bound, or the bound listener has no local address.
 pub fn spawn(
     listen: impl ToSocketAddrs,
     upstream: &str,
     recorder: Recorder,
-) -> io::Result<std::net::SocketAddr> {
+) -> io::Result<SocketAddr> {
     let listener = TcpListener::bind(listen)?;
     let addr = listener.local_addr()?;
-    let upstream = upstream.to_string();
+    let upstream = upstream.to_owned();
     thread::spawn(move || {
         for client in listener.incoming() {
             let Ok(client) = client else { continue };
             let upstream = upstream.clone();
-            let recorder = recorder.clone();
+            let recorder = Arc::clone(&recorder);
             thread::spawn(move || {
-                if let Err(e) = handle_conn(client, &upstream, recorder) {
+                if let Err(e) = handle_conn(client, &upstream, &recorder) {
                     eprintln!("tap conn error: {e}");
                 }
             });
@@ -45,19 +49,19 @@ pub fn spawn(
     Ok(addr)
 }
 
-fn handle_conn(client: TcpStream, upstream: &str, recorder: Recorder) -> io::Result<()> {
+fn handle_conn(client: TcpStream, upstream: &str, recorder: &Recorder) -> io::Result<()> {
     let server = TcpStream::connect(upstream)?;
     let pending = Arc::new(Mutex::new(Pending::default()));
 
     let c2s_client = client.try_clone()?;
     let c2s_server = server.try_clone()?;
-    let pend_req = pending.clone();
-    let rec_req = recorder.clone();
+    let pend_req = Arc::clone(&pending);
+    let rec_req = Arc::clone(recorder);
     let t = thread::spawn(move || {
-        let _ = pump(c2s_client, c2s_server, true, pend_req, rec_req);
+        let _ = pump(c2s_client, c2s_server, true, &pend_req, &*rec_req);
     });
 
-    pump(server, client, false, pending, recorder)?;
+    pump(server, client, false, &pending, &**recorder)?;
     let _ = t.join();
     Ok(())
 }
@@ -76,8 +80,8 @@ fn pump(
     mut src: TcpStream,
     mut dst: TcpStream,
     is_request: bool,
-    pending: Arc<Mutex<Pending>>,
-    recorder: Recorder,
+    pending: &Mutex<Pending>,
+    recorder: &(dyn Fn(CapturedFrame) + Send + Sync),
 ) -> io::Result<()> {
     loop {
         let mut len_buf = [0u8; 4];
@@ -87,18 +91,18 @@ fn pump(
             }
             return Err(e);
         }
-        let n = i32::from_be_bytes(len_buf);
-        if n < 0 {
+        // A negative length ends the relay.
+        let Ok(n) = usize::try_from(i32::from_be_bytes(len_buf)) else {
             return Ok(());
-        }
-        let mut body = vec![0u8; n as usize];
+        };
+        let mut body = vec![0u8; n];
         src.read_exact(&mut body)?;
 
         if is_request {
             if let Some(p) = parse_request_prefix(&body) {
                 pending
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(PoisonError::into_inner)
                     .record(p.correlation_id, p.api_key, p.api_version);
                 recorder(CapturedFrame {
                     api_key: p.api_key,
@@ -107,15 +111,19 @@ fn pump(
                     body: body.clone(),
                 });
             }
-        } else if let Some(corr) = read_correlation_id(&body)
-            && let Some((api_key, version)) = pending.lock().unwrap().take(corr)
-        {
-            recorder(CapturedFrame {
-                api_key,
-                version,
-                is_request: false,
-                body: body.clone(),
-            });
+        } else if let Some(corr) = read_correlation_id(&body) {
+            let request = pending
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(corr);
+            if let Some((api_key, version)) = request {
+                recorder(CapturedFrame {
+                    api_key,
+                    version,
+                    is_request: false,
+                    body: body.clone(),
+                });
+            }
         }
 
         dst.write_all(&len_buf)?;
@@ -126,7 +134,7 @@ fn pump(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use krabka_ids::{ApiKey, ApiVersion};
 
@@ -138,7 +146,7 @@ mod tests {
         out
     }
 
-    /// A request frame: api_key, api_version, correlation_id, then payload.
+    /// A request frame: `api_key`, `api_version`, `correlation_id`, then payload.
     fn request(api_key: i16, version: i16, corr: i32) -> Vec<u8> {
         let mut b = api_key.to_be_bytes().to_vec();
         b.extend_from_slice(&version.to_be_bytes());
@@ -147,7 +155,7 @@ mod tests {
     }
 
     /// An upstream that reads one frame and answers with `response`.
-    fn upstream_echoing(response: Vec<u8>) -> io::Result<std::net::SocketAddr> {
+    fn upstream_echoing(response: Vec<u8>) -> io::Result<SocketAddr> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let addr = listener.local_addr()?;
         thread::spawn(move || {
@@ -158,7 +166,8 @@ mod tests {
             if server.read_exact(&mut len).is_err() {
                 return;
             }
-            let mut body = vec![0u8; i32::from_be_bytes(len) as usize];
+            // The client in these tests only sends non-negative lengths.
+            let mut body = vec![0u8; usize::try_from(i32::from_be_bytes(len)).unwrap()];
             if server.read_exact(&mut body).is_err() {
                 return;
             }
@@ -200,7 +209,7 @@ mod tests {
 
         let mut len = [0u8; 4];
         client.read_exact(&mut len).unwrap();
-        let mut body = vec![0u8; i32::from_be_bytes(len) as usize];
+        let mut body = vec![0u8; usize::try_from(i32::from_be_bytes(len)).unwrap()];
         client.read_exact(&mut body).unwrap();
 
         // Forwarded byte-for-byte.
@@ -248,7 +257,7 @@ mod tests {
                     return;
                 }
                 let n = i32::from_be_bytes(len);
-                let mut body = vec![0u8; n as usize];
+                let mut body = vec![0u8; usize::try_from(n).unwrap()];
                 if server.read_exact(&mut body).is_err() {
                     return;
                 }
@@ -262,8 +271,8 @@ mod tests {
         client.write_all(&framed(&request(18, 3, 7))).unwrap();
         client.flush().unwrap();
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while got.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while got.lock().unwrap().len() < 2 && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
         }
         assert2::check!(*got.lock().unwrap() == vec![0, 8]);
@@ -282,13 +291,12 @@ mod tests {
         // Close the writing end, so the pump's first read hits end of stream.
         drop(client);
 
-        let sink: Recorder = Arc::new(|_| {});
         let result = pump(
             server.try_clone().unwrap(),
             server,
             true,
-            Arc::new(Mutex::new(Pending::default())),
-            sink,
+            &Mutex::new(Pending::default()),
+            &drop::<CapturedFrame>,
         );
         assert2::check!(result.is_ok());
     }

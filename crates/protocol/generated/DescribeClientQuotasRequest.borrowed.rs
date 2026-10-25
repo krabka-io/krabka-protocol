@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_client_quotas_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -34,14 +36,9 @@ pub struct DescribeClientQuotasRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeClientQuotasRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::describe_client_quotas_request::DescribeClientQuotasRequest {
-        crate::owned::describe_client_quotas_request::DescribeClientQuotasRequest {
+    pub fn to_owned(&self) -> describe_client_quotas_request::DescribeClientQuotasRequest {
+        describe_client_quotas_request::DescribeClientQuotasRequest {
             components: (self.components)
                 .iter()
                 .map(ComponentData::to_owned)
@@ -62,18 +59,18 @@ impl Encode for DescribeClientQuotasRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.components).len(), flex);
+                put_array_len(buf, (self.components).len(), flex)?;
                 for it in &self.components {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.strict);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,8 +79,7 @@ impl Encode for DescribeClientQuotasRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.components).len(), flex);
+                let prefix = array_len_prefix_len((self.components).len(), flex);
                 let body: usize = (self.components)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +109,7 @@ impl<'de> DecodeBorrow<'de> for DescribeClientQuotasRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.components = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ComponentData::decode_borrow(buf, version)?);
@@ -162,15 +158,12 @@ impl Default for ComponentData<'_> {
     }
 }
 impl ComponentData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_client_quotas_request::ComponentData {
-        crate::owned::describe_client_quotas_request::ComponentData {
-            entity_type: (self.entity_type).to_string(),
+    pub fn to_owned(&self) -> describe_client_quotas_request::ComponentData {
+        describe_client_quotas_request::ComponentData {
+            entity_type: (self.entity_type).to_owned(),
             match_type: (self.match_type),
-            match_: (self.match_).map(std::string::ToString::to_string),
+            match_: (self.match_).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -180,9 +173,9 @@ impl Encode for ComponentData<'_> {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.entity_type);
+                put_compact_string(buf, self.entity_type)?;
             } else {
-                let () = put_string(buf, self.entity_type);
+                put_string(buf, self.entity_type)?;
             }
         }
         if version >= 0 {
@@ -190,14 +183,14 @@ impl Encode for ComponentData<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.match_);
+                put_compact_nullable_string(buf, self.match_)?;
             } else {
-                let () = put_nullable_string(buf, self.match_);
+                put_nullable_string(buf, self.match_)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

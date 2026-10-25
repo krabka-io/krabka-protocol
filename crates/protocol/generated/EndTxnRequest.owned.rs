@@ -42,9 +42,9 @@ impl Encode for EndTxnRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.transactional_id);
+                put_compact_string(buf, &self.transactional_id)?;
             } else {
-                let () = put_string(buf, &self.transactional_id);
+                put_string(buf, &self.transactional_id)?;
             }
         }
         if version >= 0 {
@@ -58,7 +58,7 @@ impl Encode for EndTxnRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -126,7 +126,7 @@ impl EndTxnRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.transactional_id = "x".to_string();
+            m.transactional_id = "x".to_owned();
         }
         if version >= 0 {
             m.producer_id = 1i64;
@@ -147,12 +147,12 @@ impl EndTxnRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "transactionalId".to_string(),
+        "transactionalId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("producerId".to_string(), ::serde_json::json!(0));
-    obj.insert("producerEpoch".to_string(), ::serde_json::json!(0));
-    obj.insert("committed".to_string(), ::serde_json::Value::Bool(false));
+    obj.insert("producerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("producerEpoch".to_owned(), ::serde_json::json!(0));
+    obj.insert("committed".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for EndTxnRequest {

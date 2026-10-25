@@ -5,7 +5,7 @@
 mod acl_index;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Bound,
 };
 
@@ -17,15 +17,20 @@ use self::acl_index::AclIndex;
 use crate::{
     acl::{AclEntry, PatternType, ResourceType},
     break_glass::{BreakGlassApproval, BreakGlassProposalRecord},
+    directory_id::MIGRATING,
     error::MetadataError,
+    metadata_version,
     records::{
-        BrokerConfigRecord, BrokerRegistrationRecord, ClientMetricsConfigRecord, ClientQuotaRecord,
-        ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord,
-        FeatureLevelRecord, FeaturesEpochRecord, GroupConfigRecord, KRaftVersionRecord,
-        LeaderRecoveryState, MetadataRecord, NodeId, PartitionElrRecord,
+        BrokerConfigRecord, BrokerRegistrationChangeRecord, BrokerRegistrationRecord,
+        ClientMetricsConfigRecord, ClientQuotaRecord, ControllerRegistrationRecord,
+        DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord, FeatureLevelRecord,
+        FeaturesEpochRecord, GroupConfigRecord, KRaftVersionRecord, LeaderRecoveryState,
+        MetadataRecord, NodeId, PartitionDirAssignmentRecord, PartitionElrRecord,
         PartitionOffsetAdvanceRecord, PartitionRecord, PartitionRecoveryRecord, ProducerIdsRecord,
-        QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, VotersRecord,
+        QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord,
+        VotersRecord,
     },
+    voters::VoterSet,
     write_freeze::TopicFreezeRecord,
 };
 
@@ -172,7 +177,7 @@ pub struct MetadataImage {
     producer_ids: Option<ProducerIdsRecord>,
     delegation_tokens: HashMap<String, DelegationToken>,
     kraft_version: u16,
-    voters: crate::voters::VoterSet,
+    voters: VoterSet,
     feature_levels: BTreeMap<String, i16>,
     /// KIP-584 finalized-features epoch. It is `-1` until the first
     /// `V1FeatureLevel` record applies, and it then increases monotonically,
@@ -187,7 +192,7 @@ pub struct MetadataImage {
 /// approver may add its own entry to the list it read, and may do nothing
 /// else to that list.
 fn extends(stored: &[BreakGlassApproval], candidate: &[BreakGlassApproval]) -> bool {
-    candidate.len() >= stored.len() && candidate[..stored.len()] == *stored
+    candidate.starts_with(stored)
 }
 
 /// Selects which broker byte-rate config key to read.
@@ -224,7 +229,7 @@ impl MetadataImage {
             producer_ids: None,
             delegation_tokens: HashMap::new(),
             kraft_version: 0,
-            voters: crate::voters::VoterSet::default(),
+            voters: VoterSet::default(),
             feature_levels: BTreeMap::new(),
             features_epoch: -1,
         }
@@ -417,7 +422,7 @@ impl MetadataImage {
         user: &str,
         mechanism: SaslMechanism,
     ) -> Option<&ScramCredential> {
-        self.scram_credentials.get(&(user.to_string(), mechanism))
+        self.scram_credentials.get(&(user.to_owned(), mechanism))
     }
 
     /// All distinct users with at least one SCRAM credential. Order is
@@ -427,7 +432,7 @@ impl MetadataImage {
         self.scram_credentials
             .keys()
             .map(|(u, _)| u.clone())
-            .collect::<std::collections::HashSet<_>>()
+            .collect::<HashSet<_>>()
             .into_iter()
             .collect()
     }
@@ -480,7 +485,7 @@ impl MetadataImage {
     }
 
     #[must_use]
-    pub fn voters(&self) -> &crate::voters::VoterSet {
+    pub fn voters(&self) -> &VoterSet {
         &self.voters
     }
 
@@ -639,7 +644,7 @@ impl MetadataImage {
     #[must_use]
     pub fn finalized_metadata_version(&self) -> Option<i16> {
         self.feature_levels
-            .get(crate::metadata_version::METADATA_VERSION_FEATURE)
+            .get(metadata_version::METADATA_VERSION_FEATURE)
             .copied()
     }
 
@@ -687,7 +692,7 @@ impl MetadataImage {
         };
 
         let mut records = Vec::new();
-        if target < crate::metadata_version::CIDR_ACL_MIN_LEVEL {
+        if target < metadata_version::CIDR_ACL_MIN_LEVEL {
             let mut cidr_acls: Vec<&AclEntry> = self
                 .all_acls()
                 .filter(|acl| is_cidr_acl_host(&acl.host))
@@ -731,7 +736,7 @@ impl MetadataImage {
             if target < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
                 projected.log_dirs.clear();
             }
-            if target < crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+            if target < metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
                 projected.cordoned_log_dirs = None;
             }
             (projected != *broker).then_some(MetadataRecord::V1BrokerRegistration(projected))
@@ -745,16 +750,14 @@ impl MetadataImage {
                         .replicas
                         .iter()
                         .zip(&partition.directories)
-                        .filter(|(_, directory)| **directory != crate::directory_id::MIGRATING)
+                        .filter(|(_, directory)| **directory != MIGRATING)
                         .map(|(replica, _)| {
-                            MetadataRecord::V1PartitionDirAssignment(
-                                crate::records::PartitionDirAssignmentRecord {
-                                    topic: partition.topic.clone(),
-                                    partition: partition.partition,
-                                    replica: *replica,
-                                    directory: crate::directory_id::MIGRATING,
-                                },
-                            )
+                            MetadataRecord::V1PartitionDirAssignment(PartitionDirAssignmentRecord {
+                                topic: partition.topic.clone(),
+                                partition: partition.partition,
+                                replica: *replica,
+                                directory: MIGRATING,
+                            })
                         }),
                 );
             }
@@ -946,10 +949,11 @@ impl MetadataImage {
                     // An empty list is every replica `MIGRATING`, as Kafka's
                     // `PartitionRegistration.defaultToMigrating` reads it.
                     if pr.directories.len() < pr.replicas.len() {
-                        pr.directories
-                            .resize(pr.replicas.len(), crate::directory_id::MIGRATING);
+                        pr.directories.resize(pr.replicas.len(), MIGRATING);
                     }
-                    pr.directories[slot] = r.directory;
+                    if let Some(directory) = pr.directories.get_mut(slot) {
+                        *directory = r.directory;
+                    }
                 }
             }
             // Diskless offset delta: bump the partition's committed next-offset.
@@ -983,10 +987,7 @@ impl MetadataImage {
     /// Kafka's `ClusterControlManager.replayRegistrationChange` applies the
     /// change only to the registration at the record's epoch. An unknown
     /// broker or another epoch is a no-op.
-    fn apply_registration_change(
-        &mut self,
-        change: &crate::records::BrokerRegistrationChangeRecord,
-    ) {
+    fn apply_registration_change(&mut self, change: &BrokerRegistrationChangeRecord) {
         if let Some(broker) = self.brokers.get_mut(&change.node_id)
             && broker.broker_epoch == change.broker_epoch
         {
@@ -997,7 +998,7 @@ impl MetadataImage {
     /// Kafka's `ClusterControlManager.replay(UnregisterBrokerRecord)` removes
     /// only the registration at the record's epoch. An unknown broker or
     /// another epoch is a no-op.
-    fn apply_unregister_broker(&mut self, rec: &crate::records::UnregisterBrokerRecord) {
+    fn apply_unregister_broker(&mut self, rec: &UnregisterBrokerRecord) {
         if self.broker_epoch(rec.node_id) == Some(rec.broker_epoch) {
             self.brokers.remove(&rec.node_id);
         }
@@ -1590,14 +1591,12 @@ mod tests {
     #[test]
     fn group_config_and_controller_readers_report_applied_records() {
         let mut image = MetadataImage::new(Uuid::nil());
-        image.apply(&MetadataRecord::V1GroupConfig(
-            crate::records::GroupConfigRecord {
-                group_id: "streams-app".into(),
-                configs: BTreeMap::from([("streams.num.standby.replicas".into(), "1".into())]),
-            },
-        ));
+        image.apply(&MetadataRecord::V1GroupConfig(GroupConfigRecord {
+            group_id: "streams-app".into(),
+            configs: BTreeMap::from([("streams.num.standby.replicas".into(), "1".into())]),
+        }));
         image.apply(&MetadataRecord::V1ControllerRegistration(
-            crate::records::ControllerRegistrationRecord {
+            ControllerRegistrationRecord {
                 node_id: NodeId(3),
                 incarnation_id: Uuid::from_u128(7),
                 zk_migration_ready: false,
@@ -1613,8 +1612,8 @@ mod tests {
         check!(
             groups
                 == vec![(
-                    "streams-app".to_string(),
-                    BTreeMap::from([("streams.num.standby.replicas".to_string(), "1".to_string())])
+                    "streams-app".to_owned(),
+                    BTreeMap::from([("streams.num.standby.replicas".to_owned(), "1".to_owned())])
                 )]
         );
 
@@ -1766,7 +1765,7 @@ mod tests {
         let mut image = MetadataImage::new(Uuid::nil());
         for topic in ["orders", "payments"] {
             image.apply(&MetadataRecord::V1PartitionOffsetAdvance(
-                crate::records::PartitionOffsetAdvanceRecord {
+                PartitionOffsetAdvanceRecord {
                     topic: topic.into(),
                     partition: 0,
                     count: 5,
@@ -1780,11 +1779,9 @@ mod tests {
             ) == (Some(5), Some(5))
         );
 
-        image.apply(&MetadataRecord::V1DeleteTopic(
-            crate::records::DeleteTopicRecord {
-                name: "orders".into(),
-            },
-        ));
+        image.apply(&MetadataRecord::V1DeleteTopic(DeleteTopicRecord {
+            name: "orders".into(),
+        }));
         check!(
             (
                 image.partition_next_offset("orders", 0),
@@ -1955,7 +1952,7 @@ mod tests {
     }
 
     fn broker_at(node_id: NodeId, epoch: i64) -> MetadataRecord {
-        MetadataRecord::V1BrokerRegistration(crate::records::BrokerRegistrationRecord {
+        MetadataRecord::V1BrokerRegistration(BrokerRegistrationRecord {
             node_id,
             broker_epoch: epoch,
             incarnation_id: Uuid::nil(),
@@ -1980,16 +1977,14 @@ mod tests {
     fn producer_id_allocation_must_advance_and_carry_the_live_epoch() {
         let mut image = MetadataImage::new(Uuid::nil());
         image.apply(&broker_at(NodeId(1), 11));
-        image.apply(&MetadataRecord::V1ProducerIds(
-            crate::records::ProducerIdsRecord {
-                broker_id: NodeId(1),
-                broker_epoch: 11,
-                next_producer_id: 1000,
-            },
-        ));
+        image.apply(&MetadataRecord::V1ProducerIds(ProducerIdsRecord {
+            broker_id: NodeId(1),
+            broker_epoch: 11,
+            next_producer_id: 1000,
+        }));
 
         let allocation = |next: i64, epoch: i64| {
-            MetadataRecord::V1ProducerIds(crate::records::ProducerIdsRecord {
+            MetadataRecord::V1ProducerIds(ProducerIdsRecord {
                 broker_id: NodeId(1),
                 broker_epoch: epoch,
                 next_producer_id: next,
@@ -2013,19 +2008,17 @@ mod tests {
         let mut image = MetadataImage::new(Uuid::nil());
         image.apply(&broker_at(NodeId(1), 11));
         image.apply(&broker_at(NodeId(2), 22));
-        let original = crate::records::ProducerIdsRecord {
+        let original = ProducerIdsRecord {
             broker_id: NodeId(1),
             broker_epoch: 11,
             next_producer_id: 1000,
         };
         image.apply(&MetadataRecord::V1ProducerIds(original));
-        image.apply(&MetadataRecord::V1ProducerIds(
-            crate::records::ProducerIdsRecord {
-                broker_id: NodeId(2),
-                broker_epoch: 22,
-                next_producer_id: 1000,
-            },
-        ));
+        image.apply(&MetadataRecord::V1ProducerIds(ProducerIdsRecord {
+            broker_id: NodeId(2),
+            broker_epoch: 22,
+            next_producer_id: 1000,
+        }));
 
         let recorded: Vec<_> = image
             .to_records()
@@ -2045,7 +2038,7 @@ mod tests {
         });
         assert2::assert!(record_variant(&topic) == "V1Topic");
 
-        let feature = MetadataRecord::V1FeatureLevel(crate::records::FeatureLevelRecord {
+        let feature = MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
             name: "metadata.version".into(),
             level: 1,
         });
@@ -2056,11 +2049,13 @@ mod tests {
 
     use crate::{
         acl::{AclEntryFilter, AclOperation, PermissionType},
+        break_glass::BreakGlassAction,
         records::{
-            BrokerConfigRecord, ClientQuotaRecord, DeleteDelegationTokenRecord,
+            BrokerConfigRecord, BrokerEndpoint, ClientQuotaRecord, DeleteDelegationTokenRecord,
             DeleteScramCredentialRecord, DeleteTopicRecord, FeatureLevelRecord, LeaderEpoch,
             PartitionOffsetAdvanceRecord, QuotaEntity, ScramCredentialRecord,
         },
+        voters::{KRaftVersionRange, Voter},
     };
 
     fn img() -> MetadataImage {
@@ -2189,13 +2184,13 @@ mod tests {
                 fenced: false,
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
-                endpoints: vec![crate::records::BrokerEndpoint {
+                endpoints: vec![BrokerEndpoint {
                     name: "EXTERNAL".into(),
                     host: "ext".into(),
                     port: 9093,
                     protocol: krabka_security::ListenerProtocol::SaslSsl,
                 }],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             }),
             MetadataRecord::V1BrokerRegistration(BrokerRegistrationRecord {
                 node_id: NodeId(2),
@@ -2209,9 +2204,9 @@ mod tests {
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
                 endpoints: vec![],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             }),
-            MetadataRecord::V1UnregisterBroker(crate::records::UnregisterBrokerRecord {
+            MetadataRecord::V1UnregisterBroker(UnregisterBrokerRecord {
                 node_id: NodeId(2),
                 broker_epoch: 0,
             }),
@@ -2303,9 +2298,9 @@ mod tests {
         }));
 
         // Topic config.
-        let mut overrides = std::collections::BTreeMap::new();
-        overrides.insert("retention.ms".to_string(), "60000".to_string());
-        overrides.insert("segment.bytes".to_string(), "1048576".to_string());
+        let mut overrides = BTreeMap::new();
+        overrides.insert("retention.ms".to_owned(), "60000".to_owned());
+        overrides.insert("segment.bytes".to_owned(), "1048576".to_owned());
         image.apply(&MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "orders".into(),
             overrides,
@@ -2541,9 +2536,7 @@ mod tests {
                 kraft_version: KRaftVersionRange { min: 0, max: 1 },
             },
         ]);
-        image.apply(&MetadataRecord::V1Voters(VotersRecord {
-            voters: voters.clone(),
-        }));
+        image.apply(&MetadataRecord::V1Voters(VotersRecord { voters }));
 
         let rebuilt = MetadataImage::from_records(cid, &image.to_records());
 
@@ -2587,7 +2580,7 @@ mod tests {
         }));
         let dir = uuid::Uuid::from_u128(0xABCD);
         m.apply(&MetadataRecord::V1PartitionDirAssignment(
-            crate::records::PartitionDirAssignmentRecord {
+            PartitionDirAssignmentRecord {
                 topic: "t".into(),
                 partition: 0,
                 replica: NodeId(2),
@@ -2599,7 +2592,7 @@ mod tests {
         // clobber the in-flight reassignment.
         assert2::assert!(
             *pr == PartitionRecord {
-                topic: "t".to_string(),
+                topic: "t".to_owned(),
                 partition: 0,
                 leader: NodeId(1),
                 replicas: vec![NodeId(1), NodeId(2), NodeId(3)],
@@ -2754,7 +2747,7 @@ mod tests {
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
             endpoints: vec![],
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         });
         m.apply(&b);
         m.apply(&b);
@@ -2765,14 +2758,12 @@ mod tests {
     fn apply_topic_config_inserts() {
         let mut m = img();
         m.apply(&topic("t", 1));
-        let mut overrides = std::collections::BTreeMap::new();
-        overrides.insert("retention.ms".to_string(), "60000".to_string());
-        m.apply(&MetadataRecord::V1TopicConfig(
-            crate::records::TopicConfigRecord {
-                topic: "t".into(),
-                overrides: overrides.clone(),
-            },
-        ));
+        let mut overrides = BTreeMap::new();
+        overrides.insert("retention.ms".to_owned(), "60000".to_owned());
+        m.apply(&MetadataRecord::V1TopicConfig(TopicConfigRecord {
+            topic: "t".into(),
+            overrides: overrides.clone(),
+        }));
         assert2::assert!(m.topic_config("t") == Some(&overrides));
     }
 
@@ -2781,24 +2772,20 @@ mod tests {
         let mut m = img();
         m.apply(&topic("t", 1));
 
-        let mut first = std::collections::BTreeMap::new();
-        first.insert("retention.ms".to_string(), "60000".to_string());
-        first.insert("segment.bytes".to_string(), "1024".to_string());
-        m.apply(&MetadataRecord::V1TopicConfig(
-            crate::records::TopicConfigRecord {
-                topic: "t".into(),
-                overrides: first,
-            },
-        ));
+        let mut first = BTreeMap::new();
+        first.insert("retention.ms".to_owned(), "60000".to_owned());
+        first.insert("segment.bytes".to_owned(), "1024".to_owned());
+        m.apply(&MetadataRecord::V1TopicConfig(TopicConfigRecord {
+            topic: "t".into(),
+            overrides: first,
+        }));
 
-        let mut second = std::collections::BTreeMap::new();
-        second.insert("retention.ms".to_string(), "120000".to_string());
-        m.apply(&MetadataRecord::V1TopicConfig(
-            crate::records::TopicConfigRecord {
-                topic: "t".into(),
-                overrides: second.clone(),
-            },
-        ));
+        let mut second = BTreeMap::new();
+        second.insert("retention.ms".to_owned(), "120000".to_owned());
+        m.apply(&MetadataRecord::V1TopicConfig(TopicConfigRecord {
+            topic: "t".into(),
+            overrides: second.clone(),
+        }));
 
         // segment.bytes is GONE — last-write-wins is authoritative.
         assert2::assert!(m.topic_config("t") == Some(&second));
@@ -2808,26 +2795,24 @@ mod tests {
     fn delete_topic_clears_configs() {
         let mut m = img();
         m.apply(&topic("t", 1));
-        let mut overrides = std::collections::BTreeMap::new();
-        overrides.insert("retention.ms".to_string(), "60000".to_string());
-        m.apply(&MetadataRecord::V1TopicConfig(
-            crate::records::TopicConfigRecord {
-                topic: "t".into(),
-                overrides,
-            },
-        ));
-        m.apply(&MetadataRecord::V1DeleteTopic(
-            crate::records::DeleteTopicRecord { name: "t".into() },
-        ));
+        let mut overrides = BTreeMap::new();
+        overrides.insert("retention.ms".to_owned(), "60000".to_owned());
+        m.apply(&MetadataRecord::V1TopicConfig(TopicConfigRecord {
+            topic: "t".into(),
+            overrides,
+        }));
+        m.apply(&MetadataRecord::V1DeleteTopic(DeleteTopicRecord {
+            name: "t".into(),
+        }));
         assert2::assert!(m.topic_config("t").is_none());
     }
 
     #[test]
     fn validate_topic_config_for_unknown_topic_rejected() {
         let m = img();
-        let r = MetadataRecord::V1TopicConfig(crate::records::TopicConfigRecord {
+        let r = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "ghost".into(),
-            overrides: std::collections::BTreeMap::new(),
+            overrides: BTreeMap::new(),
         });
         let err = m.validate(&r).unwrap_err();
         assert2::assert!(matches!(err, MetadataError::UnknownTopic(_)));
@@ -2937,8 +2922,8 @@ mod tests {
         m.apply(&MetadataRecord::V1AccessControlEntry(acl.clone()));
         m.apply(&MetadataRecord::V1AccessControlEntry(acl));
 
-        let hits: Vec<_> = m.matching_acls(ResourceType::Topic, "foo").collect();
-        assert2::assert!(hits.len() == 1);
+        let hits = m.matching_acls(ResourceType::Topic, "foo").count();
+        assert2::assert!(hits == 1);
     }
 
     #[test]
@@ -2953,8 +2938,8 @@ mod tests {
                 == vec!["team-"]
         );
         // Non-matching resource: empty.
-        let none: Vec<_> = m.matching_acls(ResourceType::Topic, "other").collect();
-        assert2::assert!(none.is_empty());
+        let none = m.matching_acls(ResourceType::Topic, "other").count();
+        assert2::assert!(none == 0);
     }
 
     #[test]
@@ -2962,9 +2947,9 @@ mod tests {
         let mut m = img();
         m.apply(&MetadataRecord::V1AccessControlEntry(topic_read_for_alice()));
         m.apply(&MetadataRecord::V1AccessControlEntry(topic_prefixed_team()));
-        let hits_foo: Vec<_> = m.matching_acls(ResourceType::Topic, "foo").collect();
-        let hits_team: Vec<_> = m.matching_acls(ResourceType::Topic, "team-x").collect();
-        assert2::assert!((hits_foo.len(), hits_team.len()) == (1, 1));
+        let hits_foo = m.matching_acls(ResourceType::Topic, "foo").count();
+        let hits_team = m.matching_acls(ResourceType::Topic, "team-x").count();
+        assert2::assert!((hits_foo, hits_team) == (1, 1));
     }
 
     fn topic_wildcard_allow() -> AclEntry {
@@ -3001,8 +2986,8 @@ mod tests {
             .collect();
         assert2::assert!(hits == vec![&topic_wildcard_allow()]);
         // Requesting "*" itself must not double-count the wildcard entry.
-        let star: Vec<_> = m.matching_acls(ResourceType::Topic, "*").collect();
-        assert2::assert!(star.len() == 1);
+        let star = m.matching_acls(ResourceType::Topic, "*").count();
+        assert2::assert!(star == 1);
     }
 
     #[test]
@@ -3026,9 +3011,9 @@ mod tests {
             ..AclEntryFilter::default()
         };
         m.apply(&MetadataRecord::V1DeleteAccessControlEntry(filter));
-        let hits_foo: Vec<_> = m.matching_acls(ResourceType::Topic, "foo").collect();
-        let hits_team: Vec<_> = m.matching_acls(ResourceType::Topic, "team-x").collect();
-        assert2::assert!((hits_foo.len(), hits_team.len()) == (0, 1));
+        let hits_foo = m.matching_acls(ResourceType::Topic, "foo").count();
+        let hits_team = m.matching_acls(ResourceType::Topic, "team-x").count();
+        assert2::assert!((hits_foo, hits_team) == (0, 1));
     }
 
     #[test]
@@ -3040,8 +3025,8 @@ mod tests {
             ..AclEntryFilter::default()
         };
         m.apply(&MetadataRecord::V1DeleteAccessControlEntry(filter));
-        let hits: Vec<_> = m.matching_acls(ResourceType::Topic, "foo").collect();
-        assert2::assert!(hits.len() == 1);
+        let hits = m.matching_acls(ResourceType::Topic, "foo").count();
+        assert2::assert!(hits == 1);
     }
 
     #[test]
@@ -3305,7 +3290,7 @@ mod tests {
             config_value: Some("2048".into()),
         }));
         let bc = img.broker_config(NodeId(1)).expect("broker config");
-        assert2::assert!(bc.get("leader.replication.throttled.rate") == Some(&"2048".to_string()));
+        assert2::assert!(bc.get("leader.replication.throttled.rate") == Some(&"2048".to_owned()));
     }
 
     #[test]
@@ -3493,8 +3478,8 @@ mod tests {
     #[test]
     fn canonicalize_sorts_alphabetically_by_entity_type() {
         let input = vec![
-            ("user".to_string(), Some("alice".to_string())),
-            ("client-id".to_string(), Some("app1".to_string())),
+            ("user".to_owned(), Some("alice".to_owned())),
+            ("client-id".to_owned(), Some("app1".to_owned())),
         ];
         let canon = canonicalize_entity(input);
         assert2::assert!(
@@ -3527,7 +3512,7 @@ mod tests {
         }));
         let mut users = img.scram_credentials_users();
         users.sort();
-        assert2::assert!(users == vec!["alice".to_string(), "bob".to_string()]);
+        assert2::assert!(users == vec!["alice".to_owned(), "bob".to_owned()]);
     }
 
     fn principal(pt: &str, name: &str) -> KafkaPrincipal {
@@ -3565,7 +3550,7 @@ mod tests {
         assert2::assert!(&got.owner == &alice);
 
         // Same token_id, different expiry — replace, not duplicate.
-        img.apply(&dt_record("tok-1", alice.clone(), 7_500, vec![]));
+        img.apply(&dt_record("tok-1", alice, 7_500, vec![]));
         let got = img.delegation_token_by_id("tok-1").expect("token present");
         assert2::assert!(got.expiry_timestamp_ms == 7_500);
         assert2::assert!(img.all_delegation_tokens().count() == 1);
@@ -3683,15 +3668,15 @@ mod tests {
     #[test]
     fn applies_voters_and_version() {
         let mut image = MetadataImage::new(Uuid::nil());
-        image.apply(&MetadataRecord::V1KRaftVersion(
-            crate::records::KRaftVersionRecord { kraft_version: 1 },
-        ));
-        image.apply(&MetadataRecord::V1Voters(crate::records::VotersRecord {
-            voters: crate::voters::VoterSet::from_voters([crate::voters::Voter {
+        image.apply(&MetadataRecord::V1KRaftVersion(KRaftVersionRecord {
+            kraft_version: 1,
+        }));
+        image.apply(&MetadataRecord::V1Voters(VotersRecord {
+            voters: VoterSet::from_voters([Voter {
                 id: NodeId(1),
                 directory_id: uuid::Uuid::nil(),
                 endpoints: vec![],
-                kraft_version: crate::voters::KRaftVersionRange::default(),
+                kraft_version: KRaftVersionRange::default(),
             }]),
         }));
         assert2::assert!(image.kraft_version() == 1);
@@ -3737,8 +3722,8 @@ mod tests {
     fn client_metrics_config_apply_and_clear() {
         use crate::records::ClientMetricsConfigRecord;
         let mut img = MetadataImage::new(uuid::Uuid::nil());
-        let mut cfgs = std::collections::BTreeMap::new();
-        cfgs.insert("interval.ms".to_string(), "60000".to_string());
+        let mut cfgs = BTreeMap::new();
+        cfgs.insert("interval.ms".to_owned(), "60000".to_owned());
         img.apply(&MetadataRecord::V1ClientMetricsConfig(
             ClientMetricsConfigRecord {
                 name: "sub-a".into(),
@@ -3755,7 +3740,7 @@ mod tests {
         img.apply(&MetadataRecord::V1ClientMetricsConfig(
             ClientMetricsConfigRecord {
                 name: "sub-a".into(),
-                configs: std::collections::BTreeMap::new(),
+                configs: BTreeMap::new(),
             },
         ));
         assert2::assert!(img.client_metrics_config("sub-a").is_none());
@@ -3891,34 +3876,30 @@ mod tests {
 
         use crate::metadata_version::{DELEGATION_TOKEN_MIN_LEVEL, SCRAM_MIN_LEVEL};
         let mut m = img();
-        m.apply(&MetadataRecord::V1ScramCredential(
-            crate::records::ScramCredentialRecord {
-                user: "alice".into(),
-                mechanism: SaslMechanism::ScramSha512,
-                salt: vec![1; 16],
-                stored_key: vec![2; 64],
-                server_key: vec![3; 64],
-                iterations: 4096,
-            },
-        ));
+        m.apply(&MetadataRecord::V1ScramCredential(ScramCredentialRecord {
+            user: "alice".into(),
+            mechanism: SaslMechanism::ScramSha512,
+            salt: vec![1; 16],
+            stored_key: vec![2; 64],
+            server_key: vec![3; 64],
+            iterations: 4096,
+        }));
         assert2::assert!(m.min_required_metadata_version() == SCRAM_MIN_LEVEL);
-        m.apply(&MetadataRecord::V1DelegationToken(
-            crate::records::DelegationTokenRecord {
-                token_id: "t1".into(),
-                owner: KafkaPrincipal {
-                    principal_type: "User".into(),
-                    name: "alice".into(),
-                },
-                requester: KafkaPrincipal {
-                    principal_type: "User".into(),
-                    name: "alice".into(),
-                },
-                issue_timestamp_ms: 1,
-                expiry_timestamp_ms: 5,
-                max_timestamp_ms: 10,
-                renewers: vec![],
+        m.apply(&MetadataRecord::V1DelegationToken(DelegationTokenRecord {
+            token_id: "t1".into(),
+            owner: KafkaPrincipal {
+                principal_type: "User".into(),
+                name: "alice".into(),
             },
-        ));
+            requester: KafkaPrincipal {
+                principal_type: "User".into(),
+                name: "alice".into(),
+            },
+            issue_timestamp_ms: 1,
+            expiry_timestamp_ms: 5,
+            max_timestamp_ms: 10,
+            renewers: vec![],
+        }));
         assert2::assert!(m.min_required_metadata_version() == DELEGATION_TOKEN_MIN_LEVEL);
     }
 
@@ -3971,9 +3952,7 @@ mod tests {
         );
         assert2::assert!(
             image
-                .metadata_version_downgrade_records(
-                    crate::metadata_version::DELEGATION_TOKEN_MIN_LEVEL
-                )
+                .metadata_version_downgrade_records(metadata_version::DELEGATION_TOKEN_MIN_LEVEL)
                 .iter()
                 .all(|r| !matches!(r, MetadataRecord::V1DeleteDelegationToken(_)))
         );
@@ -4018,7 +3997,7 @@ mod tests {
             fenced: false,
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         };
         image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
         image.apply(&MetadataRecord::V1Partition(PartitionRecord {
@@ -4027,7 +4006,7 @@ mod tests {
             leader: NodeId(1),
             replicas: vec![NodeId(1), NodeId(2)],
             isr: vec![NodeId(1), NodeId(2)],
-            directories: vec![directory, crate::directory_id::MIGRATING],
+            directories: vec![directory, MIGRATING],
             ..Default::default()
         }));
 
@@ -4043,14 +4022,12 @@ mod tests {
             cleanup
                 == vec![
                     MetadataRecord::V1BrokerRegistration(projected_broker),
-                    MetadataRecord::V1PartitionDirAssignment(
-                        crate::records::PartitionDirAssignmentRecord {
-                            topic: "orders".into(),
-                            partition: 0,
-                            replica: NodeId(1),
-                            directory: crate::directory_id::MIGRATING,
-                        },
-                    ),
+                    MetadataRecord::V1PartitionDirAssignment(PartitionDirAssignmentRecord {
+                        topic: "orders".into(),
+                        partition: 0,
+                        replica: NodeId(1),
+                        directory: MIGRATING,
+                    },),
                 ]
         );
 
@@ -4058,8 +4035,7 @@ mod tests {
             image.apply(record);
         }
         assert2::assert!(
-            image.partition("orders", 0).expect("partition").directories
-                == vec![crate::directory_id::MIGRATING; 2]
+            image.partition("orders", 0).expect("partition").directories == vec![MIGRATING; 2]
         );
         assert2::assert!(image.broker(NodeId(1)).expect("broker").log_dirs.is_empty());
     }
@@ -4086,14 +4062,14 @@ mod tests {
             fenced: false,
             in_controlled_shutdown: false,
             cordoned_log_dirs: Some(vec![directory]),
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         };
         let mut image = img();
         image.apply(&MetadataRecord::V1BrokerRegistration(broker.clone()));
 
         let uncordoned = BrokerRegistrationRecord {
             cordoned_log_dirs: None,
-            ..broker.clone()
+            ..broker
         };
         let without_dirs = BrokerRegistrationRecord {
             log_dirs: vec![],
@@ -4134,11 +4110,9 @@ mod tests {
         assert2::assert!(img.topic_name_by_id(&id) == Some("orders"));
 
         // After delete the id no longer resolves and the name index is gone.
-        img.apply(&MetadataRecord::V1DeleteTopic(
-            crate::records::DeleteTopicRecord {
-                name: "orders".into(),
-            },
-        ));
+        img.apply(&MetadataRecord::V1DeleteTopic(DeleteTopicRecord {
+            name: "orders".into(),
+        }));
         assert2::assert!(img.topic_by_id(&id).is_none());
         assert2::assert!(img.topic_name_by_id(&id).is_none());
     }
@@ -4159,7 +4133,7 @@ mod tests {
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
                 endpoints: vec![],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             },
         ));
         assert2::assert!(image.broker_epoch(NodeId(5)) == Some(99));
@@ -4192,7 +4166,7 @@ mod tests {
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
                 endpoints: vec![],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             },
         ));
         let b = image
@@ -4258,7 +4232,7 @@ mod tests {
         }));
         let dir = Uuid::from_u128(0xD15);
         image.apply(&MetadataRecord::V1PartitionDirAssignment(
-            crate::records::PartitionDirAssignmentRecord {
+            PartitionDirAssignmentRecord {
                 topic: "t".into(),
                 partition: 0,
                 replica: NodeId(10),
@@ -4267,7 +4241,7 @@ mod tests {
         ));
         let pr = image.partition("t", 0).expect("partition present");
         // Replica 10 is slot 0; replica 20 stays `MIGRATING`.
-        assert2::assert!(pr.directories == vec![dir, crate::directory_id::MIGRATING]);
+        assert2::assert!(pr.directories == vec![dir, MIGRATING]);
     }
 
     #[test]
@@ -4285,7 +4259,7 @@ mod tests {
         }));
         let dir = Uuid::from_u128(0xD15);
         image.apply(&MetadataRecord::V1PartitionDirAssignment(
-            crate::records::PartitionDirAssignmentRecord {
+            PartitionDirAssignmentRecord {
                 topic: "t".into(),
                 partition: 0,
                 replica: NodeId(20),
@@ -4446,7 +4420,7 @@ mod tests {
     fn proposal(id: Uuid) -> BreakGlassProposalRecord {
         BreakGlassProposalRecord {
             proposal_id: id,
-            action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
+            action: BreakGlassAction::ThawTopicFreeze,
             target: "literal:orders".into(),
             proposer: "User:alice".into(),
             reason: "incident 4711 closed".into(),
@@ -4572,7 +4546,7 @@ mod tests {
             ),
             (
                 "a reordered list",
-                vec![bob.clone(), alice.clone()],
+                vec![bob, alice.clone()],
                 Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
             ),
             (
@@ -4587,7 +4561,7 @@ mod tests {
             ),
             (
                 "a replaced approval",
-                vec![alice.clone(), carol.clone()],
+                vec![alice, carol],
                 Err(MetadataError::BreakGlassApprovalsNotAnExtension(id)),
             ),
         ] {

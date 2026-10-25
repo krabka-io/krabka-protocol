@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::share_acknowledge_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -37,15 +40,12 @@ pub struct ShareAcknowledgeResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ShareAcknowledgeResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::share_acknowledge_response::ShareAcknowledgeResponse {
-        crate::owned::share_acknowledge_response::ShareAcknowledgeResponse {
+    pub fn to_owned(&self) -> share_acknowledge_response::ShareAcknowledgeResponse {
+        share_acknowledge_response::ShareAcknowledgeResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             acquisition_lock_timeout_ms: (self.acquisition_lock_timeout_ms),
             responses: (self.responses)
                 .iter()
@@ -76,9 +76,9 @@ impl Encode for ShareAcknowledgeResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 2 {
@@ -86,23 +86,23 @@ impl Encode for ShareAcknowledgeResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.node_endpoints).len(), flex);
+                put_array_len(buf, (self.node_endpoints).len(), flex)?;
                 for it in &self.node_endpoints {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -127,8 +127,7 @@ impl Encode for ShareAcknowledgeResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -138,10 +137,7 @@ impl Encode for ShareAcknowledgeResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.node_endpoints).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                 let body: usize = (self.node_endpoints)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -184,7 +180,7 @@ impl<'de> DecodeBorrow<'de> for ShareAcknowledgeResponse<'de> {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ShareAcknowledgeTopicResponse::decode_borrow(buf, version)?);
@@ -194,7 +190,7 @@ impl<'de> DecodeBorrow<'de> for ShareAcknowledgeResponse<'de> {
         }
         if version >= 0 {
             out.node_endpoints = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(NodeEndpoint::decode_borrow(buf, version)?);
@@ -236,19 +232,14 @@ impl ShareAcknowledgeResponse<'_> {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ShareAcknowledgeTopicResponse<'a> {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ShareAcknowledgeTopicResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::share_acknowledge_response::ShareAcknowledgeTopicResponse {
-        crate::owned::share_acknowledge_response::ShareAcknowledgeTopicResponse {
+    pub fn to_owned(&self) -> share_acknowledge_response::ShareAcknowledgeTopicResponse {
+        share_acknowledge_response::ShareAcknowledgeTopicResponse {
             topic_id: (self.topic_id),
             partitions: (self.partitions)
                 .iter()
@@ -262,19 +253,19 @@ impl Encode for ShareAcknowledgeTopicResponse<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -286,8 +277,7 @@ impl Encode for ShareAcknowledgeTopicResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -307,11 +297,11 @@ impl<'de> DecodeBorrow<'de> for ShareAcknowledgeTopicResponse<'de> {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -331,7 +321,7 @@ impl ShareAcknowledgeTopicResponse<'_> {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -348,15 +338,12 @@ pub struct PartitionData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::share_acknowledge_response::PartitionData {
-        crate::owned::share_acknowledge_response::PartitionData {
+    pub fn to_owned(&self) -> share_acknowledge_response::PartitionData {
+        share_acknowledge_response::PartitionData {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             current_leader: (self.current_leader).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -373,9 +360,9 @@ impl Encode for PartitionData<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
@@ -383,7 +370,7 @@ impl Encode for PartitionData<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -466,12 +453,9 @@ pub struct LeaderIdAndEpoch {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaderIdAndEpoch {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::share_acknowledge_response::LeaderIdAndEpoch {
-        crate::owned::share_acknowledge_response::LeaderIdAndEpoch {
+    pub fn to_owned(&self) -> share_acknowledge_response::LeaderIdAndEpoch {
+        share_acknowledge_response::LeaderIdAndEpoch {
             leader_id: (self.leader_id),
             leader_epoch: (self.leader_epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -489,7 +473,7 @@ impl Encode for LeaderIdAndEpoch {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -548,16 +532,13 @@ pub struct NodeEndpoint<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl NodeEndpoint<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::share_acknowledge_response::NodeEndpoint {
-        crate::owned::share_acknowledge_response::NodeEndpoint {
+    pub fn to_owned(&self) -> share_acknowledge_response::NodeEndpoint {
+        share_acknowledge_response::NodeEndpoint {
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
-            rack: (self.rack).map(std::string::ToString::to_string),
+            rack: (self.rack).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -570,9 +551,9 @@ impl Encode for NodeEndpoint<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -580,14 +561,14 @@ impl Encode for NodeEndpoint<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack);
+                put_compact_nullable_string(buf, self.rack)?;
             } else {
-                let () = put_nullable_string(buf, self.rack);
+                put_nullable_string(buf, self.rack)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

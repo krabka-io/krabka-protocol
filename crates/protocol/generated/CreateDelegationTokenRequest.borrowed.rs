@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::create_delegation_token_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -47,16 +49,11 @@ impl Default for CreateDelegationTokenRequest<'_> {
     }
 }
 impl CreateDelegationTokenRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::create_delegation_token_request::CreateDelegationTokenRequest {
-        crate::owned::create_delegation_token_request::CreateDelegationTokenRequest {
-            owner_principal_type: (self.owner_principal_type).map(std::string::ToString::to_string),
-            owner_principal_name: (self.owner_principal_name).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> create_delegation_token_request::CreateDelegationTokenRequest {
+        create_delegation_token_request::CreateDelegationTokenRequest {
+            owner_principal_type: (self.owner_principal_type).map(str::to_owned),
+            owner_principal_name: (self.owner_principal_name).map(str::to_owned),
             renewers: (self.renewers)
                 .iter()
                 .map(CreatableRenewers::to_owned)
@@ -77,32 +74,32 @@ impl Encode for CreateDelegationTokenRequest<'_> {
         let flex = is_flexible(version);
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.owner_principal_type);
+                put_compact_nullable_string(buf, self.owner_principal_type)?;
             } else {
-                let () = put_nullable_string(buf, self.owner_principal_type);
+                put_nullable_string(buf, self.owner_principal_type)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.owner_principal_name);
+                put_compact_nullable_string(buf, self.owner_principal_name)?;
             } else {
-                let () = put_nullable_string(buf, self.owner_principal_name);
+                put_nullable_string(buf, self.owner_principal_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.renewers).len(), flex);
+                put_array_len(buf, (self.renewers).len(), flex)?;
                 for it in &self.renewers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i64(buf, self.max_lifetime_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -125,8 +122,7 @@ impl Encode for CreateDelegationTokenRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.renewers).len(), flex);
+                let prefix = array_len_prefix_len((self.renewers).len(), flex);
                 let body: usize = (self.renewers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -170,7 +166,7 @@ impl<'de> DecodeBorrow<'de> for CreateDelegationTokenRequest<'de> {
         }
         if version >= 0 {
             out.renewers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(CreatableRenewers::decode_borrow(buf, version)?);
@@ -214,14 +210,11 @@ pub struct CreatableRenewers<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl CreatableRenewers<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::create_delegation_token_request::CreatableRenewers {
-        crate::owned::create_delegation_token_request::CreatableRenewers {
-            principal_type: (self.principal_type).to_string(),
-            principal_name: (self.principal_name).to_string(),
+    pub fn to_owned(&self) -> create_delegation_token_request::CreatableRenewers {
+        create_delegation_token_request::CreatableRenewers {
+            principal_type: (self.principal_type).to_owned(),
+            principal_name: (self.principal_name).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -231,21 +224,21 @@ impl Encode for CreatableRenewers<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal_type);
+                put_compact_string(buf, self.principal_type)?;
             } else {
-                let () = put_string(buf, self.principal_type);
+                put_string(buf, self.principal_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal_name);
+                put_compact_string(buf, self.principal_name)?;
             } else {
-                let () = put_string(buf, self.principal_name);
+                put_string(buf, self.principal_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

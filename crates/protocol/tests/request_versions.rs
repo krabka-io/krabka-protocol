@@ -3,6 +3,7 @@
 //! `MAX_VERSION` is the range a codec encodes and decodes. `LATEST_STABLE_VERSION`
 //! is the highest version a client can send. They differ only when the schema
 //! sets `latestVersionUnstable`, as Kafka's `ApiKeys.latestVersion(false)` does.
+#![cfg(test)]
 
 use assert2::assert;
 use krabka_protocol::{

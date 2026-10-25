@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -54,18 +55,18 @@ impl Encode for UpdateFeaturesRequest {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.feature_updates).len(), flex);
+                put_array_len(buf, (self.feature_updates).len(), flex)?;
                 for it in &self.feature_updates {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_bool(buf, self.validate_only);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -77,10 +78,7 @@ impl Encode for UpdateFeaturesRequest {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.feature_updates).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.feature_updates).len(), flex);
                 let body: usize = (self.feature_updates)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +111,7 @@ impl Decode<'_> for UpdateFeaturesRequest {
         }
         if version >= 0 {
             out.feature_updates = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(FeatureUpdateKey::decode(buf, version)?);
@@ -171,9 +169,9 @@ impl Encode for FeatureUpdateKey {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.feature);
+                put_compact_string(buf, &self.feature)?;
             } else {
-                let () = put_string(buf, &self.feature);
+                put_string(buf, &self.feature)?;
             }
         }
         if version >= 0 {
@@ -187,7 +185,7 @@ impl Encode for FeatureUpdateKey {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -249,7 +247,7 @@ impl FeatureUpdateKey {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.feature = "x".to_string();
+            m.feature = "x".to_owned();
         }
         if version >= 0 {
             m.max_version_level = 1i16;
@@ -269,13 +267,13 @@ impl FeatureUpdateKey {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(60_000));
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(60_000));
     obj.insert(
-        "featureUpdates".to_string(),
+        "featureUpdates".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     if version >= 1 {
-        obj.insert("validateOnly".to_string(), ::serde_json::Value::Bool(false));
+        obj.insert("validateOnly".to_owned(), ::serde_json::Value::Bool(false));
     }
     ::serde_json::Value::Object(obj)
 }

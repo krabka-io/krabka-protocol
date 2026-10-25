@@ -3,7 +3,10 @@ use bytes::BufMut;
 
 use crate::{
     Decode, DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::api_versions_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i16, get_i32, get_i64, put_bool, put_i16, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -24,9 +27,9 @@ pub struct ApiVersionsResponse {
     pub error_code: i16,
     pub api_keys: Vec<ApiVersion>,
     pub throttle_time_ms: i32,
-    pub supported_features: Vec<crate::owned::api_versions_response::SupportedFeatureKey>,
+    pub supported_features: Vec<api_versions_response::SupportedFeatureKey>,
     pub finalized_features_epoch: i64,
-    pub finalized_features: Vec<crate::owned::api_versions_response::FinalizedFeatureKey>,
+    pub finalized_features: Vec<api_versions_response::FinalizedFeatureKey>,
     pub zk_migration_ready: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -45,12 +48,9 @@ impl Default for ApiVersionsResponse {
     }
 }
 impl ApiVersionsResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::api_versions_response::ApiVersionsResponse {
-        crate::owned::api_versions_response::ApiVersionsResponse {
+    pub fn to_owned(&self) -> api_versions_response::ApiVersionsResponse {
+        api_versions_response::ApiVersionsResponse {
             error_code: (self.error_code),
             api_keys: (self.api_keys).iter().map(ApiVersion::to_owned).collect(),
             throttle_time_ms: (self.throttle_time_ms),
@@ -76,24 +76,21 @@ impl Encode for ApiVersionsResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.api_keys).len(), flex);
+                put_array_len(buf, (self.api_keys).len(), flex)?;
                 for it in &self.api_keys {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i32(buf, self.throttle_time_ms);
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.supported_features)) {
+            if !(is_default(&self.supported_features)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.supported_features).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.supported_features).len(), flex);
                         let body: usize = (self.supported_features)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -102,34 +99,27 @@ impl Encode for ApiVersionsResponse {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.supported_features).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.supported_features).len(), flex)?;
                             for it in &self.supported_features {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
             if self.finalized_features_epoch != -1i64 {
                 let payload = encode_to_bytes(8, |b| {
                     put_i64(b, self.finalized_features_epoch);
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.finalized_features)) {
+            if !(is_default(&self.finalized_features)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.finalized_features).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.finalized_features).len(), flex);
                         let body: usize = (self.finalized_features)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -138,28 +128,24 @@ impl Encode for ApiVersionsResponse {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.finalized_features).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.finalized_features).len(), flex)?;
                             for it in &self.finalized_features {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(2, payload);
             }
             if self.zk_migration_ready {
                 let payload = encode_to_bytes(1, |b| {
                     put_bool(b, self.zk_migration_ready);
                     Ok(())
-                });
+                })?;
                 tagged.add(3, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -171,8 +157,7 @@ impl Encode for ApiVersionsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.api_keys).len(), flex);
+                let prefix = array_len_prefix_len((self.api_keys).len(), flex);
                 let body: usize = (self.api_keys)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -185,12 +170,9 @@ impl Encode for ApiVersionsResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.supported_features)) {
+            if !(is_default(&self.supported_features)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.supported_features).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.supported_features).len(), flex);
                     let body: usize = (self.supported_features)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -201,12 +183,9 @@ impl Encode for ApiVersionsResponse {
             if self.finalized_features_epoch != -1i64 {
                 known_pairs.push((1, 8));
             }
-            if !(crate::codegen_helpers::is_default(&self.finalized_features)) {
+            if !(is_default(&self.finalized_features)) {
                 known_pairs.push((2, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.finalized_features).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.finalized_features).len(), flex);
                     let body: usize = (self.finalized_features)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -237,7 +216,7 @@ impl<'de> DecodeBorrow<'de> for ApiVersionsResponse {
         }
         if version >= 0 {
             out.api_keys = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ApiVersion::decode_borrow(buf, version)?);
@@ -258,10 +237,12 @@ impl<'de> DecodeBorrow<'de> for ApiVersionsResponse {
                     tag_supported_features = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(crate::owned::api_versions_response::SupportedFeatureKey::decode(b, version)?);
+                                v.push(api_versions_response::SupportedFeatureKey::decode(
+                                    b, version,
+                                )?);
                             }
                             v
                         }
@@ -279,10 +260,12 @@ impl<'de> DecodeBorrow<'de> for ApiVersionsResponse {
                     tag_finalized_features = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(crate::owned::api_versions_response::FinalizedFeatureKey::decode(b, version)?);
+                                v.push(api_versions_response::FinalizedFeatureKey::decode(
+                                    b, version,
+                                )?);
                             }
                             v
                         }
@@ -329,15 +312,17 @@ impl ApiVersionsResponse {
             m.throttle_time_ms = 1i32;
         }
         if version >= 3 {
-            m.supported_features =
-                vec![crate::owned::api_versions_response::SupportedFeatureKey::populated(version)];
+            m.supported_features = vec![api_versions_response::SupportedFeatureKey::populated(
+                version,
+            )];
         }
         if version >= 3 {
             m.finalized_features_epoch = 1i64;
         }
         if version >= 3 {
-            m.finalized_features =
-                vec![crate::owned::api_versions_response::FinalizedFeatureKey::populated(version)];
+            m.finalized_features = vec![api_versions_response::FinalizedFeatureKey::populated(
+                version,
+            )];
         }
         if version >= 3 {
             m.zk_migration_ready = true;
@@ -353,12 +338,9 @@ pub struct ApiVersion {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ApiVersion {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::api_versions_response::ApiVersion {
-        crate::owned::api_versions_response::ApiVersion {
+    pub fn to_owned(&self) -> api_versions_response::ApiVersion {
+        api_versions_response::ApiVersion {
             api_key: (self.api_key),
             min_version: (self.min_version),
             max_version: (self.max_version),
@@ -380,7 +362,7 @@ impl Encode for ApiVersion {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -447,13 +429,10 @@ pub struct SupportedFeatureKey<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SupportedFeatureKey<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::api_versions_response::SupportedFeatureKey {
-        crate::owned::api_versions_response::SupportedFeatureKey {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> api_versions_response::SupportedFeatureKey {
+        api_versions_response::SupportedFeatureKey {
+            name: (self.name).to_owned(),
             min_version: (self.min_version),
             max_version: (self.max_version),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -465,9 +444,9 @@ impl Encode for SupportedFeatureKey<'_> {
         let flex = version >= 3;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 3 {
@@ -478,7 +457,7 @@ impl Encode for SupportedFeatureKey<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -553,13 +532,10 @@ pub struct FinalizedFeatureKey<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FinalizedFeatureKey<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::api_versions_response::FinalizedFeatureKey {
-        crate::owned::api_versions_response::FinalizedFeatureKey {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> api_versions_response::FinalizedFeatureKey {
+        api_versions_response::FinalizedFeatureKey {
+            name: (self.name).to_owned(),
             max_version_level: (self.max_version_level),
             min_version_level: (self.min_version_level),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -571,9 +547,9 @@ impl Encode for FinalizedFeatureKey<'_> {
         let flex = version >= 3;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 3 {
@@ -584,7 +560,7 @@ impl Encode for FinalizedFeatureKey<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

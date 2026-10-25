@@ -3,11 +3,13 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/api_key.rs"));
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
     fn all_keys_unique() {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         for k in ApiKey::ALL {
             assert2::assert!(seen.insert(*k as i16));
         }

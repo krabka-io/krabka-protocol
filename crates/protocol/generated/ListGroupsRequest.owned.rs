@@ -4,9 +4,12 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-        put_string, string_len,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        string_bytes::{
+            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
+            put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -37,31 +40,31 @@ impl Encode for ListGroupsRequest {
         let flex = is_flexible(version);
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.states_filter).len(), flex);
+                put_array_len(buf, (self.states_filter).len(), flex)?;
                 for it in &self.states_filter {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 5 {
             {
-                crate::primitives::array::put_array_len(buf, (self.types_filter).len(), flex);
+                put_array_len(buf, (self.types_filter).len(), flex)?;
                 for it in &self.types_filter {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -70,10 +73,7 @@ impl Encode for ListGroupsRequest {
         let mut n: usize = 0;
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.states_filter).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.states_filter).len(), flex);
                 let body: usize = (self.states_filter)
                     .iter()
                     .map(|it| {
@@ -89,8 +89,7 @@ impl Encode for ListGroupsRequest {
         }
         if version >= 5 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.types_filter).len(), flex);
+                let prefix = array_len_prefix_len((self.types_filter).len(), flex);
                 let body: usize = (self.types_filter)
                     .iter()
                     .map(|it| {
@@ -123,7 +122,7 @@ impl Decode<'_> for ListGroupsRequest {
         let mut out = Self::default();
         if version >= 4 {
             out.states_filter = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -137,7 +136,7 @@ impl Decode<'_> for ListGroupsRequest {
         }
         if version >= 5 {
             out.types_filter = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -161,10 +160,10 @@ impl ListGroupsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 4 {
-            m.states_filter = vec!["x".to_string()];
+            m.states_filter = vec!["x".to_owned()];
         }
         if version >= 5 {
-            m.types_filter = vec!["x".to_string()];
+            m.types_filter = vec!["x".to_owned()];
         }
         m
     }
@@ -177,15 +176,12 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 4 {
         obj.insert(
-            "statesFilter".to_string(),
+            "statesFilter".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
     if version >= 5 {
-        obj.insert(
-            "typesFilter".to_string(),
-            ::serde_json::Value::Array(vec![]),
-        );
+        obj.insert("typesFilter".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     ::serde_json::Value::Object(obj)
 }

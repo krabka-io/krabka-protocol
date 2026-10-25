@@ -3,9 +3,10 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::begin_transaction_record,
     primitives::string_bytes::{
-        compact_nullable_string_len, nullable_string_len, put_compact_nullable_string,
-        put_nullable_string,
+        compact_nullable_string_len, get_compact_nullable_string_owned, get_nullable_string_owned,
+        nullable_string_len, put_compact_nullable_string, put_nullable_string,
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -23,12 +24,9 @@ pub struct BeginTransactionRecord {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl BeginTransactionRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::begin_transaction_record::BeginTransactionRecord {
-        crate::owned::begin_transaction_record::BeginTransactionRecord {
+    pub fn to_owned(&self) -> begin_transaction_record::BeginTransactionRecord {
+        begin_transaction_record::BeginTransactionRecord {
             name: self.name.clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -53,16 +51,16 @@ impl Encode for BeginTransactionRecord {
                     },
                     |b| {
                         if flex {
-                            let () = put_compact_nullable_string(b, self.name.as_deref());
+                            put_compact_nullable_string(b, self.name.as_deref())?;
                         } else {
-                            let () = put_nullable_string(b, self.name.as_deref());
+                            put_nullable_string(b, self.name.as_deref())?;
                         }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -102,9 +100,9 @@ impl<'de> DecodeBorrow<'de> for BeginTransactionRecord {
                     tag_name = Some({
                         let b: &mut &[u8] = payload;
                         if flex {
-                            crate::primitives::string_bytes::get_compact_nullable_string_owned(b)?
+                            get_compact_nullable_string_owned(b)?
                         } else {
-                            crate::primitives::string_bytes::get_nullable_string_owned(b)?
+                            get_nullable_string_owned(b)?
                         }
                     });
                     Ok(true)
@@ -124,7 +122,7 @@ impl BeginTransactionRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = Some("x".to_string());
+            m.name = Some("x".to_owned());
         }
         m
     }

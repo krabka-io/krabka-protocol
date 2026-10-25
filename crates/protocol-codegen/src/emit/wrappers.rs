@@ -5,7 +5,11 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    emit::{common::banner, tagged_fixture},
+    emit::{
+        EmitError, borrowed_quote,
+        common::{banner, validate},
+        tagged_fixture,
+    },
     ir::{MessageSpec, MessageType},
     name_conv,
 };
@@ -20,22 +24,22 @@ impl Flavor {
     #[must_use]
     pub fn dir(self) -> &'static str {
         match self {
-            Flavor::Owned => "owned",
-            Flavor::Borrowed => "borrowed",
+            Self::Owned => "owned",
+            Self::Borrowed => "borrowed",
         }
     }
 }
 
 /// Emit a wrapper body for one message + flavor.
-#[must_use]
-/// # Panics
-/// Panics if the validated schema model cannot be represented as the expected Rust syntax tree.
+/// # Errors
+/// Returns an error when the generated code is not valid Rust, which is an
+/// emitter bug.
 pub fn emit(
     spec: &MessageSpec,
     flavor: Flavor,
     schemas_version: &str,
     namespace: Option<&str>,
-) -> String {
+) -> Result<String, EmitError> {
     let type_name = name_conv::type_name(&spec.name);
     let suffix = match flavor {
         Flavor::Owned => "owned",
@@ -46,31 +50,30 @@ pub fn emit(
     let mut out = banner(schemas_version);
 
     // 2. include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/{path}.rs"));
-    let path_prefix = match namespace {
-        None => String::new(),
-        Some(ns) => format!("{ns}/"),
-    };
+    let path_prefix = namespace.map_or_else(String::new, |ns| format!("{ns}/"));
     let path = format!("/generated/{path_prefix}{type_name}.{suffix}.rs");
     let include_tokens: TokenStream = quote! {
         include!(concat!(env!("CARGO_MANIFEST_DIR"), #path));
     };
-    let _validate_include: syn::Stmt =
-        syn::parse2(include_tokens.clone()).expect("include! must be valid Rust");
+    validate::<syn::Stmt>(&include_tokens, "include!")?;
     out.push_str(&include_tokens.to_string());
     out.push('\n');
 
     // 3. #[cfg(test)] mod tests { ... } built with quote!.
     let tests_tokens = match flavor {
-        Flavor::Owned => owned_tests_tokens(&type_name, tagged_fixture::has_tagged_field(spec)),
-        Flavor::Borrowed => borrowed_tests_tokens(&type_name),
+        Flavor::Owned => owned_tests_tokens(&type_name, tagged_fixture::has_tagged_field(spec))?,
+        Flavor::Borrowed => borrowed_tests_tokens(
+            &type_name,
+            borrowed_quote::fallible_structs(spec).contains(&spec.name),
+        )?,
     };
     out.push_str(&tests_tokens.to_string());
 
-    out
+    Ok(out)
 }
 
 /// Build `#[cfg(test)] mod tests { ... }` for the Owned flavor as a `TokenStream`.
-fn owned_tests_tokens(type_name: &str, has_tagged_field: bool) -> TokenStream {
+fn owned_tests_tokens(type_name: &str, has_tagged_field: bool) -> Result<TokenStream, EmitError> {
     let ty = format_ident!("{type_name}");
     // `tagged_fixture()` holds a non-default value in every tagged field. It
     // must round-trip at every version, including the versions where a tag is
@@ -132,14 +135,18 @@ fn owned_tests_tokens(type_name: &str, has_tagged_field: bool) -> TokenStream {
             #tagged_test
         }
     };
-    let _validate: syn::ItemMod =
-        syn::parse2(tokens.clone()).expect("generated owned tests must be valid Rust");
-    tokens
+    validate::<syn::ItemMod>(&tokens, "owned tests")?;
+    Ok(tokens)
 }
 
 /// Build `#[cfg(test)] mod tests { ... }` for the Borrowed flavor as a `TokenStream`.
-fn borrowed_tests_tokens(type_name: &str) -> TokenStream {
+fn borrowed_tests_tokens(type_name: &str, fallible: bool) -> Result<TokenStream, EmitError> {
     let ty = format_ident!("{type_name}");
+    let to_owned = if fallible {
+        quote!(decoded.to_owned().unwrap())
+    } else {
+        quote!(decoded.to_owned())
+    };
     let tokens = quote! {
         #[cfg(test)]
         mod tests {
@@ -156,7 +163,7 @@ fn borrowed_tests_tokens(type_name: &str) -> TokenStream {
                 let mut reencoded = BytesMut::new();
                 decoded.encode(&mut reencoded, v).unwrap();
                 assert!(&reencoded[..] == &msg_bytes[..]);
-                let owned = decoded.to_owned();
+                let owned = #to_owned;
                 let mut owned_buf = BytesMut::new();
                 owned.encode(&mut owned_buf, v).unwrap();
                 assert!(&owned_buf[..] == &msg_bytes[..]);
@@ -183,9 +190,8 @@ fn borrowed_tests_tokens(type_name: &str) -> TokenStream {
             }
         }
     };
-    let _validate: syn::ItemMod =
-        syn::parse2(tokens.clone()).expect("generated borrowed tests must be valid Rust");
-    tokens
+    validate::<syn::ItemMod>(&tokens, "borrowed tests")?;
+    Ok(tokens)
 }
 
 /// True if this spec should get a wrapper.

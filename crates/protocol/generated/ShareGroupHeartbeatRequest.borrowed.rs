@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::share_group_heartbeat_request,
     primitives::{
+        array::{get_nullable_array_len, nullable_array_len_prefix_len, put_nullable_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -37,21 +39,16 @@ pub struct ShareGroupHeartbeatRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ShareGroupHeartbeatRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::share_group_heartbeat_request::ShareGroupHeartbeatRequest {
-        crate::owned::share_group_heartbeat_request::ShareGroupHeartbeatRequest {
-            group_id: (self.group_id).to_string(),
-            member_id: (self.member_id).to_string(),
+    pub fn to_owned(&self) -> share_group_heartbeat_request::ShareGroupHeartbeatRequest {
+        share_group_heartbeat_request::ShareGroupHeartbeatRequest {
+            group_id: (self.group_id).to_owned(),
+            member_id: (self.member_id).to_owned(),
             member_epoch: (self.member_epoch),
-            rack_id: (self.rack_id).map(std::string::ToString::to_string),
+            rack_id: (self.rack_id).map(str::to_owned),
             subscribed_topic_names: (self.subscribed_topic_names)
                 .as_ref()
-                .map(|v| v.iter().map(std::string::ToString::to_string).collect()),
+                .map(|v| v.iter().map(|&s| s.to_owned()).collect()),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -67,16 +64,16 @@ impl Encode for ShareGroupHeartbeatRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 0 {
@@ -84,29 +81,29 @@ impl Encode for ShareGroupHeartbeatRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack_id);
+                put_compact_nullable_string(buf, self.rack_id)?;
             } else {
-                let () = put_nullable_string(buf, self.rack_id);
+                put_nullable_string(buf, self.rack_id)?;
             }
         }
         if version >= 0 {
             {
                 let len = (self.subscribed_topic_names).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.subscribed_topic_names {
                     for it in v {
                         if flex {
-                            let () = put_compact_string(buf, it);
+                            put_compact_string(buf, it)?;
                         } else {
-                            let () = put_string(buf, it);
+                            put_string(buf, it)?;
                         }
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -140,10 +137,7 @@ impl Encode for ShareGroupHeartbeatRequest<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.subscribed_topic_names).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize = opt.map_or(0, |v| {
                     v.iter()
                         .map(|it| {
@@ -201,7 +195,7 @@ impl<'de> DecodeBorrow<'de> for ShareGroupHeartbeatRequest<'de> {
         }
         if version >= 0 {
             out.subscribed_topic_names = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {

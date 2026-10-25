@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::offset_delete_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,13 +28,10 @@ pub struct OffsetDeleteRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_request::OffsetDeleteRequest {
-        crate::owned::offset_delete_request::OffsetDeleteRequest {
-            group_id: (self.group_id).to_string(),
+    pub fn to_owned(&self) -> offset_delete_request::OffsetDeleteRequest {
+        offset_delete_request::OffsetDeleteRequest {
+            group_id: (self.group_id).to_owned(),
             topics: (self.topics)
                 .iter()
                 .map(OffsetDeleteRequestTopic::to_owned)
@@ -52,18 +51,18 @@ impl Encode for OffsetDeleteRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -79,8 +78,7 @@ impl Encode for OffsetDeleteRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -107,7 +105,7 @@ impl<'de> DecodeBorrow<'de> for OffsetDeleteRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetDeleteRequestTopic::decode_borrow(buf, version)?);
@@ -139,13 +137,10 @@ pub struct OffsetDeleteRequestTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteRequestTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_request::OffsetDeleteRequestTopic {
-        crate::owned::offset_delete_request::OffsetDeleteRequestTopic {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> offset_delete_request::OffsetDeleteRequestTopic {
+        offset_delete_request::OffsetDeleteRequestTopic {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(OffsetDeleteRequestPartition::to_owned)
@@ -159,18 +154,18 @@ impl Encode for OffsetDeleteRequestTopic<'_> {
         let flex = version == i16::MAX;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -186,8 +181,7 @@ impl Encode for OffsetDeleteRequestTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -211,7 +205,7 @@ impl<'de> DecodeBorrow<'de> for OffsetDeleteRequestTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetDeleteRequestPartition::decode_borrow(buf, version)?);
@@ -242,12 +236,9 @@ pub struct OffsetDeleteRequestPartition {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteRequestPartition {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_request::OffsetDeleteRequestPartition {
-        crate::owned::offset_delete_request::OffsetDeleteRequestPartition {
+    pub fn to_owned(&self) -> offset_delete_request::OffsetDeleteRequestPartition {
+        offset_delete_request::OffsetDeleteRequestPartition {
             partition_index: (self.partition_index),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }

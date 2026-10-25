@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{
             get_bool, get_i8, get_i16, get_i32, get_i64, put_bool, put_i8, put_i16, put_i32,
             put_i64,
@@ -42,15 +43,15 @@ impl Encode for WriteTxnMarkersRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.markers).len(), flex);
+                put_array_len(buf, (self.markers).len(), flex)?;
                 for it in &self.markers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -59,8 +60,7 @@ impl Encode for WriteTxnMarkersRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.markers).len(), flex);
+                let prefix = array_len_prefix_len((self.markers).len(), flex);
                 let body: usize = (self.markers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -87,7 +87,7 @@ impl Decode<'_> for WriteTxnMarkersRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.markers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(WritableTxnMarker::decode(buf, version)?);
@@ -136,11 +136,11 @@ impl Encode for WritableTxnMarker {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.coordinator_epoch);
@@ -150,7 +150,7 @@ impl Encode for WritableTxnMarker {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -168,8 +168,7 @@ impl Encode for WritableTxnMarker {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -202,7 +201,7 @@ impl Decode<'_> for WritableTxnMarker {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(WritableTxnMarkerTopic::decode(buf, version)?);
@@ -259,22 +258,22 @@ impl Encode for WritableTxnMarkerTopic {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_indexes).len(), flex);
+                put_array_len(buf, (self.partition_indexes).len(), flex)?;
                 for it in &self.partition_indexes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -290,10 +289,7 @@ impl Encode for WritableTxnMarkerTopic {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_indexes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_indexes).len(), flex);
                 let body: usize = (self.partition_indexes).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -318,7 +314,7 @@ impl Decode<'_> for WritableTxnMarkerTopic {
         }
         if version >= 0 {
             out.partition_indexes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -338,7 +334,7 @@ impl WritableTxnMarkerTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partition_indexes = vec![1i32];
@@ -352,7 +348,7 @@ impl WritableTxnMarkerTopic {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("markers".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("markers".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for WriteTxnMarkersRequest {

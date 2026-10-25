@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::client_quota_record,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_f64, put_bool, put_f64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -45,14 +47,11 @@ impl Default for ClientQuotaRecord<'_> {
     }
 }
 impl ClientQuotaRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::client_quota_record::ClientQuotaRecord {
-        crate::owned::client_quota_record::ClientQuotaRecord {
+    pub fn to_owned(&self) -> client_quota_record::ClientQuotaRecord {
+        client_quota_record::ClientQuotaRecord {
             entity: (self.entity).iter().map(EntityData::to_owned).collect(),
-            key: (self.key).to_string(),
+            key: (self.key).to_owned(),
             value: (self.value),
             remove: (self.remove),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -69,17 +68,17 @@ impl Encode for ClientQuotaRecord<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.entity).len(), flex);
+                put_array_len(buf, (self.entity).len(), flex)?;
                 for it in &self.entity {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.key);
+                put_compact_string(buf, self.key)?;
             } else {
-                let () = put_string(buf, self.key);
+                put_string(buf, self.key)?;
             }
         }
         if version >= 0 {
@@ -90,7 +89,7 @@ impl Encode for ClientQuotaRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -99,8 +98,7 @@ impl Encode for ClientQuotaRecord<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.entity).len(), flex);
+                let prefix = array_len_prefix_len((self.entity).len(), flex);
                 let body: usize = (self.entity).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -136,7 +134,7 @@ impl<'de> DecodeBorrow<'de> for ClientQuotaRecord<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.entity = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(EntityData::decode_borrow(buf, version)?);
@@ -199,14 +197,11 @@ impl Default for EntityData<'_> {
     }
 }
 impl EntityData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::client_quota_record::EntityData {
-        crate::owned::client_quota_record::EntityData {
-            entity_type: (self.entity_type).to_string(),
-            entity_name: (self.entity_name).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> client_quota_record::EntityData {
+        client_quota_record::EntityData {
+            entity_type: (self.entity_type).to_owned(),
+            entity_name: (self.entity_name).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -216,21 +211,21 @@ impl Encode for EntityData<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.entity_type);
+                put_compact_string(buf, self.entity_type)?;
             } else {
-                let () = put_string(buf, self.entity_type);
+                put_string(buf, self.entity_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.entity_name);
+                put_compact_nullable_string(buf, self.entity_name)?;
             } else {
-                let () = put_nullable_string(buf, self.entity_name);
+                put_nullable_string(buf, self.entity_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

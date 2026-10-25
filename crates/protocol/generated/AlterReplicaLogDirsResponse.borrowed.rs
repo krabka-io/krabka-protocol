@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_replica_log_dirs_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,14 +28,9 @@ pub struct AlterReplicaLogDirsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDirsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirsResponse {
-        crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirsResponse {
+    pub fn to_owned(&self) -> alter_replica_log_dirs_response::AlterReplicaLogDirsResponse {
+        alter_replica_log_dirs_response::AlterReplicaLogDirsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             results: (self.results)
                 .iter()
@@ -57,15 +54,15 @@ impl Encode for AlterReplicaLogDirsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.results).len(), flex);
+                put_array_len(buf, (self.results).len(), flex)?;
                 for it in &self.results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -77,8 +74,7 @@ impl Encode for AlterReplicaLogDirsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.results).len(), flex);
+                let prefix = array_len_prefix_len((self.results).len(), flex);
                 let body: usize = (self.results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -108,7 +104,7 @@ impl<'de> DecodeBorrow<'de> for AlterReplicaLogDirsResponse<'de> {
         }
         if version >= 0 {
             out.results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterReplicaLogDirTopicResult::decode_borrow(buf, version)?);
@@ -143,15 +139,10 @@ pub struct AlterReplicaLogDirTopicResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDirTopicResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirTopicResult {
-        crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirTopicResult {
-            topic_name: (self.topic_name).to_string(),
+    pub fn to_owned(&self) -> alter_replica_log_dirs_response::AlterReplicaLogDirTopicResult {
+        alter_replica_log_dirs_response::AlterReplicaLogDirTopicResult {
+            topic_name: (self.topic_name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(AlterReplicaLogDirPartitionResult::to_owned)
@@ -165,22 +156,22 @@ impl Encode for AlterReplicaLogDirTopicResult<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -196,8 +187,7 @@ impl Encode for AlterReplicaLogDirTopicResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -225,7 +215,7 @@ impl<'de> DecodeBorrow<'de> for AlterReplicaLogDirTopicResult<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterReplicaLogDirPartitionResult::decode_borrow(
@@ -262,14 +252,9 @@ pub struct AlterReplicaLogDirPartitionResult {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterReplicaLogDirPartitionResult {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirPartitionResult {
-        crate::owned::alter_replica_log_dirs_response::AlterReplicaLogDirPartitionResult {
+    pub fn to_owned(&self) -> alter_replica_log_dirs_response::AlterReplicaLogDirPartitionResult {
+        alter_replica_log_dirs_response::AlterReplicaLogDirPartitionResult {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -287,7 +272,7 @@ impl Encode for AlterReplicaLogDirPartitionResult {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

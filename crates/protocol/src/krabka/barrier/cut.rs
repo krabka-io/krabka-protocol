@@ -46,7 +46,7 @@ impl Encode for BarrierCutPartition {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
         put_i32(buf, self.partition);
         put_i64(buf, self.offset);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -78,9 +78,9 @@ pub struct BarrierCutTopic {
 
 impl Encode for BarrierCutTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.topic);
+        put_compact_string(buf, &self.topic)?;
         encode_array(buf, &self.partitions, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -117,9 +117,9 @@ pub struct BarrierMissingPartition {
 
 impl Encode for BarrierMissingPartition {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.topic);
+        put_compact_string(buf, &self.topic)?;
         put_i32(buf, self.partition);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 

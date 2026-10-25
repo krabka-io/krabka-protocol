@@ -42,9 +42,9 @@ impl Encode for AddOffsetsToTxnRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.transactional_id);
+                put_compact_string(buf, &self.transactional_id)?;
             } else {
-                let () = put_string(buf, &self.transactional_id);
+                put_string(buf, &self.transactional_id)?;
             }
         }
         if version >= 0 {
@@ -55,14 +55,14 @@ impl Encode for AddOffsetsToTxnRequest {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -138,7 +138,7 @@ impl AddOffsetsToTxnRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.transactional_id = "x".to_string();
+            m.transactional_id = "x".to_owned();
         }
         if version >= 0 {
             m.producer_id = 1i64;
@@ -147,7 +147,7 @@ impl AddOffsetsToTxnRequest {
             m.producer_epoch = 1i16;
         }
         if version >= 0 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         m
     }
@@ -159,13 +159,13 @@ impl AddOffsetsToTxnRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "transactionalId".to_string(),
+        "transactionalId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("producerId".to_string(), ::serde_json::json!(0));
-    obj.insert("producerEpoch".to_string(), ::serde_json::json!(0));
+    obj.insert("producerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("producerEpoch".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "groupId".to_string(),
+        "groupId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::update_features_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -38,12 +40,9 @@ impl Default for UpdateFeaturesRequest<'_> {
     }
 }
 impl UpdateFeaturesRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_features_request::UpdateFeaturesRequest {
-        crate::owned::update_features_request::UpdateFeaturesRequest {
+    pub fn to_owned(&self) -> update_features_request::UpdateFeaturesRequest {
+        update_features_request::UpdateFeaturesRequest {
             timeout_ms: (self.timeout_ms),
             feature_updates: (self.feature_updates)
                 .iter()
@@ -68,18 +67,18 @@ impl Encode for UpdateFeaturesRequest<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.feature_updates).len(), flex);
+                put_array_len(buf, (self.feature_updates).len(), flex)?;
                 for it in &self.feature_updates {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_bool(buf, self.validate_only);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -91,10 +90,7 @@ impl Encode for UpdateFeaturesRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.feature_updates).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.feature_updates).len(), flex);
                 let body: usize = (self.feature_updates)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -127,7 +123,7 @@ impl<'de> DecodeBorrow<'de> for UpdateFeaturesRequest<'de> {
         }
         if version >= 0 {
             out.feature_updates = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(FeatureUpdateKey::decode_borrow(buf, version)?);
@@ -181,13 +177,10 @@ impl Default for FeatureUpdateKey<'_> {
     }
 }
 impl FeatureUpdateKey<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_features_request::FeatureUpdateKey {
-        crate::owned::update_features_request::FeatureUpdateKey {
-            feature: (self.feature).to_string(),
+    pub fn to_owned(&self) -> update_features_request::FeatureUpdateKey {
+        update_features_request::FeatureUpdateKey {
+            feature: (self.feature).to_owned(),
             max_version_level: (self.max_version_level),
             allow_downgrade: (self.allow_downgrade),
             upgrade_type: (self.upgrade_type),
@@ -200,9 +193,9 @@ impl Encode for FeatureUpdateKey<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.feature);
+                put_compact_string(buf, self.feature)?;
             } else {
-                let () = put_string(buf, self.feature);
+                put_string(buf, self.feature)?;
             }
         }
         if version >= 0 {
@@ -216,7 +209,7 @@ impl Encode for FeatureUpdateKey<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

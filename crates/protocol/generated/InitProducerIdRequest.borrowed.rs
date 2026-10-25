@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::init_producer_id_request,
     primitives::{
         fixed::{get_bool, get_i16, get_i32, get_i64, put_bool, put_i16, put_i32, put_i64},
         string_bytes::{
@@ -49,13 +50,10 @@ impl Default for InitProducerIdRequest<'_> {
     }
 }
 impl InitProducerIdRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::init_producer_id_request::InitProducerIdRequest {
-        crate::owned::init_producer_id_request::InitProducerIdRequest {
-            transactional_id: (self.transactional_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> init_producer_id_request::InitProducerIdRequest {
+        init_producer_id_request::InitProducerIdRequest {
+            transactional_id: (self.transactional_id).map(str::to_owned),
             transaction_timeout_ms: (self.transaction_timeout_ms),
             producer_id: (self.producer_id),
             producer_epoch: (self.producer_epoch),
@@ -76,9 +74,9 @@ impl Encode for InitProducerIdRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.transactional_id);
+                put_compact_nullable_string(buf, self.transactional_id)?;
             } else {
-                let () = put_nullable_string(buf, self.transactional_id);
+                put_nullable_string(buf, self.transactional_id)?;
             }
         }
         if version >= 0 {
@@ -98,7 +96,7 @@ impl Encode for InitProducerIdRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::feature_level_record,
     primitives::{
         fixed::{get_i16, put_i16},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -25,13 +26,10 @@ pub struct FeatureLevelRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FeatureLevelRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::feature_level_record::FeatureLevelRecord {
-        crate::owned::feature_level_record::FeatureLevelRecord {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> feature_level_record::FeatureLevelRecord {
+        feature_level_record::FeatureLevelRecord {
+            name: (self.name).to_owned(),
             feature_level: (self.feature_level),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -47,9 +45,9 @@ impl Encode for FeatureLevelRecord<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -57,7 +55,7 @@ impl Encode for FeatureLevelRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

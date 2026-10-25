@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -47,31 +48,27 @@ impl Encode for ListTransactionsResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.unknown_state_filters).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.unknown_state_filters).len(), flex)?;
                 for it in &self.unknown_state_filters {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.transaction_states).len(), flex);
+                put_array_len(buf, (self.transaction_states).len(), flex)?;
                 for it in &self.transaction_states {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,10 +83,7 @@ impl Encode for ListTransactionsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.unknown_state_filters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.unknown_state_filters).len(), flex);
                 let body: usize = (self.unknown_state_filters)
                     .iter()
                     .map(|it| {
@@ -105,10 +99,7 @@ impl Encode for ListTransactionsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.transaction_states).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.transaction_states).len(), flex);
                 let body: usize = (self.transaction_states)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -141,7 +132,7 @@ impl Decode<'_> for ListTransactionsResponse {
         }
         if version >= 0 {
             out.unknown_state_filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -155,7 +146,7 @@ impl Decode<'_> for ListTransactionsResponse {
         }
         if version >= 0 {
             out.transaction_states = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TransactionState::decode(buf, version)?);
@@ -181,7 +172,7 @@ impl ListTransactionsResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.unknown_state_filters = vec!["x".to_string()];
+            m.unknown_state_filters = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.transaction_states = vec![TransactionState::populated(version)];
@@ -201,9 +192,9 @@ impl Encode for TransactionState {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.transactional_id);
+                put_compact_string(buf, &self.transactional_id)?;
             } else {
-                let () = put_string(buf, &self.transactional_id);
+                put_string(buf, &self.transactional_id)?;
             }
         }
         if version >= 0 {
@@ -211,14 +202,14 @@ impl Encode for TransactionState {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.transaction_state);
+                put_compact_string(buf, &self.transaction_state)?;
             } else {
-                let () = put_string(buf, &self.transaction_state);
+                put_string(buf, &self.transaction_state)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -282,13 +273,13 @@ impl TransactionState {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.transactional_id = "x".to_string();
+            m.transactional_id = "x".to_owned();
         }
         if version >= 0 {
             m.producer_id = 1i64;
         }
         if version >= 0 {
-            m.transaction_state = "x".to_string();
+            m.transaction_state = "x".to_owned();
         }
         m
     }
@@ -299,14 +290,14 @@ impl TransactionState {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "unknownStateFilters".to_string(),
+        "unknownStateFilters".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     obj.insert(
-        "transactionStates".to_string(),
+        "transactionStates".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     ::serde_json::Value::Object(obj)

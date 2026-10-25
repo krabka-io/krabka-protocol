@@ -3,9 +3,10 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::renew_delegation_token_request,
     primitives::{
         fixed::{get_i64, put_i64},
-        string_bytes::{put_bytes, put_compact_bytes},
+        string_bytes::{bytes_len, compact_bytes_len, put_bytes, put_compact_bytes},
         string_bytes_borrowed::{get_bytes_borrowed, get_compact_bytes_borrowed},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
@@ -27,14 +28,9 @@ pub struct RenewDelegationTokenRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RenewDelegationTokenRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::renew_delegation_token_request::RenewDelegationTokenRequest {
-        crate::owned::renew_delegation_token_request::RenewDelegationTokenRequest {
+    pub fn to_owned(&self) -> renew_delegation_token_request::RenewDelegationTokenRequest {
+        renew_delegation_token_request::RenewDelegationTokenRequest {
             hmac: Bytes::copy_from_slice(self.hmac),
             renew_period_ms: (self.renew_period_ms),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -52,9 +48,9 @@ impl Encode for RenewDelegationTokenRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.hmac);
+                put_compact_bytes(buf, self.hmac)?;
             } else {
-                let () = put_bytes(buf, self.hmac);
+                put_bytes(buf, self.hmac)?;
             }
         }
         if version >= 0 {
@@ -62,7 +58,7 @@ impl Encode for RenewDelegationTokenRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -71,11 +67,9 @@ impl Encode for RenewDelegationTokenRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.hmac).len() + 1).unwrap(),
-                ) + (self.hmac).len()
+                compact_bytes_len(self.hmac)
             } else {
-                4 + (self.hmac).len()
+                bytes_len(self.hmac)
             };
         }
         if version >= 0 {

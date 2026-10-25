@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_heartbeat_request::task_ids,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -17,15 +19,10 @@ pub struct TaskIds<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TaskIds<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_heartbeat_request::task_ids::TaskIds {
-        crate::owned::common::streams_group_heartbeat_request::task_ids::TaskIds {
-            subtopology_id: (self.subtopology_id).to_string(),
+    pub fn to_owned(&self) -> task_ids::TaskIds {
+        task_ids::TaskIds {
+            subtopology_id: (self.subtopology_id).to_owned(),
             partitions: (self.partitions).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -36,22 +33,22 @@ impl Encode for TaskIds<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.subtopology_id);
+                put_compact_string(buf, self.subtopology_id)?;
             } else {
-                let () = put_string(buf, self.subtopology_id);
+                put_string(buf, self.subtopology_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -67,8 +64,7 @@ impl Encode for TaskIds<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -93,7 +89,7 @@ impl<'de> DecodeBorrow<'de> for TaskIds<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::snapshot_footer_record,
     primitives::fixed::{get_i16, put_i16},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -20,12 +21,9 @@ pub struct SnapshotFooterRecord {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SnapshotFooterRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::snapshot_footer_record::SnapshotFooterRecord {
-        crate::owned::snapshot_footer_record::SnapshotFooterRecord {
+    pub fn to_owned(&self) -> snapshot_footer_record::SnapshotFooterRecord {
+        snapshot_footer_record::SnapshotFooterRecord {
             version: (self.version),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -44,7 +42,7 @@ impl Encode for SnapshotFooterRecord {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

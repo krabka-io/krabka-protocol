@@ -33,8 +33,8 @@ cargo run -p krabka-protocol-codegen -- \
 # the include!'d generated bodies in place; only the genuinely unfixable lints
 # (intentional casts, must_use, always-true version comparisons) stay allowed in
 # the wrapper header. Run twice — a fix can expose a follow-on lint.
-cargo clippy --fix --allow-dirty --allow-staged -p krabka-protocol --all-targets >/dev/null
-cargo clippy --fix --allow-dirty --allow-staged -p krabka-protocol --all-targets >/dev/null
+cargo clippy --fix --allow-dirty --allow-staged -p krabka-protocol --all-targets -- --cap-lints warn >/dev/null
+cargo clippy --fix --allow-dirty --allow-staged -p krabka-protocol --all-targets -- --cap-lints warn >/dev/null
 
 # The codegen binary rustfmts each generated message file (they are include!'d,
 # so cargo fmt never reaches them); clippy --fix may leave its edits unformatted.

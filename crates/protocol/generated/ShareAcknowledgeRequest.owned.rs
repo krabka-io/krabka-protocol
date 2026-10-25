@@ -5,12 +5,14 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i32, get_i64, put_bool, put_i8, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, get_compact_nullable_string_owned,
             get_nullable_string_owned, nullable_string_len, put_compact_nullable_string,
             put_nullable_string,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -56,16 +58,16 @@ impl Encode for ShareAcknowledgeRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_id.as_deref());
+                put_compact_nullable_string(buf, self.group_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.group_id.as_deref());
+                put_nullable_string(buf, self.group_id.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.member_id.as_deref());
+                put_compact_nullable_string(buf, self.member_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.member_id.as_deref());
+                put_nullable_string(buf, self.member_id.as_deref())?;
             }
         }
         if version >= 0 {
@@ -76,15 +78,15 @@ impl Encode for ShareAcknowledgeRequest {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -113,8 +115,7 @@ impl Encode for ShareAcknowledgeRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -158,7 +159,7 @@ impl Decode<'_> for ShareAcknowledgeRequest {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AcknowledgeTopic::decode(buf, version)?);
@@ -178,10 +179,10 @@ impl ShareAcknowledgeRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.group_id = Some("x".to_string());
+            m.group_id = Some("x".to_owned());
         }
         if version >= 0 {
-            m.member_id = Some("x".to_string());
+            m.member_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.share_session_epoch = 1i32;
@@ -197,7 +198,7 @@ impl ShareAcknowledgeRequest {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AcknowledgeTopic {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<AcknowledgePartition>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -205,19 +206,19 @@ impl Encode for AcknowledgeTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -229,8 +230,7 @@ impl Encode for AcknowledgeTopic {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -250,11 +250,11 @@ impl Decode<'_> for AcknowledgeTopic {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AcknowledgePartition::decode(buf, version)?);
@@ -274,7 +274,7 @@ impl AcknowledgeTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![AcknowledgePartition::populated(version)];
@@ -296,19 +296,15 @@ impl Encode for AcknowledgePartition {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.acknowledgement_batches).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.acknowledgement_batches).len(), flex)?;
                 for it in &self.acknowledgement_batches {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -320,10 +316,7 @@ impl Encode for AcknowledgePartition {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.acknowledgement_batches).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.acknowledgement_batches).len(), flex);
                 let body: usize = (self.acknowledgement_batches)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -347,7 +340,7 @@ impl Decode<'_> for AcknowledgePartition {
         }
         if version >= 0 {
             out.acknowledgement_batches = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AcknowledgementBatch::decode(buf, version)?);
@@ -393,15 +386,15 @@ impl Encode for AcknowledgementBatch {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.acknowledge_types).len(), flex);
+                put_array_len(buf, (self.acknowledge_types).len(), flex)?;
                 for it in &self.acknowledge_types {
                     put_i8(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -416,10 +409,7 @@ impl Encode for AcknowledgementBatch {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.acknowledge_types).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.acknowledge_types).len(), flex);
                 let body: usize = (self.acknowledge_types).iter().map(|_| 1).sum();
                 prefix + body
             };
@@ -443,7 +433,7 @@ impl Decode<'_> for AcknowledgementBatch {
         }
         if version >= 0 {
             out.acknowledge_types = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i8(buf)?);
@@ -480,16 +470,16 @@ impl AcknowledgementBatch {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("groupId".to_string(), ::serde_json::Value::Null);
+    obj.insert("groupId".to_owned(), ::serde_json::Value::Null);
     obj.insert(
-        "memberId".to_string(),
+        "memberId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("shareSessionEpoch".to_string(), ::serde_json::json!(0));
+    obj.insert("shareSessionEpoch".to_owned(), ::serde_json::json!(0));
     if version >= 2 {
-        obj.insert("isRenewAck".to_string(), ::serde_json::Value::Bool(false));
+        obj.insert("isRenewAck".to_owned(), ::serde_json::Value::Bool(false));
     }
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ShareAcknowledgeRequest {

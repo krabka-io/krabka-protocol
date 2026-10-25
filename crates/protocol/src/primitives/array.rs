@@ -10,41 +10,58 @@ use crate::{
     ProtocolError,
     primitives::{
         fixed::{get_i32, put_i32},
-        varint::{get_uvarint, put_uvarint, uvarint_len},
+        varint::{compact_length, get_uvarint, put_uvarint, usize_uvarint_len, uvarint_len},
     },
 };
 
 /// Writes a non-nullable array-length prefix.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
-pub fn put_array_len<B: BufMut>(buf: &mut B, n: usize, flexible: bool) {
+/// # Errors
+/// Returns [`ProtocolError::LengthOverflow`] when `n` does not fit the prefix.
+pub fn put_array_len<B: BufMut>(
+    buf: &mut B,
+    n: usize,
+    flexible: bool,
+) -> Result<(), ProtocolError> {
     if flexible {
-        put_uvarint(buf, u32::try_from(n + 1).expect("array too large"));
+        put_uvarint(buf, compact_length(n, "array")?);
     } else {
-        put_i32(buf, i32::try_from(n).expect("array too large"));
+        put_i32(buf, int32_length(n)?);
     }
+    Ok(())
+}
+
+/// The non-flexible `INT32` prefix value for an array of `n` elements.
+fn int32_length(n: usize) -> Result<i32, ProtocolError> {
+    i32::try_from(n).map_err(|_| ProtocolError::LengthOverflow {
+        what: "array",
+        len: n,
+    })
 }
 
 /// Writes a nullable array-length prefix. `None` encodes as −1 for
 /// non-flexible versions, or 0 for flexible versions.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
-pub fn put_nullable_array_len<B: BufMut>(buf: &mut B, len: Option<usize>, flexible: bool) {
+/// # Errors
+/// Returns [`ProtocolError::LengthOverflow`] when the length does not fit the
+/// prefix.
+pub fn put_nullable_array_len<B: BufMut>(
+    buf: &mut B,
+    len: Option<usize>,
+    flexible: bool,
+) -> Result<(), ProtocolError> {
     match (flexible, len) {
         (false, None) => put_i32(buf, -1),
-        (false, Some(n)) => put_i32(buf, i32::try_from(n).expect("array too large")),
+        (false, Some(n)) => put_i32(buf, int32_length(n)?),
         (true, None) => put_uvarint(buf, 0),
-        (true, Some(n)) => put_uvarint(buf, u32::try_from(n + 1).expect("array too large")),
+        (true, Some(n)) => put_uvarint(buf, compact_length(n, "array")?),
     }
+    Ok(())
 }
 
 /// Number of bytes consumed by a non-nullable array-length prefix.
 #[must_use]
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn array_len_prefix_len(n: usize, flexible: bool) -> usize {
     if flexible {
-        uvarint_len(u32::try_from(n + 1).unwrap())
+        usize_uvarint_len(n.saturating_add(1))
     } else {
         4
     }
@@ -52,13 +69,11 @@ pub fn array_len_prefix_len(n: usize, flexible: bool) -> usize {
 
 /// Number of bytes consumed by a nullable array-length prefix.
 #[must_use]
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn nullable_array_len_prefix_len(len: Option<usize>, flexible: bool) -> usize {
     match (flexible, len) {
         (false, _) => 4,
         (true, None) => uvarint_len(0),
-        (true, Some(n)) => uvarint_len(u32::try_from(n + 1).unwrap()),
+        (true, Some(n)) => usize_uvarint_len(n.saturating_add(1)),
     }
 }
 
@@ -66,8 +81,6 @@ pub fn nullable_array_len_prefix_len(len: Option<usize>, flexible: bool) -> usiz
 /// null, which is −1 or 0.
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_array_len<B: Buf>(buf: &mut B, flexible: bool) -> Result<usize, ProtocolError> {
     let n = if flexible {
         let raw = get_uvarint(buf)?;
@@ -78,13 +91,12 @@ pub fn get_array_len<B: Buf>(buf: &mut B, flexible: bool) -> Result<usize, Proto
         }
         (raw - 1) as usize
     } else {
-        let n = get_i32(buf)?;
-        if n < 0 {
+        let Ok(n) = usize::try_from(get_i32(buf)?) else {
             return Err(ProtocolError::InvalidValue(
                 "non-nullable array had negative length",
             ));
-        }
-        usize::try_from(n).expect("n is non-negative")
+        };
+        n
     };
     // Every array element occupies at least one byte on the wire, so a
     // legitimate array of `n` elements always has at least `n` bytes left in
@@ -102,8 +114,6 @@ pub fn get_array_len<B: Buf>(buf: &mut B, flexible: bool) -> Result<usize, Proto
 /// null, which is −1 for non-flexible versions and 0 for flexible versions.
 /// # Errors
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_nullable_array_len<B: Buf>(
     buf: &mut B,
     flexible: bool,
@@ -115,11 +125,11 @@ pub fn get_nullable_array_len<B: Buf>(
         }
         (raw - 1) as usize
     } else {
-        let n = get_i32(buf)?;
-        if n < 0 {
+        // A negative length is null.
+        let Ok(n) = usize::try_from(get_i32(buf)?) else {
             return Ok(None);
-        }
-        usize::try_from(n).expect("n is non-negative")
+        };
+        n
     };
     // See `get_array_len`: a length larger than the remaining bytes cannot
     // describe a real array and must be rejected before pre-allocation.
@@ -147,7 +157,7 @@ mod tests {
             ("flex three", 3, true, &[0x04][..]),
         ] {
             let mut buf = BytesMut::new();
-            put_array_len(&mut buf, len, flexible);
+            put_array_len(&mut buf, len, flexible).unwrap();
             assert2::assert!(&buf[..] == expected_prefix);
             buf.extend_from_slice(&vec![0; len]);
             let mut cur = &buf[..];
@@ -164,7 +174,7 @@ mod tests {
             ("flex some", Some(3), true, &[0x04][..]),
         ] {
             let mut buf = BytesMut::new();
-            put_nullable_array_len(&mut buf, len, flexible);
+            put_nullable_array_len(&mut buf, len, flexible).unwrap();
             assert2::assert!(&buf[..] == expected_prefix);
             let payload_len = len.unwrap_or(0);
             buf.extend_from_slice(&vec![0; payload_len]);
@@ -237,9 +247,9 @@ mod tests {
         ] {
             let mut buf = BytesMut::new();
             if nullable {
-                put_nullable_array_len(&mut buf, Some(2_000_000_000), flexible);
+                put_nullable_array_len(&mut buf, Some(2_000_000_000), flexible).unwrap();
             } else {
-                put_array_len(&mut buf, 2_000_000_000, flexible);
+                put_array_len(&mut buf, 2_000_000_000, flexible).unwrap();
             }
             let mut cur = &buf[..];
             let result = if nullable {
@@ -260,7 +270,7 @@ mod tests {
     fn length_equal_to_remaining_is_accepted() {
         for (_case, flexible) in [("non-flex", false), ("flex", true)] {
             let mut buf = BytesMut::new();
-            put_array_len(&mut buf, 5, flexible);
+            put_array_len(&mut buf, 5, flexible).unwrap();
             buf.extend_from_slice(&[0u8; 5]);
             let mut cur = &buf[..];
             assert2::assert!(get_array_len(&mut cur, flexible).unwrap() == 5);

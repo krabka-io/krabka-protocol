@@ -3,7 +3,11 @@
 use quote::{format_ident, quote};
 
 use crate::{
-    emit::{common::banner, wrappers::Flavor},
+    emit::{
+        EmitError,
+        common::{banner, validate},
+        wrappers::Flavor,
+    },
     ir::MessageSpec,
     name_conv,
 };
@@ -15,15 +19,15 @@ use crate::{
 /// that covers all active schemas.
 /// If `has_common` is true, this function also emits a `pub mod common;`
 /// entry.
-#[must_use]
-/// # Panics
-/// Panics if the validated schema model cannot be represented as the expected Rust syntax tree.
+/// # Errors
+/// Returns an error when the generated code is not valid Rust, which is an
+/// emitter bug.
 pub fn emit(
     specs: &[&MessageSpec],
     flavor: Flavor,
     schemas_version: &str,
     has_common: bool,
-) -> String {
+) -> Result<String, EmitError> {
     let flavor_comment = match flavor {
         Flavor::Owned => "Owned (heap-allocated) message types.",
         Flavor::Borrowed => "Borrowed-flavor generated message types.",
@@ -38,7 +42,7 @@ pub fn emit(
         .collect();
     // Include `common` in the sorted list if this flavor has a common submodule.
     if has_common {
-        entries.push("common".to_string());
+        entries.push("common".to_owned());
     }
     entries.sort();
     entries.dedup();
@@ -54,10 +58,9 @@ pub fn emit(
     };
 
     // Validate at generation time.
-    let _validate: syn::File =
-        syn::parse2(tokens.clone()).expect("generated mod.rs must be valid Rust");
+    validate::<syn::File>(&tokens, "mod.rs")?;
 
-    format!("{banner}{tokens}")
+    Ok(format!("{banner}{tokens}"))
 }
 
 #[cfg(test)]
@@ -65,16 +68,16 @@ mod tests {
     use assert2::assert;
 
     use super::*;
-    use crate::ir::{MessageSpec, MessageType, VersionRange};
+    use crate::ir::{FlexibleVersions, MessageSpec, MessageType, VersionRange};
 
     fn make_spec(name: &str, min: i16, max: i16, ty: MessageType) -> MessageSpec {
         MessageSpec {
-            name: name.to_string(),
+            name: name.to_owned(),
             message_type: ty,
             api_key: None,
             valid_versions: VersionRange { min, max },
             latest_version_unstable: false,
-            flexible_versions: crate::ir::FlexibleVersions::None,
+            flexible_versions: FlexibleVersions::None,
             fields: vec![],
             common_structs: vec![],
             internal: false,
@@ -89,7 +92,7 @@ mod tests {
             make_spec("MetadataRequest", 0, 13, MessageType::Request),
         ];
         let refs: Vec<&MessageSpec> = specs.iter().collect();
-        let out = emit(&refs, Flavor::Owned, "test-sha", false);
+        let out = emit(&refs, Flavor::Owned, "test-sha", false).unwrap();
         // Must contain all three, in alphabetical order.
         // Note: quote! may emit `pub mod api_versions_request ;` (space before `;`),
         // so we search for the ident without the semicolon.
@@ -107,7 +110,7 @@ mod tests {
             make_spec("RemovedRequest", i16::MAX, i16::MIN, MessageType::Request),
         ];
         let refs: Vec<&MessageSpec> = specs.iter().collect();
-        let out = emit(&refs, Flavor::Owned, "test-sha", false);
+        let out = emit(&refs, Flavor::Owned, "test-sha", false).unwrap();
         assert!(out.contains("pub mod active_request"));
         assert!(!out.contains("pub mod removed_request"));
     }
@@ -115,7 +118,7 @@ mod tests {
     #[test]
     fn borrowed_flavor_has_correct_doc_comment() {
         let refs: Vec<&MessageSpec> = vec![];
-        let out = emit(&refs, Flavor::Borrowed, "sha123", false);
+        let out = emit(&refs, Flavor::Borrowed, "sha123", false).unwrap();
         // Output now uses `#![doc = "..."]` form instead of `//! ...` comment,
         // so we check for the doc text itself rather than the `//!` prefix.
         assert!(out.contains("Borrowed-flavor generated message types."));

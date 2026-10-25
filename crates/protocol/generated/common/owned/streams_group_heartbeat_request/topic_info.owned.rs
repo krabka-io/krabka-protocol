@@ -4,6 +4,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -25,9 +26,9 @@ impl Encode for TopicInfo {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -38,15 +39,15 @@ impl Encode for TopicInfo {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_configs).len(), flex);
+                put_array_len(buf, (self.topic_configs).len(), flex)?;
                 for it in &self.topic_configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -68,10 +69,7 @@ impl Encode for TopicInfo {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_configs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_configs).len(), flex);
                 let body: usize = (self.topic_configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -105,7 +103,7 @@ impl Decode<'_> for TopicInfo {
         }
         if version >= 0 {
             out.topic_configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::key_value::KeyValue::decode(buf, version)?);
@@ -125,7 +123,7 @@ impl TopicInfo {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = 1i32;

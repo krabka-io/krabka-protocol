@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_acls_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -46,15 +48,12 @@ impl Default for DescribeAclsResponse<'_> {
     }
 }
 impl DescribeAclsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_acls_response::DescribeAclsResponse {
-        crate::owned::describe_acls_response::DescribeAclsResponse {
+    pub fn to_owned(&self) -> describe_acls_response::DescribeAclsResponse {
+        describe_acls_response::DescribeAclsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             resources: (self.resources)
                 .iter()
                 .map(DescribeAclsResource::to_owned)
@@ -80,22 +79,22 @@ impl Encode for DescribeAclsResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -117,8 +116,7 @@ impl Encode for DescribeAclsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -158,7 +156,7 @@ impl<'de> DecodeBorrow<'de> for DescribeAclsResponse<'de> {
         }
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeAclsResource::decode_borrow(buf, version)?);
@@ -212,14 +210,11 @@ impl Default for DescribeAclsResource<'_> {
     }
 }
 impl DescribeAclsResource<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_acls_response::DescribeAclsResource {
-        crate::owned::describe_acls_response::DescribeAclsResource {
+    pub fn to_owned(&self) -> describe_acls_response::DescribeAclsResource {
+        describe_acls_response::DescribeAclsResource {
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             pattern_type: (self.pattern_type),
             acls: (self.acls).iter().map(AclDescription::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -234,9 +229,9 @@ impl Encode for DescribeAclsResource<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 1 {
@@ -244,15 +239,15 @@ impl Encode for DescribeAclsResource<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.acls).len(), flex);
+                put_array_len(buf, (self.acls).len(), flex)?;
                 for it in &self.acls {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -274,8 +269,7 @@ impl Encode for DescribeAclsResource<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.acls).len(), flex);
+                let prefix = array_len_prefix_len((self.acls).len(), flex);
                 let body: usize = (self.acls).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -306,7 +300,7 @@ impl<'de> DecodeBorrow<'de> for DescribeAclsResource<'de> {
         }
         if version >= 0 {
             out.acls = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AclDescription::decode_borrow(buf, version)?);
@@ -349,14 +343,11 @@ pub struct AclDescription<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AclDescription<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_acls_response::AclDescription {
-        crate::owned::describe_acls_response::AclDescription {
-            principal: (self.principal).to_string(),
-            host: (self.host).to_string(),
+    pub fn to_owned(&self) -> describe_acls_response::AclDescription {
+        describe_acls_response::AclDescription {
+            principal: (self.principal).to_owned(),
+            host: (self.host).to_owned(),
             operation: (self.operation),
             permission_type: (self.permission_type),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -368,16 +359,16 @@ impl Encode for AclDescription<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal);
+                put_compact_string(buf, self.principal)?;
             } else {
-                let () = put_string(buf, self.principal);
+                put_string(buf, self.principal)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -388,7 +379,7 @@ impl Encode for AclDescription<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

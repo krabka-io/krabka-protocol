@@ -1,6 +1,6 @@
-use std::{fs, path::Path};
+use std::{fs, io, path::Path};
 
-use serde::Deserialize;
+use serde::{Deserialize, de};
 use thiserror::Error;
 
 /// One parsed Kafka message schema.
@@ -57,7 +57,7 @@ pub struct FieldSpec {
     #[serde(default)]
     pub tag: Option<u32>,
     #[serde(default)]
-    pub fields: Vec<FieldSpec>,
+    pub fields: Vec<Self>,
     #[serde(default)]
     pub default: Option<serde_json::Value>,
     #[serde(default = "default_entity_type")]
@@ -114,12 +114,12 @@ impl<'de> Deserialize<'de> for VersionRange {
         let s = String::deserialize(d)?;
         // "none" means the version range is empty (e.g. removed messages).
         if s == "none" {
-            return Ok(VersionRange {
+            return Ok(Self {
                 min: i16::MAX,
                 max: i16::MIN,
             });
         }
-        parse_version_range(&s).map_err(serde::de::Error::custom)
+        parse_version_range(&s).map_err(de::Error::custom)
     }
 }
 
@@ -164,10 +164,10 @@ impl<'de> Deserialize<'de> for FlexibleVersions {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
         if s == "none" {
-            return Ok(FlexibleVersions::None);
+            return Ok(Self::None);
         }
-        Ok(FlexibleVersions::Range(
-            parse_version_range(&s).map_err(serde::de::Error::custom)?,
+        Ok(Self::Range(
+            parse_version_range(&s).map_err(de::Error::custom)?,
         ))
     }
 }
@@ -176,8 +176,8 @@ impl FlexibleVersions {
     #[must_use]
     pub fn is_flexible(&self, v: i16) -> bool {
         match self {
-            FlexibleVersions::None => false,
-            FlexibleVersions::Range(r) => r.contains(v),
+            Self::None => false,
+            Self::Range(r) => r.contains(v),
         }
     }
 }
@@ -185,7 +185,7 @@ impl FlexibleVersions {
 #[derive(Debug, Error)]
 pub enum IrError {
     #[error("I/O: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error("parse {file}: {source}")]
     Parse {
         file: String,
@@ -227,9 +227,8 @@ fn strip_line_comments(src: &str) -> String {
         let bytes = line.as_bytes();
         let mut in_str = false;
         let mut escaped = false;
-        let mut i = 0;
-        while i < bytes.len() {
-            let b = bytes[i];
+        let mut end = bytes.len();
+        for (i, &b) in bytes.iter().enumerate() {
             if in_str {
                 if escaped {
                     escaped = false;
@@ -241,11 +240,13 @@ fn strip_line_comments(src: &str) -> String {
             } else if b == b'"' {
                 in_str = true;
             } else if b == b'/' && bytes.get(i + 1) == Some(&b'/') {
+                end = i;
                 break;
             }
-            i += 1;
         }
-        out.push_str(&line[..i]);
+        // `end` sits on an ASCII `/` or at the end of the line, so it is
+        // always a character boundary.
+        out.push_str(line.get(..end).unwrap_or(line));
         out.push('\n');
     }
     out

@@ -4,6 +4,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
@@ -46,14 +47,14 @@ impl Encode for UpdateRaftVoterResponse {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -68,7 +69,7 @@ impl Encode for UpdateRaftVoterResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 known_pairs.push((0, self.current_leader.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -158,9 +159,9 @@ impl Encode for CurrentLeader {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -168,7 +169,7 @@ impl Encode for CurrentLeader {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -236,7 +237,7 @@ impl CurrentLeader {
             m.leader_epoch = 1i32;
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1i32;
@@ -250,17 +251,17 @@ impl CurrentLeader {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("currentLeader".to_string(), {
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("currentLeader".to_owned(), {
         let mut m = ::serde_json::Map::new();
-        m.insert("leaderId".to_string(), ::serde_json::json!(-1));
-        m.insert("leaderEpoch".to_string(), ::serde_json::json!(-1));
+        m.insert("leaderId".to_owned(), ::serde_json::json!(-1));
+        m.insert("leaderEpoch".to_owned(), ::serde_json::json!(-1));
         m.insert(
-            "host".to_string(),
+            "host".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
-        m.insert("port".to_string(), ::serde_json::json!(0));
+        m.insert("port".to_owned(), ::serde_json::json!(0));
         ::serde_json::Value::Object(m)
     });
     ::serde_json::Value::Object(obj)
@@ -273,7 +274,7 @@ pub fn tagged_fixture() -> UpdateRaftVoterResponse {
         current_leader: CurrentLeader {
             leader_id: 1i32,
             leader_epoch: 1i32,
-            host: "x".to_string(),
+            host: "x".to_owned(),
             port: 1i32,
             ..CurrentLeader::default()
         },
@@ -285,17 +286,17 @@ pub fn tagged_fixture() -> UpdateRaftVoterResponse {
 #[must_use]
 pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    m.insert("errorCode".to_string(), ::serde_json::json!(0));
-    m.insert("currentLeader".to_string(), {
+    m.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    m.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    m.insert("currentLeader".to_owned(), {
         let mut m = ::serde_json::Map::new();
-        m.insert("leaderId".to_string(), ::serde_json::json!(1));
-        m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+        m.insert("leaderId".to_owned(), ::serde_json::json!(1));
+        m.insert("leaderEpoch".to_owned(), ::serde_json::json!(1));
         m.insert(
-            "host".to_string(),
-            ::serde_json::Value::String("x".to_string()),
+            "host".to_owned(),
+            ::serde_json::Value::String("x".to_owned()),
         );
-        m.insert("port".to_string(), ::serde_json::json!(1));
+        m.insert("port".to_owned(), ::serde_json::json!(1));
         ::serde_json::Value::Object(m)
     });
     ::serde_json::Value::Object(m)

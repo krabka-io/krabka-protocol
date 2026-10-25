@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -41,18 +42,18 @@ impl Encode for ProduceResponse {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i32(buf, self.throttle_time_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -61,8 +62,7 @@ impl Encode for ProduceResponse {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -92,7 +92,7 @@ impl Decode<'_> for ProduceResponse {
         let mut out = Self::default();
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicProduceResponse::decode(buf, version)?);
@@ -134,26 +134,22 @@ impl Encode for TopicProduceResponse {
         let flex = version >= 9;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.partition_responses).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.partition_responses).len(), flex)?;
                 for it in &self.partition_responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -169,10 +165,7 @@ impl Encode for TopicProduceResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_responses).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_responses).len(), flex);
                 let body: usize = (self.partition_responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -200,7 +193,7 @@ impl Decode<'_> for TopicProduceResponse {
         }
         if version >= 0 {
             out.partition_responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionProduceResponse::decode(buf, version)?);
@@ -220,7 +213,7 @@ impl TopicProduceResponse {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partition_responses = vec![PartitionProduceResponse::populated(version)];
@@ -273,22 +266,22 @@ impl Encode for PartitionProduceResponse {
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.record_errors).len(), flex);
+                put_array_len(buf, (self.record_errors).len(), flex)?;
                 for it in &self.record_errors {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 8 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -312,10 +305,7 @@ impl Encode for PartitionProduceResponse {
         }
         if version >= 8 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.record_errors).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.record_errors).len(), flex);
                 let body: usize = (self.record_errors)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -358,7 +348,7 @@ impl Decode<'_> for PartitionProduceResponse {
         }
         if version >= 8 {
             out.record_errors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(BatchIndexAndErrorMessage::decode(buf, version)?);
@@ -403,7 +393,7 @@ impl PartitionProduceResponse {
             m.record_errors = vec![BatchIndexAndErrorMessage::populated(version)];
         }
         if version >= 8 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         m
     }
@@ -422,15 +412,14 @@ impl Encode for BatchIndexAndErrorMessage {
         }
         if version >= 8 {
             if flex {
-                let () =
-                    put_compact_nullable_string(buf, self.batch_index_error_message.as_deref());
+                put_compact_nullable_string(buf, self.batch_index_error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.batch_index_error_message.as_deref());
+                put_nullable_string(buf, self.batch_index_error_message.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -483,7 +472,7 @@ impl BatchIndexAndErrorMessage {
             m.batch_index = 1i32;
         }
         if version >= 8 {
-            m.batch_index_error_message = Some("x".to_string());
+            m.batch_index_error_message = Some("x".to_owned());
         }
         m
     }
@@ -494,9 +483,9 @@ impl BatchIndexAndErrorMessage {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("responses".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("responses".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 1 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
     ::serde_json::Value::Object(obj)
 }

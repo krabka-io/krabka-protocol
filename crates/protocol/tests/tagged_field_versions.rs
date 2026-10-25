@@ -18,6 +18,7 @@
 //! version that its schema does not declare. `decode_rejects_out_of_version_tags`
 //! sends each such tag as an unknown field, so the bytes carry the tag, and
 //! expects that error.
+#![cfg(test)]
 
 use std::ops::RangeInclusive;
 

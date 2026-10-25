@@ -4,7 +4,9 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i32, get_i64, put_bool, put_i8, put_i32, put_i64},
         string_bytes::{
             compact_nullable_bytes_len, compact_string_len, get_compact_nullable_bytes_owned,
@@ -12,6 +14,7 @@ use crate::{
             nullable_bytes_len, put_compact_nullable_bytes, put_compact_string, put_nullable_bytes,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -83,15 +86,11 @@ impl RemoteLogSegmentMetadataRecord {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.segment_leader_epochs).len(), flex)?;
                 for it in &self.segment_leader_epochs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -100,32 +99,44 @@ impl RemoteLogSegmentMetadataRecord {
             put_i32(buf, self.segment_size_in_bytes);
         }
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.custom_metadata.as_deref());
+                put_compact_nullable_bytes(buf, self.custom_metadata.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.custom_metadata.as_deref());
+                put_nullable_bytes(buf, self.custom_metadata.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_9<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i8(buf, self.remote_log_segment_state);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_bool(b, self.txn_index_empty);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -201,7 +212,7 @@ impl RemoteLogSegmentMetadataRecord {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.segment_leader_epochs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(SegmentLeaderEpochEntry::decode(buf, version)?);
@@ -289,9 +300,9 @@ impl Encode for RemoteLogSegmentMetadataRecord {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
+        self.encode_field_8(buf, version, flex)?;
         self.encode_field_9(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -317,10 +328,7 @@ impl Encode for RemoteLogSegmentMetadataRecord {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.segment_leader_epochs).len(), flex);
                 let body: usize = (self.segment_leader_epochs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -343,7 +351,7 @@ impl Encode for RemoteLogSegmentMetadataRecord {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 known_pairs.push((0, 1));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -418,7 +426,7 @@ impl RemoteLogSegmentMetadataRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoteLogSegmentIdEntry {
     pub topic_id_partition: TopicIdPartitionEntry,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for RemoteLogSegmentIdEntry {
@@ -428,11 +436,11 @@ impl Encode for RemoteLogSegmentIdEntry {
             self.topic_id_partition.encode(buf, version)?;
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -460,7 +468,7 @@ impl Decode<'_> for RemoteLogSegmentIdEntry {
             out.topic_id_partition = TopicIdPartitionEntry::decode(buf, version)?;
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -477,7 +485,7 @@ impl RemoteLogSegmentIdEntry {
             m.topic_id_partition = TopicIdPartitionEntry::populated(version);
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         m
     }
@@ -485,7 +493,7 @@ impl RemoteLogSegmentIdEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicIdPartitionEntry {
     pub name: String,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub partition: i32,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -494,20 +502,20 @@ impl Encode for TopicIdPartitionEntry {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if version >= 0 {
             put_i32(buf, self.partition);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -546,7 +554,7 @@ impl Decode<'_> for TopicIdPartitionEntry {
             };
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition = get_i32(buf)?;
@@ -563,10 +571,10 @@ impl TopicIdPartitionEntry {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition = 1i32;
@@ -591,7 +599,7 @@ impl Encode for SegmentLeaderEpochEntry {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -647,43 +655,40 @@ impl SegmentLeaderEpochEntry {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("remoteLogSegmentId".to_string(), {
+    obj.insert("remoteLogSegmentId".to_owned(), {
         let mut m = ::serde_json::Map::new();
-        m.insert("topicIdPartition".to_string(), {
+        m.insert("topicIdPartition".to_owned(), {
             let mut m = ::serde_json::Map::new();
             m.insert(
-                "name".to_string(),
+                "name".to_owned(),
                 ::serde_json::Value::String(String::new()),
             );
             m.insert(
-                "id".to_string(),
-                ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                "id".to_owned(),
+                ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
             );
-            m.insert("partition".to_string(), ::serde_json::json!(0));
+            m.insert("partition".to_owned(), ::serde_json::json!(0));
             ::serde_json::Value::Object(m)
         });
         m.insert(
-            "id".to_string(),
-            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+            "id".to_owned(),
+            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
         );
         ::serde_json::Value::Object(m)
     });
-    obj.insert("startOffset".to_string(), ::serde_json::json!(0));
-    obj.insert("endOffset".to_string(), ::serde_json::json!(0));
-    obj.insert("brokerId".to_string(), ::serde_json::json!(0));
-    obj.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
-    obj.insert("eventTimestampMs".to_string(), ::serde_json::json!(0));
+    obj.insert("startOffset".to_owned(), ::serde_json::json!(0));
+    obj.insert("endOffset".to_owned(), ::serde_json::json!(0));
+    obj.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("maxTimestampMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("eventTimestampMs".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "segmentLeaderEpochs".to_string(),
+        "segmentLeaderEpochs".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    obj.insert("segmentSizeInBytes".to_string(), ::serde_json::json!(0));
-    obj.insert("customMetadata".to_string(), ::serde_json::Value::Null);
-    obj.insert("remoteLogSegmentState".to_string(), ::serde_json::json!(0));
-    obj.insert(
-        "txnIndexEmpty".to_string(),
-        ::serde_json::Value::Bool(false),
-    );
+    obj.insert("segmentSizeInBytes".to_owned(), ::serde_json::json!(0));
+    obj.insert("customMetadata".to_owned(), ::serde_json::Value::Null);
+    obj.insert("remoteLogSegmentState".to_owned(), ::serde_json::json!(0));
+    obj.insert("txnIndexEmpty".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 /// A message with a non-default value in every tagged field, at every depth, for
@@ -700,39 +705,39 @@ pub fn tagged_fixture() -> RemoteLogSegmentMetadataRecord {
 #[must_use]
 pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("remoteLogSegmentId".to_string(), {
+    m.insert("remoteLogSegmentId".to_owned(), {
         let mut m = ::serde_json::Map::new();
-        m.insert("topicIdPartition".to_string(), {
+        m.insert("topicIdPartition".to_owned(), {
             let mut m = ::serde_json::Map::new();
             m.insert(
-                "name".to_string(),
+                "name".to_owned(),
                 ::serde_json::Value::String(String::new()),
             );
             m.insert(
-                "id".to_string(),
-                ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                "id".to_owned(),
+                ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
             );
-            m.insert("partition".to_string(), ::serde_json::json!(0));
+            m.insert("partition".to_owned(), ::serde_json::json!(0));
             ::serde_json::Value::Object(m)
         });
         m.insert(
-            "id".to_string(),
-            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+            "id".to_owned(),
+            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
         );
         ::serde_json::Value::Object(m)
     });
-    m.insert("startOffset".to_string(), ::serde_json::json!(0));
-    m.insert("endOffset".to_string(), ::serde_json::json!(0));
-    m.insert("brokerId".to_string(), ::serde_json::json!(0));
-    m.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
-    m.insert("eventTimestampMs".to_string(), ::serde_json::json!(0));
+    m.insert("startOffset".to_owned(), ::serde_json::json!(0));
+    m.insert("endOffset".to_owned(), ::serde_json::json!(0));
+    m.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    m.insert("maxTimestampMs".to_owned(), ::serde_json::json!(0));
+    m.insert("eventTimestampMs".to_owned(), ::serde_json::json!(0));
     m.insert(
-        "segmentLeaderEpochs".to_string(),
+        "segmentLeaderEpochs".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    m.insert("segmentSizeInBytes".to_string(), ::serde_json::json!(0));
-    m.insert("customMetadata".to_string(), ::serde_json::Value::Null);
-    m.insert("remoteLogSegmentState".to_string(), ::serde_json::json!(0));
-    m.insert("txnIndexEmpty".to_string(), ::serde_json::Value::Bool(true));
+    m.insert("segmentSizeInBytes".to_owned(), ::serde_json::json!(0));
+    m.insert("customMetadata".to_owned(), ::serde_json::Value::Null);
+    m.insert("remoteLogSegmentState".to_owned(), ::serde_json::json!(0));
+    m.insert("txnIndexEmpty".to_owned(), ::serde_json::Value::Bool(true));
     ::serde_json::Value::Object(m)
 }

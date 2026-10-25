@@ -3,16 +3,21 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::remote_log_segment_metadata_record,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i32, get_i64, put_bool, put_i8, put_i32, put_i64},
         string_bytes::{
-            compact_string_len, put_compact_nullable_bytes, put_compact_string, put_nullable_bytes,
-            put_string, string_len,
+            compact_nullable_bytes_len, compact_string_len, nullable_bytes_len,
+            put_compact_nullable_bytes, put_compact_string, put_nullable_bytes, put_string,
+            string_len,
         },
         string_bytes_borrowed::{
             get_compact_nullable_bytes_borrowed, get_compact_string_borrowed,
             get_nullable_bytes_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -40,14 +45,9 @@ pub struct RemoteLogSegmentMetadataRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl<'a> RemoteLogSegmentMetadataRecord<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_record::RemoteLogSegmentMetadataRecord {
-        crate::owned::remote_log_segment_metadata_record::RemoteLogSegmentMetadataRecord {
+    pub fn to_owned(&self) -> remote_log_segment_metadata_record::RemoteLogSegmentMetadataRecord {
+        remote_log_segment_metadata_record::RemoteLogSegmentMetadataRecord {
             remote_log_segment_id: (self.remote_log_segment_id).to_owned(),
             start_offset: (self.start_offset),
             end_offset: (self.end_offset),
@@ -109,15 +109,11 @@ impl<'a> RemoteLogSegmentMetadataRecord<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.segment_leader_epochs).len(), flex)?;
                 for it in &self.segment_leader_epochs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -126,32 +122,44 @@ impl<'a> RemoteLogSegmentMetadataRecord<'a> {
             put_i32(buf, self.segment_size_in_bytes);
         }
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.custom_metadata);
+                put_compact_nullable_bytes(buf, self.custom_metadata)?;
             } else {
-                let () = put_nullable_bytes(buf, self.custom_metadata);
+                put_nullable_bytes(buf, self.custom_metadata)?;
             }
         }
+        Ok(())
     }
     fn encode_field_9<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i8(buf, self.remote_log_segment_state);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_bool(b, self.txn_index_empty);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -227,7 +235,7 @@ impl<'a> RemoteLogSegmentMetadataRecord<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.segment_leader_epochs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(SegmentLeaderEpochEntry::decode_borrow(buf, version)?);
@@ -315,9 +323,9 @@ impl Encode for RemoteLogSegmentMetadataRecord<'_> {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
+        self.encode_field_8(buf, version, flex)?;
         self.encode_field_9(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -343,10 +351,7 @@ impl Encode for RemoteLogSegmentMetadataRecord<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.segment_leader_epochs).len(), flex);
                 let body: usize = (self.segment_leader_epochs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -358,22 +363,10 @@ impl Encode for RemoteLogSegmentMetadataRecord<'_> {
             n += 4;
         }
         if version >= 0 {
-            n += match self.custom_metadata {
-                None => {
-                    if flex {
-                        1
-                    } else {
-                        4
-                    }
-                }
-                Some(b) => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap())
-                            + b.len()
-                    } else {
-                        4 + b.len()
-                    }
-                }
+            n += if flex {
+                compact_nullable_bytes_len(self.custom_metadata)
+            } else {
+                nullable_bytes_len(self.custom_metadata)
             };
         }
         if version >= 0 {
@@ -381,7 +374,7 @@ impl Encode for RemoteLogSegmentMetadataRecord<'_> {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 known_pairs.push((0, 1));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -456,18 +449,13 @@ impl RemoteLogSegmentMetadataRecord<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoteLogSegmentIdEntry<'a> {
     pub topic_id_partition: TopicIdPartitionEntry<'a>,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoteLogSegmentIdEntry<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_record::RemoteLogSegmentIdEntry {
-        crate::owned::remote_log_segment_metadata_record::RemoteLogSegmentIdEntry {
+    pub fn to_owned(&self) -> remote_log_segment_metadata_record::RemoteLogSegmentIdEntry {
+        remote_log_segment_metadata_record::RemoteLogSegmentIdEntry {
             topic_id_partition: (self.topic_id_partition).to_owned(),
             id: (self.id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -481,11 +469,11 @@ impl Encode for RemoteLogSegmentIdEntry<'_> {
             self.topic_id_partition.encode(buf, version)?;
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -513,7 +501,7 @@ impl<'de> DecodeBorrow<'de> for RemoteLogSegmentIdEntry<'de> {
             out.topic_id_partition = TopicIdPartitionEntry::decode_borrow(buf, version)?;
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -530,7 +518,7 @@ impl RemoteLogSegmentIdEntry<'_> {
             m.topic_id_partition = TopicIdPartitionEntry::populated(version);
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         m
     }
@@ -538,20 +526,15 @@ impl RemoteLogSegmentIdEntry<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicIdPartitionEntry<'a> {
     pub name: &'a str,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub partition: i32,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicIdPartitionEntry<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_record::TopicIdPartitionEntry {
-        crate::owned::remote_log_segment_metadata_record::TopicIdPartitionEntry {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> remote_log_segment_metadata_record::TopicIdPartitionEntry {
+        remote_log_segment_metadata_record::TopicIdPartitionEntry {
+            name: (self.name).to_owned(),
             id: (self.id),
             partition: (self.partition),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -563,20 +546,20 @@ impl Encode for TopicIdPartitionEntry<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if version >= 0 {
             put_i32(buf, self.partition);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -615,7 +598,7 @@ impl<'de> DecodeBorrow<'de> for TopicIdPartitionEntry<'de> {
             };
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition = get_i32(buf)?;
@@ -635,7 +618,7 @@ impl TopicIdPartitionEntry<'_> {
             m.name = "x";
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition = 1i32;
@@ -650,14 +633,9 @@ pub struct SegmentLeaderEpochEntry {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SegmentLeaderEpochEntry {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_record::SegmentLeaderEpochEntry {
-        crate::owned::remote_log_segment_metadata_record::SegmentLeaderEpochEntry {
+    pub fn to_owned(&self) -> remote_log_segment_metadata_record::SegmentLeaderEpochEntry {
+        remote_log_segment_metadata_record::SegmentLeaderEpochEntry {
             leader_epoch: (self.leader_epoch),
             offset: (self.offset),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -675,7 +653,7 @@ impl Encode for SegmentLeaderEpochEntry {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

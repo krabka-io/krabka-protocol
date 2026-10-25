@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -42,29 +43,29 @@ impl Encode for DelegationTokenRecord {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.owner);
+                put_compact_string(buf, &self.owner)?;
             } else {
-                let () = put_string(buf, &self.owner);
+                put_string(buf, &self.owner)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.requester);
+                put_compact_string(buf, &self.requester)?;
             } else {
-                let () = put_string(buf, &self.requester);
+                put_string(buf, &self.requester)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.renewers).len(), flex);
+                put_array_len(buf, (self.renewers).len(), flex)?;
                 for it in &self.renewers {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i64(buf, self.issue_timestamp);
@@ -77,14 +78,14 @@ impl Encode for DelegationTokenRecord {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.token_id);
+                put_compact_string(buf, &self.token_id)?;
             } else {
-                let () = put_string(buf, &self.token_id);
+                put_string(buf, &self.token_id)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -107,8 +108,7 @@ impl Encode for DelegationTokenRecord {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.renewers).len(), flex);
+                let prefix = array_len_prefix_len((self.renewers).len(), flex);
                 let body: usize = (self.renewers)
                     .iter()
                     .map(|it| {
@@ -170,7 +170,7 @@ impl Decode<'_> for DelegationTokenRecord {
         }
         if version >= 0 {
             out.renewers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -210,13 +210,13 @@ impl DelegationTokenRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.owner = "x".to_string();
+            m.owner = "x".to_owned();
         }
         if version >= 0 {
-            m.requester = "x".to_string();
+            m.requester = "x".to_owned();
         }
         if version >= 0 {
-            m.renewers = vec!["x".to_string()];
+            m.renewers = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.issue_timestamp = 1i64;
@@ -228,7 +228,7 @@ impl DelegationTokenRecord {
             m.expiration_timestamp = 1i64;
         }
         if version >= 0 {
-            m.token_id = "x".to_string();
+            m.token_id = "x".to_owned();
         }
         m
     }
@@ -240,19 +240,19 @@ impl DelegationTokenRecord {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "owner".to_string(),
+        "owner".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "requester".to_string(),
+        "requester".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("renewers".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("issueTimestamp".to_string(), ::serde_json::json!(0));
-    obj.insert("maxTimestamp".to_string(), ::serde_json::json!(0));
-    obj.insert("expirationTimestamp".to_string(), ::serde_json::json!(0));
+    obj.insert("renewers".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("issueTimestamp".to_owned(), ::serde_json::json!(0));
+    obj.insert("maxTimestamp".to_owned(), ::serde_json::json!(0));
+    obj.insert("expirationTimestamp".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "tokenId".to_string(),
+        "tokenId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

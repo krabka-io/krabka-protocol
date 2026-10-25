@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::consumer_group_heartbeat_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, nullable_string_len, put_compact_nullable_string,
@@ -36,18 +38,13 @@ pub struct ConsumerGroupHeartbeatResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ConsumerGroupHeartbeatResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::consumer_group_heartbeat_response::ConsumerGroupHeartbeatResponse {
-        crate::owned::consumer_group_heartbeat_response::ConsumerGroupHeartbeatResponse {
+    pub fn to_owned(&self) -> consumer_group_heartbeat_response::ConsumerGroupHeartbeatResponse {
+        consumer_group_heartbeat_response::ConsumerGroupHeartbeatResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
-            member_id: (self.member_id).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
+            member_id: (self.member_id).map(str::to_owned),
             member_epoch: (self.member_epoch),
             heartbeat_interval_ms: (self.heartbeat_interval_ms),
             assignment: (self.assignment).as_ref().map(Assignment::to_owned),
@@ -72,16 +69,16 @@ impl Encode for ConsumerGroupHeartbeatResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.member_id);
+                put_compact_nullable_string(buf, self.member_id)?;
             } else {
-                let () = put_nullable_string(buf, self.member_id);
+                put_nullable_string(buf, self.member_id)?;
             }
         }
         if version >= 0 {
@@ -103,7 +100,7 @@ impl Encode for ConsumerGroupHeartbeatResponse<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -234,12 +231,9 @@ pub struct Assignment {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Assignment {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::consumer_group_heartbeat_response::Assignment {
-        crate::owned::consumer_group_heartbeat_response::Assignment {
+    pub fn to_owned(&self) -> consumer_group_heartbeat_response::Assignment {
+        consumer_group_heartbeat_response::Assignment {
             topic_partitions: (self.topic_partitions).iter().map(super::common::consumer_group_heartbeat_response::topic_partitions::TopicPartitions::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -250,15 +244,15 @@ impl Encode for Assignment {
         let flex = version >= 0;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_partitions).len(), flex);
+                put_array_len(buf, (self.topic_partitions).len(), flex)?;
                 for it in &self.topic_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -267,10 +261,7 @@ impl Encode for Assignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_partitions).len(), flex);
                 let body: usize = (self.topic_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -291,7 +282,7 @@ impl<'de> DecodeBorrow<'de> for Assignment {
         let mut out = Self::default();
         if version >= 0 {
             out.topic_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::consumer_group_heartbeat_response::topic_partitions::TopicPartitions::decode_borrow(buf, version)?);

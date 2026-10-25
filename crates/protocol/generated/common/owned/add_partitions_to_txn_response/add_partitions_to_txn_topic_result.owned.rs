@@ -3,9 +3,12 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-        put_string, string_len,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        string_bytes::{
+            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
+            put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -21,26 +24,22 @@ impl Encode for AddPartitionsToTxnTopicResult {
         let flex = version >= 3;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.results_by_partition).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.results_by_partition).len(), flex)?;
                 for it in &self.results_by_partition {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -56,10 +55,7 @@ impl Encode for AddPartitionsToTxnTopicResult {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.results_by_partition).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.results_by_partition).len(), flex);
                 let body: usize = (self.results_by_partition)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -87,7 +83,7 @@ impl Decode<'_> for AddPartitionsToTxnTopicResult {
         }
         if version >= 0 {
             out.results_by_partition = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult::decode(buf, version)?);
@@ -107,7 +103,7 @@ impl AddPartitionsToTxnTopicResult {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.results_by_partition = vec![super::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult::populated(version)];

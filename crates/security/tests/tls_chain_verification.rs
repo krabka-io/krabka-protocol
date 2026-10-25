@@ -8,8 +8,9 @@
 //! is missing, and a leaf that chains to the trusted root is accepted. The
 //! client configs check the server's chain, and the `Required` server config
 //! checks the client's.
+#![cfg(test)]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use krabka_security::{ClientAuthMode, TlsConfig};
 use rcgen::{
@@ -18,7 +19,7 @@ use rcgen::{
 };
 use rustls::{
     CertificateError, ClientConfig, ClientConnection, ServerConfig, ServerConnection,
-    pki_types::ServerName,
+    crypto::ring::default_provider, pki_types::ServerName,
 };
 
 const SERVER_NAME: &str = "localhost";
@@ -60,7 +61,7 @@ struct Leaf {
 }
 
 fn leaf(common_name: &str, issuer: &Issuer) -> Leaf {
-    let mut params = CertificateParams::new(vec![SERVER_NAME.to_string()]).expect("leaf params");
+    let mut params = CertificateParams::new(vec![SERVER_NAME.to_owned()]).expect("leaf params");
     params
         .distinguished_name
         .push(DnType::CommonName, common_name);
@@ -114,7 +115,7 @@ impl Pki {
 
     fn write(&self, name: &str, contents: &str) -> PathBuf {
         let path = self.dir.path().join(name);
-        std::fs::write(&path, contents).expect("write PEM");
+        fs::write(&path, contents).expect("write PEM");
         path
     }
 
@@ -191,7 +192,7 @@ fn handshake(client: Arc<ClientConfig>, server: Arc<ServerConfig>) -> Result<(),
 }
 
 fn install_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = default_provider().install_default();
 }
 
 fn unknown_issuer() -> rustls::Error {

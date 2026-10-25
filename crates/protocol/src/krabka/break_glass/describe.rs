@@ -11,6 +11,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -67,7 +69,7 @@ impl Encode for DescribeBreakGlassRequest {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_bool(buf, self.pending_only);
         put_uuid(buf, self.proposal_id);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -118,11 +120,11 @@ pub struct BreakGlassApproval {
 
 impl Encode for BreakGlassApproval {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.principal);
+        put_compact_string(buf, &self.principal)?;
         put_i64(buf, self.approved_at_ms);
-        put_compact_string(buf, &self.key_id);
-        put_compact_bytes(buf, &self.signature);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        put_compact_string(buf, &self.key_id)?;
+        put_compact_bytes(buf, &self.signature)?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -183,15 +185,15 @@ impl Encode for DescribedBreakGlassProposal {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         put_uuid(buf, self.proposal_id);
         put_i8(buf, self.action);
-        put_compact_string(buf, &self.target);
-        put_compact_string(buf, &self.proposer);
-        put_compact_string(buf, &self.reason);
+        put_compact_string(buf, &self.target)?;
+        put_compact_string(buf, &self.proposer)?;
+        put_compact_string(buf, &self.reason)?;
         put_i64(buf, self.created_at_ms);
         put_i64(buf, self.expires_at_ms);
         put_i64(buf, self.consumed_at_ms);
         put_bool(buf, self.withdrawn);
         encode_array(buf, &self.approvals, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -249,9 +251,9 @@ impl Encode for DescribeBreakGlassResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         encode_array(buf, &self.proposals, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -286,7 +288,7 @@ impl DescribeBreakGlassRequest {
             proposal_id: Uuid([
                 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,
             ]),
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -306,36 +308,35 @@ impl DescribeBreakGlassResponse {
                         215,
                     ]),
                     action: 6,
-                    target: "doomed".to_string(),
-                    proposer: "User:alice".to_string(),
-                    reason: "topic holds test data only".to_string(),
+                    target: "doomed".to_owned(),
+                    proposer: "User:alice".to_owned(),
+                    reason: "topic holds test data only".to_owned(),
                     created_at_ms: 1_770_000_000_000,
                     expires_at_ms: 1_770_000_180_000,
                     consumed_at_ms: 0,
                     withdrawn: false,
                     approvals: vec![
                         BreakGlassApproval {
-                            principal: "User:bob".to_string(),
+                            principal: "User:bob".to_owned(),
                             approved_at_ms: 1_770_000_060_000,
-                            key_id: "bob-yubi".to_string(),
+                            key_id: "bob-yubi".to_owned(),
                             signature: (0..64).collect(),
-                            unknown_tagged_fields:
-                                crate::krabka::test_support::sample_tagged_fields(),
+                            unknown_tagged_fields: sample_tagged_fields(),
                         },
                         BreakGlassApproval {
-                            principal: "User:carol".to_string(),
+                            principal: "User:carol".to_owned(),
                             approved_at_ms: 1_770_000_090_000,
                             ..BreakGlassApproval::default()
                         },
                     ],
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
                 DescribedBreakGlassProposal {
                     proposal_id: Uuid([1; 16]),
                     action: 1,
-                    target: "literal:orders".to_string(),
-                    proposer: "User:dave".to_string(),
-                    reason: "DR cutover finished".to_string(),
+                    target: "literal:orders".to_owned(),
+                    proposer: "User:dave".to_owned(),
+                    reason: "DR cutover finished".to_owned(),
                     created_at_ms: 1_769_000_000_000,
                     expires_at_ms: 1_769_000_180_000,
                     consumed_at_ms: 1_769_000_120_000,
@@ -344,7 +345,7 @@ impl DescribeBreakGlassResponse {
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
             ],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -393,7 +394,7 @@ mod tests {
                 DescribeBreakGlassResponse {
                     throttle_time_ms: 2,
                     error_code: 31,
-                    error_message: Some("cluster authorization failed".to_string()),
+                    error_message: Some("cluster authorization failed".to_owned()),
                     proposals: Vec::new(),
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },

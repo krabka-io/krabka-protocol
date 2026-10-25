@@ -20,21 +20,21 @@ impl Encode for KeyValue {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.key);
+                put_compact_string(buf, &self.key)?;
             } else {
-                let () = put_string(buf, &self.key);
+                put_string(buf, &self.key)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.value);
+                put_compact_string(buf, &self.value)?;
             } else {
-                let () = put_string(buf, &self.value);
+                put_string(buf, &self.value)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -92,10 +92,10 @@ impl KeyValue {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.key = "x".to_string();
+            m.key = "x".to_owned();
         }
         if version >= 0 {
-            m.value = "x".to_string();
+            m.value = "x".to_owned();
         }
         m
     }

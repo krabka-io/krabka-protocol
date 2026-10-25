@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_i8, get_i32, put_i8, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -55,20 +59,20 @@ impl Encode for ElectLeadersRequest {
         if version >= 0 {
             {
                 let len = (self.topic_partitions).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.topic_partitions {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.timeout_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -81,10 +85,7 @@ impl Encode for ElectLeadersRequest {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.topic_partitions).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -115,7 +116,7 @@ impl Decode<'_> for ElectLeadersRequest {
         }
         if version >= 0 {
             out.topic_partitions = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -165,22 +166,22 @@ impl Encode for TopicPartitions {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -196,8 +197,7 @@ impl Encode for TopicPartitions {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -222,7 +222,7 @@ impl Decode<'_> for TopicPartitions {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -242,7 +242,7 @@ impl TopicPartitions {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![1i32];
@@ -257,13 +257,13 @@ impl TopicPartitions {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
-        obj.insert("electionType".to_string(), ::serde_json::json!(0));
+        obj.insert("electionType".to_owned(), ::serde_json::json!(0));
     }
     obj.insert(
-        "topicPartitions".to_string(),
+        "topicPartitions".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(60_000));
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(60_000));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ElectLeadersRequest {

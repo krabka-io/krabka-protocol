@@ -21,8 +21,10 @@ mod tests {
     use crate::{
         UnknownTaggedFields, kafka_3_6_2,
         owned::{
-            fetch_request::FetchRequest, fetch_response::FetchResponse,
-            produce_request::ProduceRequest, produce_response::ProduceResponse,
+            fetch_request::{self, FetchRequest},
+            fetch_response::FetchResponse,
+            produce_request::ProduceRequest,
+            produce_response::ProduceResponse,
         },
     };
 
@@ -76,7 +78,7 @@ mod tests {
             forgotten_topics_data: vec![],
             rack_id: String::new(),
             cluster_id: None,
-            replica_state: crate::owned::fetch_request::ReplicaState {
+            replica_state: fetch_request::ReplicaState {
                 replica_id: -1,
                 replica_epoch: -1,
                 unknown_tagged_fields: UnknownTaggedFields(vec![]),

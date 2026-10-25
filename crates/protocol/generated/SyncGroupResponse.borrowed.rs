@@ -3,11 +3,12 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sync_group_response,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
-            compact_nullable_string_len, nullable_string_len, put_bytes, put_compact_bytes,
-            put_compact_nullable_string, put_nullable_string,
+            bytes_len, compact_bytes_len, compact_nullable_string_len, nullable_string_len,
+            put_bytes, put_compact_bytes, put_compact_nullable_string, put_nullable_string,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_nullable_string_borrowed,
@@ -35,16 +36,13 @@ pub struct SyncGroupResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SyncGroupResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sync_group_response::SyncGroupResponse {
-        crate::owned::sync_group_response::SyncGroupResponse {
+    pub fn to_owned(&self) -> sync_group_response::SyncGroupResponse {
+        sync_group_response::SyncGroupResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            protocol_type: (self.protocol_type).map(std::string::ToString::to_string),
-            protocol_name: (self.protocol_name).map(std::string::ToString::to_string),
+            protocol_type: (self.protocol_type).map(str::to_owned),
+            protocol_name: (self.protocol_name).map(str::to_owned),
             assignment: Bytes::copy_from_slice(self.assignment),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -67,28 +65,28 @@ impl Encode for SyncGroupResponse<'_> {
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_type);
+                put_compact_nullable_string(buf, self.protocol_type)?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_type);
+                put_nullable_string(buf, self.protocol_type)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_name);
+                put_compact_nullable_string(buf, self.protocol_name)?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_name);
+                put_nullable_string(buf, self.protocol_name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.assignment);
+                put_compact_bytes(buf, self.assignment)?;
             } else {
-                let () = put_bytes(buf, self.assignment);
+                put_bytes(buf, self.assignment)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -117,11 +115,9 @@ impl Encode for SyncGroupResponse<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.assignment).len() + 1).unwrap(),
-                ) + (self.assignment).len()
+                compact_bytes_len(self.assignment)
             } else {
-                4 + (self.assignment).len()
+                bytes_len(self.assignment)
             };
         }
         if flex {

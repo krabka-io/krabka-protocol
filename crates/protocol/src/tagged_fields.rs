@@ -4,7 +4,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{
     ProtocolError,
-    primitives::varint::{get_uvarint, put_uvarint, uvarint_len},
+    primitives::varint::{get_uvarint, put_uvarint, usize_uvarint_len, uvarint_len},
 };
 
 /// An unknown tagged field that was preserved verbatim during decode.
@@ -109,41 +109,49 @@ impl WriteTaggedFields {
         self.entries.push((tag, payload));
     }
 
-    /// # Panics
-    /// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
-    pub fn write<B: BufMut>(mut self, buf: &mut B, unknown: &UnknownTaggedFields) {
+    /// Writes the tagged-fields trailer: these known fields merged with
+    /// `unknown`, in ascending tag order.
+    ///
+    /// # Errors
+    /// Returns [`ProtocolError::LengthOverflow`] when the field count or a
+    /// payload length does not fit in a `u32` varint.
+    pub fn write<B: BufMut>(
+        mut self,
+        buf: &mut B,
+        unknown: &UnknownTaggedFields,
+    ) -> Result<(), ProtocolError> {
         for u in &unknown.0 {
             self.entries.push((u.tag, u.bytes.clone()));
         }
         self.entries.sort_by_key(|(t, _)| *t);
         put_uvarint(
             buf,
-            u32::try_from(self.entries.len()).expect("too many tagged fields"),
+            varint_length(self.entries.len(), "tagged-field count")?,
         );
         for (tag, payload) in self.entries {
             put_uvarint(buf, tag);
-            put_uvarint(
-                buf,
-                u32::try_from(payload.len()).expect("tagged field too large"),
-            );
+            put_uvarint(buf, varint_length(payload.len(), "tagged field")?);
             buf.put_slice(&payload);
         }
+        Ok(())
     }
+}
+
+/// A count or length as a `u32` varint value.
+fn varint_length(len: usize, what: &'static str) -> Result<u32, ProtocolError> {
+    u32::try_from(len).map_err(|_| ProtocolError::LengthOverflow { what, len })
 }
 
 /// Predicted length of the tagged-fields trailer.
 #[must_use]
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn tagged_fields_len(known: &[(u32, usize)], unknown: &UnknownTaggedFields) -> usize {
     let total = known.len() + unknown.0.len();
-    let mut n = uvarint_len(u32::try_from(total).unwrap());
+    let mut n = usize_uvarint_len(total);
     for (tag, len) in known {
-        n += uvarint_len(*tag) + uvarint_len(u32::try_from(*len).unwrap()) + *len;
+        n += uvarint_len(*tag) + usize_uvarint_len(*len) + *len;
     }
     for u in &unknown.0 {
-        n +=
-            uvarint_len(u.tag) + uvarint_len(u32::try_from(u.bytes.len()).unwrap()) + u.bytes.len();
+        n += uvarint_len(u.tag) + usize_uvarint_len(u.bytes.len()) + u.bytes.len();
     }
     n
 }
@@ -151,19 +159,17 @@ pub fn tagged_fields_len(known: &[(u32, usize)], unknown: &UnknownTaggedFields) 
 /// Encodes a value into a freshly allocated `Bytes`. This materializes a
 /// tagged-field payload before the outer trailer is sized.
 ///
-/// The write closure can return an error, for example from a nested struct
-/// encode. The error propagates as a panic, because a tagged-field encoding
-/// failure shows a bug in the emitter's `encoded_len` prediction.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
-pub fn encode_to_bytes<F>(predicted_len: usize, write: F) -> Bytes
+/// # Errors
+/// Returns the error of the `write` closure, for example from a nested
+/// struct encode.
+pub fn encode_to_bytes<F>(predicted_len: usize, write: F) -> Result<Bytes, ProtocolError>
 where
-    F: FnOnce(&mut BytesMut) -> Result<(), crate::ProtocolError>,
+    F: FnOnce(&mut BytesMut) -> Result<(), ProtocolError>,
 {
     let mut buf = BytesMut::with_capacity(predicted_len);
-    write(&mut buf).expect("tagged-field encode failed: emitter bug");
+    write(&mut buf)?;
     debug_assert_eq!(buf.len(), predicted_len, "encoded_len lied");
-    buf.freeze()
+    Ok(buf.freeze())
 }
 
 #[cfg(test)]
@@ -226,7 +232,7 @@ mod tests {
         w.add(1, Bytes::from_static(&[0x01, 0x02]));
         w.add(300, Bytes::from_static(&[0x03, 0x04, 0x05]));
         let mut out = BytesMut::new();
-        w.write(&mut out, &unknown);
+        w.write(&mut out, &unknown).unwrap();
 
         assert2::assert!(tagged_fields_len(&known, &unknown) == out.len());
     }
@@ -242,7 +248,7 @@ mod tests {
                 .collect(),
         );
         let mut out = BytesMut::new();
-        WriteTaggedFields::new().write(&mut out, &unknown);
+        WriteTaggedFields::new().write(&mut out, &unknown).unwrap();
 
         assert2::assert!(tagged_fields_len(&[], &unknown) == out.len());
     }
@@ -264,7 +270,7 @@ mod tests {
             bytes: Bytes::from_static(&[0xBB]),
         }]);
         let mut out = BytesMut::new();
-        w.write(&mut out, &unknown);
+        w.write(&mut out, &unknown).unwrap();
         // Expect: count=2, tag=5,len=1,0xBB, tag=10,len=1,0xAA
         assert2::assert!(&out[..] == &[0x02, 0x05, 0x01, 0xBB, 0x0A, 0x01, 0xAA]);
     }

@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use krabka_units::{ByteSize, convert::ByteSizeExt as _};
 
 /// RFC 4752 security-layer bitmask. Krabka supports auth-only, which matches Kafka.
@@ -5,9 +7,9 @@ use krabka_units::{ByteSize, convert::ByteSizeExt as _};
 pub struct SecurityLayer(pub u8);
 
 impl SecurityLayer {
-    pub const AUTH: SecurityLayer = SecurityLayer(0x01);
-    pub const INTEGRITY: SecurityLayer = SecurityLayer(0x02);
-    pub const CONFIDENTIALITY: SecurityLayer = SecurityLayer(0x04);
+    pub const AUTH: Self = Self(0x01);
+    pub const INTEGRITY: Self = Self(0x02);
+    pub const CONFIDENTIALITY: Self = Self(0x04);
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -67,22 +69,18 @@ pub struct LayerChoice {
 /// # Errors
 /// Returns an error when credentials or key material are invalid, cryptographic verification fails, or the TLS, SASL, or Kerberos exchange is rejected.
 pub fn decode_choice(bytes: &[u8]) -> Result<LayerChoice, LayerError> {
-    if bytes.len() < 4 {
+    let &[layer, s0, s1, s2, ref rest @ ..] = bytes else {
         return Err(LayerError::Short);
-    }
-    let selected = SecurityLayer(bytes[0]);
+    };
+    let selected = SecurityLayer(layer);
     if selected != SecurityLayer::AUTH {
-        return Err(LayerError::Unsupported(bytes[0]));
+        return Err(LayerError::Unsupported(layer));
     }
-    let max_size = u32::from_be_bytes([0, bytes[1], bytes[2], bytes[3]]);
-    let authzid = if bytes.len() > 4 {
-        Some(
-            std::str::from_utf8(&bytes[4..])
-                .map_err(|_| LayerError::Authzid)?
-                .to_string(),
-        )
-    } else {
+    let max_size = u32::from_be_bytes([0, s0, s1, s2]);
+    let authzid = if rest.is_empty() {
         None
+    } else {
+        Some(from_utf8(rest).map_err(|_| LayerError::Authzid)?.to_owned())
     };
     Ok(LayerChoice {
         selected,
@@ -96,10 +94,10 @@ pub fn decode_choice(bytes: &[u8]) -> Result<LayerChoice, LayerError> {
 /// # Errors
 /// Returns [`LayerError::Short`] if the offer is empty.
 pub fn decode_offer_layers(bytes: &[u8]) -> Result<SecurityLayer, LayerError> {
-    if bytes.is_empty() {
-        return Err(LayerError::Short);
-    }
-    Ok(SecurityLayer(bytes[0]))
+    bytes
+        .first()
+        .map(|&layer| SecurityLayer(layer))
+        .ok_or(LayerError::Short)
 }
 
 #[cfg(test)]

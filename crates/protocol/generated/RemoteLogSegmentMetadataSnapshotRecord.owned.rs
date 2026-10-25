@@ -4,12 +4,15 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i32, get_i64, put_bool, put_i8, put_i32, put_i64},
         string_bytes::{
             compact_nullable_bytes_len, get_compact_nullable_bytes_owned, get_nullable_bytes_owned,
             nullable_bytes_len, put_compact_nullable_bytes, put_nullable_bytes,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -23,7 +26,7 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoteLogSegmentMetadataSnapshotRecord {
-    pub segment_id: crate::primitives::uuid::Uuid,
+    pub segment_id: Uuid,
     pub start_offset: i64,
     pub end_offset: i64,
     pub broker_id: i32,
@@ -39,7 +42,7 @@ pub struct RemoteLogSegmentMetadataSnapshotRecord {
 impl RemoteLogSegmentMetadataSnapshotRecord {
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.segment_id);
+            put_uuid(buf, self.segment_id);
         }
     }
     fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -75,15 +78,11 @@ impl RemoteLogSegmentMetadataSnapshotRecord {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.segment_leader_epochs).len(), flex)?;
                 for it in &self.segment_leader_epochs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -92,32 +91,44 @@ impl RemoteLogSegmentMetadataSnapshotRecord {
             put_i32(buf, self.segment_size_in_bytes);
         }
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.custom_metadata.as_deref());
+                put_compact_nullable_bytes(buf, self.custom_metadata.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.custom_metadata.as_deref());
+                put_nullable_bytes(buf, self.custom_metadata.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_9<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i8(buf, self.remote_log_segment_state);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 let payload = encode_to_bytes(1, |b| {
                     put_bool(b, self.txn_index_empty);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -126,7 +137,7 @@ impl RemoteLogSegmentMetadataSnapshotRecord {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
-            out.segment_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.segment_id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -193,7 +204,7 @@ impl RemoteLogSegmentMetadataSnapshotRecord {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.segment_leader_epochs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(SegmentLeaderEpochEntry::decode(buf, version)?);
@@ -281,9 +292,9 @@ impl Encode for RemoteLogSegmentMetadataSnapshotRecord {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
+        self.encode_field_8(buf, version, flex)?;
         self.encode_field_9(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -309,10 +320,7 @@ impl Encode for RemoteLogSegmentMetadataSnapshotRecord {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.segment_leader_epochs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.segment_leader_epochs).len(), flex);
                 let body: usize = (self.segment_leader_epochs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -335,7 +343,7 @@ impl Encode for RemoteLogSegmentMetadataSnapshotRecord {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.txn_index_empty)) {
+            if !(is_default(&self.txn_index_empty)) {
                 known_pairs.push((0, 1));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -372,7 +380,7 @@ impl RemoteLogSegmentMetadataSnapshotRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.segment_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.segment_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.start_offset = 1i64;
@@ -424,7 +432,7 @@ impl Encode for SegmentLeaderEpochEntry {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -481,25 +489,22 @@ impl SegmentLeaderEpochEntry {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "segmentId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "segmentId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("startOffset".to_string(), ::serde_json::json!(0));
-    obj.insert("endOffset".to_string(), ::serde_json::json!(0));
-    obj.insert("brokerId".to_string(), ::serde_json::json!(0));
-    obj.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
-    obj.insert("eventTimestampMs".to_string(), ::serde_json::json!(0));
+    obj.insert("startOffset".to_owned(), ::serde_json::json!(0));
+    obj.insert("endOffset".to_owned(), ::serde_json::json!(0));
+    obj.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("maxTimestampMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("eventTimestampMs".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "segmentLeaderEpochs".to_string(),
+        "segmentLeaderEpochs".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    obj.insert("segmentSizeInBytes".to_string(), ::serde_json::json!(0));
-    obj.insert("customMetadata".to_string(), ::serde_json::Value::Null);
-    obj.insert("remoteLogSegmentState".to_string(), ::serde_json::json!(0));
-    obj.insert(
-        "txnIndexEmpty".to_string(),
-        ::serde_json::Value::Bool(false),
-    );
+    obj.insert("segmentSizeInBytes".to_owned(), ::serde_json::json!(0));
+    obj.insert("customMetadata".to_owned(), ::serde_json::Value::Null);
+    obj.insert("remoteLogSegmentState".to_owned(), ::serde_json::json!(0));
+    obj.insert("txnIndexEmpty".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 /// A message with a non-default value in every tagged field, at every depth, for
@@ -517,21 +522,21 @@ pub fn tagged_fixture() -> RemoteLogSegmentMetadataSnapshotRecord {
 pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
     m.insert(
-        "segmentId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "segmentId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    m.insert("startOffset".to_string(), ::serde_json::json!(0));
-    m.insert("endOffset".to_string(), ::serde_json::json!(0));
-    m.insert("brokerId".to_string(), ::serde_json::json!(0));
-    m.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
-    m.insert("eventTimestampMs".to_string(), ::serde_json::json!(0));
+    m.insert("startOffset".to_owned(), ::serde_json::json!(0));
+    m.insert("endOffset".to_owned(), ::serde_json::json!(0));
+    m.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    m.insert("maxTimestampMs".to_owned(), ::serde_json::json!(0));
+    m.insert("eventTimestampMs".to_owned(), ::serde_json::json!(0));
     m.insert(
-        "segmentLeaderEpochs".to_string(),
+        "segmentLeaderEpochs".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    m.insert("segmentSizeInBytes".to_string(), ::serde_json::json!(0));
-    m.insert("customMetadata".to_string(), ::serde_json::Value::Null);
-    m.insert("remoteLogSegmentState".to_string(), ::serde_json::json!(0));
-    m.insert("txnIndexEmpty".to_string(), ::serde_json::Value::Bool(true));
+    m.insert("segmentSizeInBytes".to_owned(), ::serde_json::json!(0));
+    m.insert("customMetadata".to_owned(), ::serde_json::Value::Null);
+    m.insert("remoteLogSegmentState".to_owned(), ::serde_json::json!(0));
+    m.insert("txnIndexEmpty".to_owned(), ::serde_json::Value::Bool(true));
     ::serde_json::Value::Object(m)
 }

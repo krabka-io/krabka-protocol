@@ -10,7 +10,7 @@ pub mod owned_quote;
 pub mod protocol_request;
 pub mod tagged_fixture;
 pub mod wrappers;
-pub use crate::emit::owned::EmitError;
+pub use self::owned::EmitError;
 
 /// The output of a single emitter run for one `MessageSpec`.
 ///
@@ -69,8 +69,9 @@ mod tests {
                 assert!(!body.is_empty());
             }
             if wrappers::should_emit_wrapper(s) {
-                let w_owned = wrappers::emit(s, wrappers::Flavor::Owned, sha, namespace);
-                let w_borrowed = wrappers::emit(s, wrappers::Flavor::Borrowed, sha, namespace);
+                let w_owned = wrappers::emit(s, wrappers::Flavor::Owned, sha, namespace).unwrap();
+                let w_borrowed =
+                    wrappers::emit(s, wrappers::Flavor::Borrowed, sha, namespace).unwrap();
                 check!(w_owned.contains("mod tests"));
                 check!(w_borrowed.contains("mod tests"));
                 check!(!name_conv::module_name(&s.name).is_empty());
@@ -79,14 +80,18 @@ mod tests {
 
         for flavor in [wrappers::Flavor::Owned, wrappers::Flavor::Borrowed] {
             for has_common in [false, true] {
-                let m = mod_rs::emit(&active, flavor, sha, has_common);
+                let m = mod_rs::emit(&active, flavor, sha, has_common).unwrap();
                 assert!(m.contains("pub mod"));
             }
         }
 
         if namespace.is_none() {
-            assert!(api_key_enum_quote::emit(&specs, sha).contains("ApiKey"));
-            assert!(!differential_table::emit(&specs, sha).is_empty());
+            assert!(
+                api_key_enum_quote::emit(&specs, sha)
+                    .unwrap()
+                    .contains("ApiKey")
+            );
+            assert!(!differential_table::emit(&specs, sha).unwrap().is_empty());
         }
         assert!(common::banner(sha).contains(sha));
     }

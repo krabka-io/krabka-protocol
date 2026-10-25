@@ -55,28 +55,28 @@ impl Encode for ConfigRecord {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value.as_deref());
+                put_compact_nullable_string(buf, self.value.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.value.as_deref());
+                put_nullable_string(buf, self.value.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -162,13 +162,13 @@ impl ConfigRecord {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.value = Some("x".to_string());
+            m.value = Some("x".to_owned());
         }
         m
     }
@@ -179,17 +179,17 @@ impl ConfigRecord {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("resourceType".to_string(), ::serde_json::json!(0));
+    obj.insert("resourceType".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "resourceName".to_string(),
+        "resourceName".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "name".to_string(),
+        "name".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "value".to_string(),
+        "value".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

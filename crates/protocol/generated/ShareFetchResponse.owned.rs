@@ -5,16 +5,20 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, get_bytes_owned,
-            get_compact_bytes_owned, get_compact_nullable_bytes_owned,
+            compact_bytes_len_from_size, compact_nullable_string_len, compact_string_len,
+            get_bytes_owned, get_compact_bytes_owned, get_compact_nullable_bytes_owned,
             get_compact_nullable_string_owned, get_compact_string_owned, get_nullable_bytes_owned,
             get_nullable_string_owned, get_string_owned, nullable_string_len, put_bytes,
             put_compact_bytes, put_compact_nullable_bytes, put_compact_nullable_string,
             put_compact_string, put_nullable_bytes, put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
+        varint::uvarint_len,
     },
+    records::RecordsPayload,
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 78;
@@ -53,9 +57,9 @@ impl Encode for ShareFetchResponse {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 1 {
@@ -63,23 +67,23 @@ impl Encode for ShareFetchResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.node_endpoints).len(), flex);
+                put_array_len(buf, (self.node_endpoints).len(), flex)?;
                 for it in &self.node_endpoints {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -104,8 +108,7 @@ impl Encode for ShareFetchResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -115,10 +118,7 @@ impl Encode for ShareFetchResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.node_endpoints).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                 let body: usize = (self.node_endpoints)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -161,7 +161,7 @@ impl Decode<'_> for ShareFetchResponse {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ShareFetchableTopicResponse::decode(buf, version)?);
@@ -171,7 +171,7 @@ impl Decode<'_> for ShareFetchResponse {
         }
         if version >= 0 {
             out.node_endpoints = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(NodeEndpoint::decode(buf, version)?);
@@ -197,7 +197,7 @@ impl ShareFetchResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 1 {
             m.acquisition_lock_timeout_ms = 1i32;
@@ -213,7 +213,7 @@ impl ShareFetchResponse {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ShareFetchableTopicResponse {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -221,19 +221,19 @@ impl Encode for ShareFetchableTopicResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -245,8 +245,7 @@ impl Encode for ShareFetchableTopicResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -266,11 +265,11 @@ impl Decode<'_> for ShareFetchableTopicResponse {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode(buf, version)?);
@@ -290,7 +289,7 @@ impl ShareFetchableTopicResponse {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -306,7 +305,7 @@ pub struct PartitionData {
     pub acknowledge_error_code: i16,
     pub acknowledge_error_message: Option<String>,
     pub current_leader: LeaderIdAndEpoch,
-    pub records: Option<crate::records::RecordsPayload>,
+    pub records: Option<RecordsPayload>,
     pub acquired_records: Vec<AcquiredRecords>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -321,29 +320,40 @@ impl PartitionData {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i16(buf, self.acknowledge_error_code);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () =
-                    put_compact_nullable_string(buf, self.acknowledge_error_message.as_deref());
+                put_compact_nullable_string(buf, self.acknowledge_error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.acknowledge_error_message.as_deref());
+                put_nullable_string(buf, self.acknowledge_error_message.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(
         &self,
@@ -367,9 +377,9 @@ impl PartitionData {
                 match &self.records {
                     None => {
                         if flex {
-                            let () = put_compact_nullable_bytes(buf, None);
+                            put_compact_nullable_bytes(buf, None)?;
                         } else {
-                            let () = put_nullable_bytes(buf, None);
+                            put_nullable_bytes(buf, None)?;
                         }
                     }
                     Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
@@ -379,9 +389,9 @@ impl PartitionData {
                     None => {
                         let __rb_buf = bytes::BytesMut::new();
                         if flex {
-                            let () = put_compact_bytes(buf, &__rb_buf);
+                            put_compact_bytes(buf, &__rb_buf)?;
                         } else {
-                            let () = put_bytes(buf, &__rb_buf);
+                            put_bytes(buf, &__rb_buf)?;
                         }
                     }
                     Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
@@ -398,19 +408,25 @@ impl PartitionData {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.acquired_records).len(), flex);
+                put_array_len(buf, (self.acquired_records).len(), flex)?;
                 for it in &self.acquired_records {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -502,9 +518,7 @@ impl PartitionData {
                     };
                     match __rb_opt {
                         None => None,
-                        Some(__rb_bytes) => Some(crate::records::RecordsPayload::from_fetch_bytes(
-                            __rb_bytes,
-                        )?),
+                        Some(__rb_bytes) => Some(RecordsPayload::from_fetch_bytes(__rb_bytes)?),
                     }
                 }
             } else {
@@ -514,7 +528,7 @@ impl PartitionData {
                     } else {
                         get_bytes_owned(buf)?
                     };
-                    crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?
+                    RecordsPayload::from_fetch_bytes(__rb_bytes)?
                 })
             };
         }
@@ -528,7 +542,7 @@ impl PartitionData {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.acquired_records = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AcquiredRecords::decode(buf, version)?);
@@ -555,13 +569,13 @@ impl Encode for PartitionData {
         let flex = version >= 0;
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
+        self.encode_field_2(buf, version, flex)?;
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex)?;
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -595,55 +609,42 @@ impl Encode for PartitionData {
         }
         if version >= 0 {
             n += if version <= 0 {
-                match &self.records {
-                    None => {
-                        if flex {
-                            crate::primitives::varint::uvarint_len(0)
-                        } else {
-                            4
-                        }
-                    }
-                    Some(__rb) => {
+                (self.records).as_ref().map_or_else(
+                    || if flex { uvarint_len(0) } else { 4 },
+                    |__rb| {
                         let __rb_len =
-                            <crate::records::RecordsPayload as crate::Encode>::encoded_len(
-                                __rb, version,
-                            );
+                            <RecordsPayload as crate::Encode>::encoded_len(__rb, version);
                         if flex {
-                            crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                            compact_bytes_len_from_size(__rb_len)
                         } else {
                             4 + __rb_len
                         }
-                    }
-                }
+                    },
+                )
             } else {
-                match &self.records {
-                    None => {
+                (self.records).as_ref().map_or_else(
+                    || {
                         if flex {
-                            crate::primitives::string_bytes::compact_bytes_len_from_size(0)
+                            compact_bytes_len_from_size(0)
                         } else {
                             4
                         }
-                    }
-                    Some(__rb) => {
+                    },
+                    |__rb| {
                         let __rb_len =
-                            <crate::records::RecordsPayload as crate::Encode>::encoded_len(
-                                __rb, version,
-                            );
+                            <RecordsPayload as crate::Encode>::encoded_len(__rb, version);
                         if flex {
-                            crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                            compact_bytes_len_from_size(__rb_len)
                         } else {
                             4 + __rb_len
                         }
-                    }
-                }
+                    },
+                )
             };
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.acquired_records).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.acquired_records).len(), flex);
                 let body: usize = (self.acquired_records)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -686,13 +687,13 @@ impl PartitionData {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.acknowledge_error_code = 1i16;
         }
         if version >= 0 {
-            m.acknowledge_error_message = Some("x".to_string());
+            m.acknowledge_error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.current_leader = LeaderIdAndEpoch::populated(version);
@@ -720,7 +721,7 @@ impl Encode for LeaderIdAndEpoch {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -791,7 +792,7 @@ impl Encode for AcquiredRecords {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -866,9 +867,9 @@ impl Encode for NodeEndpoint {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -876,14 +877,14 @@ impl Encode for NodeEndpoint {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack.as_deref());
+                put_compact_nullable_string(buf, self.rack.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.rack.as_deref());
+                put_nullable_string(buf, self.rack.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -956,13 +957,13 @@ impl NodeEndpoint {
             m.node_id = 1i32;
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1i32;
         }
         if version >= 0 {
-            m.rack = Some("x".to_string());
+            m.rack = Some("x".to_owned());
         }
         m
     }
@@ -973,18 +974,18 @@ impl NodeEndpoint {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorMessage".to_owned(), ::serde_json::Value::Null);
     if version >= 1 {
         obj.insert(
-            "acquisitionLockTimeoutMs".to_string(),
+            "acquisitionLockTimeoutMs".to_owned(),
             ::serde_json::json!(0),
         );
     }
-    obj.insert("responses".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("responses".to_owned(), ::serde_json::Value::Array(vec![]));
     obj.insert(
-        "nodeEndpoints".to_string(),
+        "nodeEndpoints".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     ::serde_json::Value::Object(obj)

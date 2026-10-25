@@ -5,11 +5,13 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_u16, put_i16, put_i32, put_u16},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -40,15 +42,15 @@ impl Encode for VotersRecord {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.voters).len(), flex);
+                put_array_len(buf, (self.voters).len(), flex)?;
                 for it in &self.voters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -60,8 +62,7 @@ impl Encode for VotersRecord {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.voters).len(), flex);
+                let prefix = array_len_prefix_len((self.voters).len(), flex);
                 let body: usize = (self.voters).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -87,7 +88,7 @@ impl Decode<'_> for VotersRecord {
         }
         if version >= 0 {
             out.voters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Voter::decode(buf, version)?);
@@ -118,7 +119,7 @@ impl VotersRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Voter {
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub endpoints: Vec<Endpoint>,
     pub k_raft_version_feature: KRaftVersionFeature,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -130,22 +131,22 @@ impl Encode for Voter {
             put_i32(buf, self.voter_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.endpoints).len(), flex);
+                put_array_len(buf, (self.endpoints).len(), flex)?;
                 for it in &self.endpoints {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             self.k_raft_version_feature.encode(buf, version)?;
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -160,8 +161,7 @@ impl Encode for Voter {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.endpoints).len(), flex);
+                let prefix = array_len_prefix_len((self.endpoints).len(), flex);
                 let body: usize = (self.endpoints)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -187,11 +187,11 @@ impl Decode<'_> for Voter {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.endpoints = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Endpoint::decode(buf, version)?);
@@ -217,7 +217,7 @@ impl Voter {
             m.voter_id = 1i32;
         }
         if version >= 0 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.endpoints = vec![Endpoint::populated(version)];
@@ -240,16 +240,16 @@ impl Encode for Endpoint {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -257,7 +257,7 @@ impl Encode for Endpoint {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -321,10 +321,10 @@ impl Endpoint {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1u16;
@@ -349,7 +349,7 @@ impl Encode for KRaftVersionFeature {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -405,7 +405,7 @@ impl KRaftVersionFeature {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("version".to_string(), ::serde_json::json!(0));
-    obj.insert("voters".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("version".to_owned(), ::serde_json::json!(0));
+    obj.insert("voters".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delete_topics_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -33,12 +36,9 @@ pub struct DeleteTopicsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteTopicsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_topics_response::DeleteTopicsResponse {
-        crate::owned::delete_topics_response::DeleteTopicsResponse {
+    pub fn to_owned(&self) -> delete_topics_response::DeleteTopicsResponse {
+        delete_topics_response::DeleteTopicsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             responses: (self.responses)
                 .iter()
@@ -62,15 +62,15 @@ impl Encode for DeleteTopicsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,8 +82,7 @@ impl Encode for DeleteTopicsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +112,7 @@ impl<'de> DecodeBorrow<'de> for DeleteTopicsResponse<'de> {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeletableTopicResult::decode_borrow(buf, version)?);
@@ -144,7 +143,7 @@ impl DeleteTopicsResponse<'_> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletableTopicResult<'a> {
     pub name: Option<&'a str>,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub error_code: i16,
     pub error_message: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -153,7 +152,7 @@ impl Default for DeletableTopicResult<'_> {
     fn default() -> Self {
         Self {
             name: Some(""),
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             error_code: 0i16,
             error_message: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -161,16 +160,13 @@ impl Default for DeletableTopicResult<'_> {
     }
 }
 impl DeletableTopicResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_topics_response::DeletableTopicResult {
-        crate::owned::delete_topics_response::DeletableTopicResult {
-            name: (self.name).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> delete_topics_response::DeletableTopicResult {
+        delete_topics_response::DeletableTopicResult {
+            name: (self.name).map(str::to_owned),
             topic_id: (self.topic_id),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -181,34 +177,34 @@ impl Encode for DeletableTopicResult<'_> {
         if version >= 0 {
             if version >= 6 {
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.name);
+                    put_compact_nullable_string(buf, self.name)?;
                 } else {
-                    let () = put_nullable_string(buf, self.name);
+                    put_nullable_string(buf, self.name)?;
                 }
             } else {
                 if flex {
-                    let () = put_compact_string(buf, (self.name).unwrap_or(""));
+                    put_compact_string(buf, (self.name).unwrap_or(""))?;
                 } else {
-                    let () = put_string(buf, (self.name).unwrap_or(""));
+                    put_string(buf, (self.name).unwrap_or(""))?;
                 }
             }
         }
         if version >= 6 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             put_i16(buf, self.error_code);
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -270,7 +266,7 @@ impl<'de> DecodeBorrow<'de> for DeletableTopicResult<'de> {
             };
         }
         if version >= 6 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.error_code = get_i16(buf)?;
@@ -297,7 +293,7 @@ impl DeletableTopicResult<'_> {
             m.name = Some("x");
         }
         if version >= 6 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.error_code = 1i16;

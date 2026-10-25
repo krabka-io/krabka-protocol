@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::path::PathBuf;
 
 use assert2::assert;

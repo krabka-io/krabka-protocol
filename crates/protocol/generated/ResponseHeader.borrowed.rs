@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::response_header,
     primitives::fixed::{get_i32, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -20,12 +21,9 @@ pub struct ResponseHeader {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ResponseHeader {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::response_header::ResponseHeader {
-        crate::owned::response_header::ResponseHeader {
+    pub fn to_owned(&self) -> response_header::ResponseHeader {
+        response_header::ResponseHeader {
             correlation_id: (self.correlation_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -44,7 +42,7 @@ impl Encode for ResponseHeader {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

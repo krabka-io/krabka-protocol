@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod support;
 use bytes::BytesMut;
 use krabka_protocol::{
@@ -26,17 +28,15 @@ fn rust_decode<T: for<'a> Decode<'a>>(bytes: &[u8], version: i16) -> T {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn apiversions_request_v0_byte_equal() {
-    let mut o = oracle::shared();
     let req = ApiVersionsRequest::default();
     let rust = rust_encode(&req, 0);
-    let java = o.encode(18, 0, true, &json!({}));
+    let java = oracle::shared().encode(18, 0, true, &json!({}));
     assert2::assert!(rust == java);
 }
 
 #[test]
 #[ignore = "requires JVM oracle"]
 fn apiversions_request_v3_byte_equal() {
-    let mut o = oracle::shared();
     let req = ApiVersionsRequest {
         client_software_name: "krabka".into(),
         client_software_version: "0.0.0".into(),
@@ -44,7 +44,7 @@ fn apiversions_request_v3_byte_equal() {
         ..Default::default()
     };
     let rust = rust_encode(&req, 3);
-    let java = o.encode(
+    let java = oracle::shared().encode(
         18,
         3,
         true,
@@ -59,7 +59,6 @@ fn apiversions_request_v3_byte_equal() {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn apiversions_response_v3_byte_equal() {
-    let mut o = oracle::shared();
     let resp = ApiVersionsResponse {
         error_code: 0,
         api_keys: vec![
@@ -84,7 +83,7 @@ fn apiversions_response_v3_byte_equal() {
         unknown_tagged_fields: krabka_protocol::UnknownTaggedFields::default(),
     };
     let rust = rust_encode(&resp, 3);
-    let java = o.encode(
+    let java = oracle::shared().encode(
         18,
         3,
         false,
@@ -103,8 +102,7 @@ fn apiversions_response_v3_byte_equal() {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn apiversions_response_decode_matches_java() {
-    let mut o = oracle::shared();
-    let java = o.encode(
+    let java = oracle::shared().encode(
         18,
         3,
         false,

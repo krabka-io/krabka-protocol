@@ -19,6 +19,7 @@
 //! Every field shape here mirrors one already pinned by a same-named
 //! `#[cfg(test)]` unit test in `owned.rs`, `borrowed.rs`, `borrowed_quote.rs`
 //! or `default_json.rs`; see those for the full rationale on each rule.
+#![cfg(test)]
 
 use assert2::assert;
 use krabka_protocol_codegen::{
@@ -240,11 +241,10 @@ fn default_json_uses_null_only_for_nullable_records_fields() {
     let spec = nullable_defaults_message();
     let owned = stripped(&owned_quote::emit(&spec, "sha").unwrap().primary);
 
-    assert!(owned.contains("\"records\".to_string(),::serde_json::Value::Null"));
+    assert!(owned.contains("\"records\".to_owned(),::serde_json::Value::Null"));
     assert!(
-        owned.contains(
-            "\"unalignedRecords\".to_string(),::serde_json::Value::String(String::new())"
-        )
+        owned
+            .contains("\"unalignedRecords\".to_owned(),::serde_json::Value::String(String::new())")
     );
 }
 

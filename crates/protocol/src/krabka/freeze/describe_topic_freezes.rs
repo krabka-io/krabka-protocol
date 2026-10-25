@@ -12,6 +12,8 @@
 use bytes::{Buf, BufMut};
 
 use super::{PATTERN_TYPE_ANY, PATTERN_TYPE_LITERAL};
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -77,9 +79,9 @@ impl Default for DescribeTopicFreezesRequest {
 impl Encode for DescribeTopicFreezesRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        put_compact_nullable_string(buf, self.scope_filter.as_deref());
+        put_compact_nullable_string(buf, self.scope_filter.as_deref())?;
         put_i8(buf, self.pattern_type_filter);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -158,15 +160,15 @@ impl Default for DescribedTopicFreeze {
 
 impl Encode for DescribedTopicFreeze {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.scope);
+        put_compact_string(buf, &self.scope)?;
         put_i8(buf, self.pattern_type);
-        put_compact_string(buf, &self.reason);
-        put_compact_string(buf, &self.set_by);
+        put_compact_string(buf, &self.reason)?;
+        put_compact_string(buf, &self.set_by)?;
         put_i64(buf, self.set_at_ms);
         put_uuid(buf, self.proposal_id);
-        put_compact_string(buf, &self.key_id);
-        put_compact_bytes(buf, &self.signature);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        put_compact_string(buf, &self.key_id)?;
+        put_compact_bytes(buf, &self.signature)?;
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -220,9 +222,9 @@ impl Encode for DescribeTopicFreezesResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         encode_array(buf, &self.freezes, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -253,9 +255,9 @@ impl DescribeTopicFreezesRequest {
     /// Builds a request with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            scope_filter: Some("tenant-a.".to_string()),
+            scope_filter: Some("tenant-a.".to_owned()),
             pattern_type_filter: super::PATTERN_TYPE_PREFIXED,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -270,26 +272,26 @@ impl DescribeTopicFreezesResponse {
             error_message: None,
             freezes: vec![
                 DescribedTopicFreeze {
-                    scope: "orders".to_string(),
+                    scope: "orders".to_owned(),
                     pattern_type: PATTERN_TYPE_LITERAL,
-                    reason: "DR cutover".to_string(),
-                    set_by: "User:alice".to_string(),
+                    reason: "DR cutover".to_owned(),
+                    set_by: "User:alice".to_owned(),
                     set_at_ms: 1_770_000_000_000,
                     proposal_id: Uuid::ZERO,
-                    key_id: "alice-yubi".to_string(),
+                    key_id: "alice-yubi".to_owned(),
                     signature: (0..64).collect(),
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
                 DescribedTopicFreeze {
-                    scope: "tenant-a.".to_string(),
+                    scope: "tenant-a.".to_owned(),
                     pattern_type: super::PATTERN_TYPE_PREFIXED,
-                    reason: "tenant offboarding".to_string(),
-                    set_by: "User:bob".to_string(),
+                    reason: "tenant offboarding".to_owned(),
+                    set_by: "User:bob".to_owned(),
                     set_at_ms: 1_770_000_100_000,
                     ..DescribedTopicFreeze::default()
                 },
             ],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -318,7 +320,7 @@ mod tests {
             (
                 "literal scope filter",
                 DescribeTopicFreezesRequest {
-                    scope_filter: Some("orders".to_string()),
+                    scope_filter: Some("orders".to_owned()),
                     pattern_type_filter: PATTERN_TYPE_LITERAL,
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
@@ -352,7 +354,7 @@ mod tests {
                 DescribeTopicFreezesResponse {
                     throttle_time_ms: 11,
                     error_code: 31,
-                    error_message: Some("cluster authorization failed".to_string()),
+                    error_message: Some("cluster authorization failed".to_owned()),
                     freezes: Vec::new(),
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },

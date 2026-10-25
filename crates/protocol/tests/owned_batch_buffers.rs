@@ -1,4 +1,5 @@
 //! Owned batch decoding must agree across contiguous and fragmented input.
+#![cfg(test)]
 
 use assert2::assert;
 use bytes::{Buf, Bytes, BytesMut};
@@ -53,7 +54,7 @@ fn fixture(codec: CompressionType) -> RecordBatch {
 
 fn encode(batch: &RecordBatch) -> Vec<u8> {
     let mut out = BytesMut::new();
-    batch.encode(&mut out).unwrap();
+    batch.encode_batch(&mut out).unwrap();
     out.to_vec()
 }
 
@@ -89,7 +90,7 @@ fn buffers_preserve_whole_batches_and_stop_before_the_next_batch() {
         let mut sequence = wire.clone();
         sequence.extend_from_slice(&encode(&fixture(CompressionType::None)));
         let mut cur = sequence.as_slice();
-        assert!(RecordBatch::decode(&mut cur).unwrap() == batch);
+        assert!(RecordBatch::decode_batch(&mut cur).unwrap() == batch);
         assert!(cur == &sequence[wire.len()..]);
         compare_buffers(&sequence, RecordDecompressionPolicy::default());
     }
@@ -121,7 +122,7 @@ fn buffer_shapes_preserve_crc_errors_limits_and_cursor_consumption() {
             let crc = crc32c::crc32c(&corrupt[21..]);
             corrupt[17..21].copy_from_slice(&crc.to_be_bytes());
             let mut cur = corrupt.as_slice();
-            assert!(RecordBatch::decode(&mut cur).is_err());
+            assert!(RecordBatch::decode_batch(&mut cur).is_err());
             assert!(cur.is_empty());
             compare_buffers(&corrupt, RecordDecompressionPolicy::default());
         }

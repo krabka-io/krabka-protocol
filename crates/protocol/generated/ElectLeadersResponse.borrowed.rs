@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::elect_leaders_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -34,12 +36,9 @@ pub struct ElectLeadersResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ElectLeadersResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::elect_leaders_response::ElectLeadersResponse {
-        crate::owned::elect_leaders_response::ElectLeadersResponse {
+    pub fn to_owned(&self) -> elect_leaders_response::ElectLeadersResponse {
+        elect_leaders_response::ElectLeadersResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             replica_election_results: (self.replica_election_results)
@@ -67,19 +66,15 @@ impl Encode for ElectLeadersResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.replica_election_results).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.replica_election_results).len(), flex)?;
                 for it in &self.replica_election_results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -94,10 +89,7 @@ impl Encode for ElectLeadersResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.replica_election_results).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.replica_election_results).len(), flex);
                 let body: usize = (self.replica_election_results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -130,7 +122,7 @@ impl<'de> DecodeBorrow<'de> for ElectLeadersResponse<'de> {
         }
         if version >= 0 {
             out.replica_election_results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ReplicaElectionResult::decode_borrow(buf, version)?);
@@ -168,13 +160,10 @@ pub struct ReplicaElectionResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ReplicaElectionResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::elect_leaders_response::ReplicaElectionResult {
-        crate::owned::elect_leaders_response::ReplicaElectionResult {
-            topic: (self.topic).to_string(),
+    pub fn to_owned(&self) -> elect_leaders_response::ReplicaElectionResult {
+        elect_leaders_response::ReplicaElectionResult {
+            topic: (self.topic).to_owned(),
             partition_result: (self.partition_result)
                 .iter()
                 .map(PartitionResult::to_owned)
@@ -188,22 +177,22 @@ impl Encode for ReplicaElectionResult<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic);
+                put_compact_string(buf, self.topic)?;
             } else {
-                let () = put_string(buf, self.topic);
+                put_string(buf, self.topic)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_result).len(), flex);
+                put_array_len(buf, (self.partition_result).len(), flex)?;
                 for it in &self.partition_result {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -219,10 +208,7 @@ impl Encode for ReplicaElectionResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_result).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_result).len(), flex);
                 let body: usize = (self.partition_result)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -250,7 +236,7 @@ impl<'de> DecodeBorrow<'de> for ReplicaElectionResult<'de> {
         }
         if version >= 0 {
             out.partition_result = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionResult::decode_borrow(buf, version)?);
@@ -296,15 +282,12 @@ impl Default for PartitionResult<'_> {
     }
 }
 impl PartitionResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::elect_leaders_response::PartitionResult {
-        crate::owned::elect_leaders_response::PartitionResult {
+    pub fn to_owned(&self) -> elect_leaders_response::PartitionResult {
+        elect_leaders_response::PartitionResult {
             partition_id: (self.partition_id),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -320,14 +303,14 @@ impl Encode for PartitionResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

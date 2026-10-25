@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for borrowed Produce wrappers. Relocated from hand-written
 // wrappers.
 

@@ -5,15 +5,20 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, get_compact_nullable_bytes_owned,
-            get_compact_nullable_string_owned, get_compact_string_owned, get_nullable_bytes_owned,
-            get_nullable_string_owned, get_string_owned, nullable_string_len,
-            put_compact_nullable_bytes, put_compact_nullable_string, put_compact_string,
-            put_nullable_bytes, put_nullable_string, put_string, string_len,
+            compact_bytes_len_from_size, compact_nullable_string_len, compact_string_len,
+            get_compact_nullable_bytes_owned, get_compact_nullable_string_owned,
+            get_compact_string_owned, get_nullable_bytes_owned, get_nullable_string_owned,
+            get_string_owned, nullable_string_len, put_compact_nullable_bytes,
+            put_compact_nullable_string, put_compact_string, put_nullable_bytes,
+            put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
+        varint::uvarint_len,
     },
+    records::RecordsPayload,
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 0;
@@ -45,9 +50,9 @@ impl Encode for ProduceRequest {
         let flex = is_flexible(version);
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.transactional_id.as_deref());
+                put_compact_nullable_string(buf, self.transactional_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.transactional_id.as_deref());
+                put_nullable_string(buf, self.transactional_id.as_deref())?;
             }
         }
         if version >= 0 {
@@ -58,15 +63,15 @@ impl Encode for ProduceRequest {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_data).len(), flex);
+                put_array_len(buf, (self.topic_data).len(), flex)?;
                 for it in &self.topic_data {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -88,8 +93,7 @@ impl Encode for ProduceRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topic_data).len(), flex);
+                let prefix = array_len_prefix_len((self.topic_data).len(), flex);
                 let body: usize = (self.topic_data)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -129,7 +133,7 @@ impl Decode<'_> for ProduceRequest {
         }
         if version >= 0 {
             out.topic_data = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicProduceData::decode(buf, version)?);
@@ -149,7 +153,7 @@ impl ProduceRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 3 {
-            m.transactional_id = Some("x".to_string());
+            m.transactional_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.acks = 1i16;
@@ -166,7 +170,7 @@ impl ProduceRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicProduceData {
     pub name: String,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partition_data: Vec<PartitionProduceData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -175,25 +179,25 @@ impl Encode for TopicProduceData {
         let flex = version >= 9;
         if (0..=12).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 13 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_data).len(), flex);
+                put_array_len(buf, (self.partition_data).len(), flex)?;
                 for it in &self.partition_data {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -212,10 +216,7 @@ impl Encode for TopicProduceData {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_data).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_data).len(), flex);
                 let body: usize = (self.partition_data)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -242,11 +243,11 @@ impl Decode<'_> for TopicProduceData {
             };
         }
         if version >= 13 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition_data = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionProduceData::decode(buf, version)?);
@@ -266,10 +267,10 @@ impl TopicProduceData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=12).contains(&version) {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 13 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition_data = vec![PartitionProduceData::populated(version)];
@@ -280,7 +281,7 @@ impl TopicProduceData {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PartitionProduceData {
     pub index: i32,
-    pub records: Option<crate::records::RecordsPayload>,
+    pub records: Option<RecordsPayload>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for PartitionProduceData {
@@ -293,9 +294,9 @@ impl Encode for PartitionProduceData {
             match &self.records {
                 None => {
                     if flex {
-                        let () = put_compact_nullable_bytes(buf, None);
+                        put_compact_nullable_bytes(buf, None)?;
                     } else {
-                        let () = put_nullable_bytes(buf, None);
+                        put_nullable_bytes(buf, None)?;
                     }
                 }
                 Some(__rb) => __rb.encode_length_prefixed(buf, version, flex)?,
@@ -303,7 +304,7 @@ impl Encode for PartitionProduceData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -314,25 +315,17 @@ impl Encode for PartitionProduceData {
             n += 4;
         }
         if version >= 0 {
-            n += match &self.records {
-                None => {
+            n += (self.records).as_ref().map_or_else(
+                || if flex { uvarint_len(0) } else { 4 },
+                |__rb| {
+                    let __rb_len = <RecordsPayload as crate::Encode>::encoded_len(__rb, version);
                     if flex {
-                        crate::primitives::varint::uvarint_len(0)
-                    } else {
-                        4
-                    }
-                }
-                Some(__rb) => {
-                    let __rb_len = <crate::records::RecordsPayload as crate::Encode>::encoded_len(
-                        __rb, version,
-                    );
-                    if flex {
-                        crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                        compact_bytes_len_from_size(__rb_len)
                     } else {
                         4 + __rb_len
                     }
-                }
-            };
+                },
+            );
         }
         if flex {
             let known_pairs: Vec<(u32, usize)> = Vec::new();
@@ -357,9 +350,7 @@ impl Decode<'_> for PartitionProduceData {
                 };
                 match __rb_opt {
                     None => None,
-                    Some(__rb_bytes) => {
-                        Some(crate::records::RecordsPayload::from_bytes(__rb_bytes)?)
-                    }
+                    Some(__rb_bytes) => Some(RecordsPayload::from_bytes(__rb_bytes)?),
                 }
             };
         }
@@ -387,11 +378,11 @@ impl PartitionProduceData {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 3 {
-        obj.insert("transactionalId".to_string(), ::serde_json::Value::Null);
+        obj.insert("transactionalId".to_owned(), ::serde_json::Value::Null);
     }
-    obj.insert("acks".to_string(), ::serde_json::json!(0));
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(0));
-    obj.insert("topicData".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("acks".to_owned(), ::serde_json::json!(0));
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("topicData".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ProduceRequest {

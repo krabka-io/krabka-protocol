@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_share_group_offsets_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -33,15 +36,11 @@ pub struct DescribeShareGroupOffsetsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeShareGroupOffsetsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponse
-    {
-        crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponse {
+    ) -> describe_share_group_offsets_response::DescribeShareGroupOffsetsResponse {
+        describe_share_group_offsets_response::DescribeShareGroupOffsetsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             groups: (self.groups)
                 .iter()
@@ -65,15 +64,15 @@ impl Encode for DescribeShareGroupOffsetsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,8 +84,7 @@ impl Encode for DescribeShareGroupOffsetsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -113,7 +111,7 @@ impl<'de> DecodeBorrow<'de> for DescribeShareGroupOffsetsResponse<'de> {
         }
         if version >= 0 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeShareGroupOffsetsResponseGroup::decode_borrow(
@@ -152,19 +150,18 @@ pub struct DescribeShareGroupOffsetsResponseGroup<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeShareGroupOffsetsResponseGroup<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseGroup
-    {
-        crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseGroup {
-            group_id: (self.group_id).to_string(),
-            topics: (self.topics).iter().map(DescribeShareGroupOffsetsResponseTopic::to_owned).collect(),
+    ) -> describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseGroup {
+        describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseGroup {
+            group_id: (self.group_id).to_owned(),
+            topics: (self.topics)
+                .iter()
+                .map(DescribeShareGroupOffsetsResponseTopic::to_owned)
+                .collect(),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -174,32 +171,32 @@ impl Encode for DescribeShareGroupOffsetsResponseGroup<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i16(buf, self.error_code);
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -215,8 +212,7 @@ impl Encode for DescribeShareGroupOffsetsResponseGroup<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -251,7 +247,7 @@ impl<'de> DecodeBorrow<'de> for DescribeShareGroupOffsetsResponseGroup<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeShareGroupOffsetsResponseTopic::decode_borrow(
@@ -300,23 +296,22 @@ impl DescribeShareGroupOffsetsResponseGroup<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DescribeShareGroupOffsetsResponseTopic<'a> {
     pub topic_name: &'a str,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<DescribeShareGroupOffsetsResponsePartition<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeShareGroupOffsetsResponseTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseTopic
-    {
-        crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseTopic {
-            topic_name: (self.topic_name).to_string(),
+    ) -> describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseTopic {
+        describe_share_group_offsets_response::DescribeShareGroupOffsetsResponseTopic {
+            topic_name: (self.topic_name).to_owned(),
             topic_id: (self.topic_id),
-            partitions: (self.partitions).iter().map(DescribeShareGroupOffsetsResponsePartition::to_owned).collect(),
+            partitions: (self.partitions)
+                .iter()
+                .map(DescribeShareGroupOffsetsResponsePartition::to_owned)
+                .collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -326,25 +321,25 @@ impl Encode for DescribeShareGroupOffsetsResponseTopic<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -363,8 +358,7 @@ impl Encode for DescribeShareGroupOffsetsResponseTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -391,11 +385,11 @@ impl<'de> DecodeBorrow<'de> for DescribeShareGroupOffsetsResponseTopic<'de> {
             };
         }
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeShareGroupOffsetsResponsePartition::decode_borrow(
@@ -420,7 +414,7 @@ impl DescribeShareGroupOffsetsResponseTopic<'_> {
             m.topic_name = "x";
         }
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![DescribeShareGroupOffsetsResponsePartition::populated(
@@ -454,18 +448,17 @@ impl Default for DescribeShareGroupOffsetsResponsePartition<'_> {
     }
 }
 impl DescribeShareGroupOffsetsResponsePartition<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponsePartition{
-        crate::owned::describe_share_group_offsets_response::DescribeShareGroupOffsetsResponsePartition {
+    pub fn to_owned(
+        &self,
+    ) -> describe_share_group_offsets_response::DescribeShareGroupOffsetsResponsePartition {
+        describe_share_group_offsets_response::DescribeShareGroupOffsetsResponsePartition {
             partition_index: (self.partition_index),
             start_offset: (self.start_offset),
             leader_epoch: (self.leader_epoch),
             lag: (self.lag),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -490,14 +483,14 @@ impl Encode for DescribeShareGroupOffsetsResponsePartition<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

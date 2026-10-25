@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_quorum_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,12 +28,9 @@ pub struct DescribeQuorumRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeQuorumRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_quorum_request::DescribeQuorumRequest {
-        crate::owned::describe_quorum_request::DescribeQuorumRequest {
+    pub fn to_owned(&self) -> describe_quorum_request::DescribeQuorumRequest {
+        describe_quorum_request::DescribeQuorumRequest {
             topics: (self.topics).iter().map(TopicData::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -48,15 +47,15 @@ impl Encode for DescribeQuorumRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -65,8 +64,7 @@ impl Encode for DescribeQuorumRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -90,7 +88,7 @@ impl<'de> DecodeBorrow<'de> for DescribeQuorumRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode_borrow(buf, version)?);
@@ -122,13 +120,10 @@ pub struct TopicData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_quorum_request::TopicData {
-        crate::owned::describe_quorum_request::TopicData {
-            topic_name: (self.topic_name).to_string(),
+    pub fn to_owned(&self) -> describe_quorum_request::TopicData {
+        describe_quorum_request::TopicData {
+            topic_name: (self.topic_name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionData::to_owned)
@@ -142,22 +137,22 @@ impl Encode for TopicData<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -173,8 +168,7 @@ impl Encode for TopicData<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -202,7 +196,7 @@ impl<'de> DecodeBorrow<'de> for TopicData<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -236,12 +230,9 @@ pub struct PartitionData {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_quorum_request::PartitionData {
-        crate::owned::describe_quorum_request::PartitionData {
+    pub fn to_owned(&self) -> describe_quorum_request::PartitionData {
+        describe_quorum_request::PartitionData {
             partition_index: (self.partition_index),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -255,7 +246,7 @@ impl Encode for PartitionData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

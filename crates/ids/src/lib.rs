@@ -81,7 +81,7 @@ pub struct Offset(pub i64);
 impl Offset {
     /// The log's first offset. It is also the initial log-start offset and the
     /// high-watermark of an empty partition.
-    pub const ZERO: Self = Offset(0);
+    pub const ZERO: Self = Self(0);
 
     /// The inner `i64`. Use it at the wire and generated boundary, and for
     /// arithmetic against other integer quantities.
@@ -92,16 +92,16 @@ impl Offset {
 }
 
 impl Add<i64> for Offset {
-    type Output = Offset;
-    fn add(self, count: i64) -> Offset {
-        Offset(self.0 + count)
+    type Output = Self;
+    fn add(self, count: i64) -> Self {
+        Self(self.0 + count)
     }
 }
 
 impl Sub<i64> for Offset {
-    type Output = Offset;
-    fn sub(self, count: i64) -> Offset {
-        Offset(self.0 - count)
+    type Output = Self;
+    fn sub(self, count: i64) -> Self {
+        Self(self.0 - count)
     }
 }
 
@@ -205,7 +205,7 @@ pub struct ProducerId(pub i64);
 impl ProducerId {
     /// KIP-98 `NO_PRODUCER_ID` (`-1`): no idempotent or transactional producer
     /// is assigned.
-    pub const NONE: Self = ProducerId(-1);
+    pub const NONE: Self = Self(-1);
 
     /// The inner `i64`. Use it at the wire and generated boundary.
     #[must_use]
@@ -256,10 +256,10 @@ impl LeaderEpoch {
     /// KIP-320 `UNKNOWN_LEADER_EPOCH` (`-1`): the leader epoch is unknown or
     /// unset. Examples are an older client, and a partition with no elected
     /// leader yet.
-    pub const UNKNOWN: Self = LeaderEpoch(-1);
+    pub const UNKNOWN: Self = Self(-1);
 
     /// The epoch a partition's first leader starts at (`0`).
-    pub const INITIAL: Self = LeaderEpoch(0);
+    pub const INITIAL: Self = Self(0);
 
     /// The inner `i32`. Use it at the wire and generated boundary.
     #[must_use]
@@ -278,7 +278,7 @@ impl LeaderEpoch {
     /// one.
     #[must_use]
     pub const fn next(self) -> Self {
-        LeaderEpoch(self.0 + 1)
+        Self(self.0 + 1)
     }
 }
 

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_configs_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,12 +35,9 @@ pub struct DescribeConfigsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeConfigsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_configs_response::DescribeConfigsResponse {
-        crate::owned::describe_configs_response::DescribeConfigsResponse {
+    pub fn to_owned(&self) -> describe_configs_response::DescribeConfigsResponse {
+        describe_configs_response::DescribeConfigsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             results: (self.results)
                 .iter()
@@ -62,15 +61,15 @@ impl Encode for DescribeConfigsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.results).len(), flex);
+                put_array_len(buf, (self.results).len(), flex)?;
                 for it in &self.results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,8 +81,7 @@ impl Encode for DescribeConfigsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.results).len(), flex);
+                let prefix = array_len_prefix_len((self.results).len(), flex);
                 let body: usize = (self.results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +111,7 @@ impl<'de> DecodeBorrow<'de> for DescribeConfigsResponse<'de> {
         }
         if version >= 0 {
             out.results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResult::decode_borrow(buf, version)?);
@@ -163,16 +161,13 @@ impl Default for DescribeConfigsResult<'_> {
     }
 }
 impl DescribeConfigsResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_configs_response::DescribeConfigsResult {
-        crate::owned::describe_configs_response::DescribeConfigsResult {
+    pub fn to_owned(&self) -> describe_configs_response::DescribeConfigsResult {
+        describe_configs_response::DescribeConfigsResult {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             configs: (self.configs)
                 .iter()
                 .map(DescribeConfigsResourceResult::to_owned)
@@ -189,9 +184,9 @@ impl Encode for DescribeConfigsResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
@@ -199,22 +194,22 @@ impl Encode for DescribeConfigsResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.configs).len(), flex);
+                put_array_len(buf, (self.configs).len(), flex)?;
                 for it in &self.configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -243,8 +238,7 @@ impl Encode for DescribeConfigsResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.configs).len(), flex);
+                let prefix = array_len_prefix_len((self.configs).len(), flex);
                 let body: usize = (self.configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -285,7 +279,7 @@ impl<'de> DecodeBorrow<'de> for DescribeConfigsResult<'de> {
         }
         if version >= 0 {
             out.configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResourceResult::decode_borrow(buf, version)?);
@@ -350,16 +344,11 @@ impl Default for DescribeConfigsResourceResult<'_> {
     }
 }
 impl<'a> DescribeConfigsResourceResult<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::describe_configs_response::DescribeConfigsResourceResult {
-        crate::owned::describe_configs_response::DescribeConfigsResourceResult {
-            name: (self.name).to_string(),
-            value: (self.value).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> describe_configs_response::DescribeConfigsResourceResult {
+        describe_configs_response::DescribeConfigsResourceResult {
+            name: (self.name).to_owned(),
+            value: (self.value).map(str::to_owned),
             read_only: (self.read_only),
             config_source: (self.config_source),
             is_sensitive: (self.is_sensitive),
@@ -368,27 +357,39 @@ impl<'a> DescribeConfigsResourceResult<'a> {
                 .map(DescribeConfigsSynonym::to_owned)
                 .collect(),
             config_type: (self.config_type),
-            documentation: (self.documentation).map(std::string::ToString::to_string),
+            documentation: (self.documentation).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
-    fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_0<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value);
+                put_compact_nullable_string(buf, self.value)?;
             } else {
-                let () = put_nullable_string(buf, self.value);
+                put_nullable_string(buf, self.value)?;
             }
         }
+        Ok(())
     }
     fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -413,11 +414,11 @@ impl<'a> DescribeConfigsResourceResult<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.synonyms).len(), flex);
+                put_array_len(buf, (self.synonyms).len(), flex)?;
                 for it in &self.synonyms {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -426,20 +427,32 @@ impl<'a> DescribeConfigsResourceResult<'a> {
             put_i8(buf, self.config_type);
         }
     }
-    fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_7<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.documentation);
+                put_compact_nullable_string(buf, self.documentation)?;
             } else {
-                let () = put_nullable_string(buf, self.documentation);
+                put_nullable_string(buf, self.documentation)?;
             }
         }
+        Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -512,7 +525,7 @@ impl<'a> DescribeConfigsResourceResult<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
             out.synonyms = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsSynonym::decode_borrow(buf, version)?);
@@ -563,15 +576,15 @@ impl<'a> DescribeConfigsResourceResult<'a> {
 impl Encode for DescribeConfigsResourceResult<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 4;
-        self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
+        self.encode_field_0(buf, version, flex)?;
+        self.encode_field_1(buf, version, flex)?;
         self.encode_field_2(buf, version, flex);
         self.encode_field_3(buf, version, flex);
         self.encode_field_4(buf, version, flex);
         self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex);
-        self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_field_7(buf, version, flex)?;
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -602,8 +615,7 @@ impl Encode for DescribeConfigsResourceResult<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.synonyms).len(), flex);
+                let prefix = array_len_prefix_len((self.synonyms).len(), flex);
                 let body: usize = (self.synonyms)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -694,14 +706,11 @@ impl Default for DescribeConfigsSynonym<'_> {
     }
 }
 impl DescribeConfigsSynonym<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_configs_response::DescribeConfigsSynonym {
-        crate::owned::describe_configs_response::DescribeConfigsSynonym {
-            name: (self.name).to_string(),
-            value: (self.value).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> describe_configs_response::DescribeConfigsSynonym {
+        describe_configs_response::DescribeConfigsSynonym {
+            name: (self.name).to_owned(),
+            value: (self.value).map(str::to_owned),
             source: (self.source),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -712,16 +721,16 @@ impl Encode for DescribeConfigsSynonym<'_> {
         let flex = version >= 4;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value);
+                put_compact_nullable_string(buf, self.value)?;
             } else {
-                let () = put_nullable_string(buf, self.value);
+                put_nullable_string(buf, self.value)?;
             }
         }
         if version >= 1 {
@@ -729,7 +738,7 @@ impl Encode for DescribeConfigsSynonym<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

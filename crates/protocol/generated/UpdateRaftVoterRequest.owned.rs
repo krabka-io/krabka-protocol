@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_u16, put_i16, put_i32, put_u16},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +13,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -30,7 +32,7 @@ pub struct UpdateRaftVoterRequest {
     pub cluster_id: Option<String>,
     pub current_leader_epoch: i32,
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub listeners: Vec<Listener>,
     pub k_raft_version_feature: KRaftVersionFeature,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -41,7 +43,7 @@ impl Default for UpdateRaftVoterRequest {
             cluster_id: Some(String::new()),
             current_leader_epoch: 0i32,
             voter_id: 0i32,
-            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            voter_directory_id: Uuid::default(),
             listeners: Vec::new(),
             k_raft_version_feature: KRaftVersionFeature::default(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -59,9 +61,9 @@ impl Encode for UpdateRaftVoterRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id.as_deref());
+                put_compact_nullable_string(buf, self.cluster_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id.as_deref());
+                put_nullable_string(buf, self.cluster_id.as_deref())?;
             }
         }
         if version >= 0 {
@@ -71,22 +73,22 @@ impl Encode for UpdateRaftVoterRequest {
             put_i32(buf, self.voter_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.listeners).len(), flex);
+                put_array_len(buf, (self.listeners).len(), flex)?;
                 for it in &self.listeners {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             self.k_raft_version_feature.encode(buf, version)?;
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -111,8 +113,7 @@ impl Encode for UpdateRaftVoterRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.listeners).len(), flex);
+                let prefix = array_len_prefix_len((self.listeners).len(), flex);
                 let body: usize = (self.listeners)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -154,11 +155,11 @@ impl Decode<'_> for UpdateRaftVoterRequest {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.listeners = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Listener::decode(buf, version)?);
@@ -181,7 +182,7 @@ impl UpdateRaftVoterRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.current_leader_epoch = 1i32;
@@ -190,7 +191,7 @@ impl UpdateRaftVoterRequest {
             m.voter_id = 1i32;
         }
         if version >= 0 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.listeners = vec![Listener::populated(version)];
@@ -213,16 +214,16 @@ impl Encode for Listener {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -230,7 +231,7 @@ impl Encode for Listener {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -294,10 +295,10 @@ impl Listener {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1u16;
@@ -322,7 +323,7 @@ impl Encode for KRaftVersionFeature {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -379,20 +380,20 @@ impl KRaftVersionFeature {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "clusterId".to_string(),
+        "clusterId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(0));
-    obj.insert("voterId".to_string(), ::serde_json::json!(0));
+    obj.insert("currentLeaderEpoch".to_owned(), ::serde_json::json!(0));
+    obj.insert("voterId".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "voterDirectoryId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "voterDirectoryId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("listeners".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("kRaftVersionFeature".to_string(), {
+    obj.insert("listeners".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("kRaftVersionFeature".to_owned(), {
         let mut m = ::serde_json::Map::new();
-        m.insert("minSupportedVersion".to_string(), ::serde_json::json!(0));
-        m.insert("maxSupportedVersion".to_string(), ::serde_json::json!(0));
+        m.insert("minSupportedVersion".to_owned(), ::serde_json::json!(0));
+        m.insert("maxSupportedVersion".to_owned(), ::serde_json::json!(0));
         ::serde_json::Value::Object(m)
     });
     ::serde_json::Value::Object(obj)

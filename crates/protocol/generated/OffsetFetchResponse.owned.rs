@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +13,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -46,26 +48,26 @@ impl Encode for OffsetFetchResponse {
         }
         if (0..=7).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if (2..=7).contains(&version) {
             put_i16(buf, self.error_code);
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -77,8 +79,7 @@ impl Encode for OffsetFetchResponse {
         }
         if (0..=7).contains(&version) {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -88,8 +89,7 @@ impl Encode for OffsetFetchResponse {
         }
         if version >= 8 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -116,7 +116,7 @@ impl Decode<'_> for OffsetFetchResponse {
         }
         if (0..=7).contains(&version) {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchResponseTopic::decode(buf, version)?);
@@ -129,7 +129,7 @@ impl Decode<'_> for OffsetFetchResponse {
         }
         if version >= 8 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchResponseGroup::decode(buf, version)?);
@@ -174,22 +174,22 @@ impl Encode for OffsetFetchResponseTopic {
         let flex = version >= 6;
         if (0..=7).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if (0..=7).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -205,8 +205,7 @@ impl Encode for OffsetFetchResponseTopic {
         }
         if (0..=7).contains(&version) {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -234,7 +233,7 @@ impl Decode<'_> for OffsetFetchResponseTopic {
         }
         if (0..=7).contains(&version) {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchResponsePartition::decode(buf, version)?);
@@ -254,7 +253,7 @@ impl OffsetFetchResponseTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=7).contains(&version) {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if (0..=7).contains(&version) {
             m.partitions = vec![OffsetFetchResponsePartition::populated(version)];
@@ -297,9 +296,9 @@ impl Encode for OffsetFetchResponsePartition {
         }
         if (0..=7).contains(&version) {
             if flex {
-                let () = put_compact_nullable_string(buf, self.metadata.as_deref());
+                put_compact_nullable_string(buf, self.metadata.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.metadata.as_deref());
+                put_nullable_string(buf, self.metadata.as_deref())?;
             }
         }
         if (0..=7).contains(&version) {
@@ -307,7 +306,7 @@ impl Encode for OffsetFetchResponsePartition {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -384,7 +383,7 @@ impl OffsetFetchResponsePartition {
             m.committed_leader_epoch = 1i32;
         }
         if (0..=7).contains(&version) {
-            m.metadata = Some("x".to_string());
+            m.metadata = Some("x".to_owned());
         }
         if (0..=7).contains(&version) {
             m.error_code = 1i16;
@@ -404,25 +403,25 @@ impl Encode for OffsetFetchResponseGroup {
         let flex = version >= 6;
         if version >= 8 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 8 {
             put_i16(buf, self.error_code);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -438,8 +437,7 @@ impl Encode for OffsetFetchResponseGroup {
         }
         if version >= 8 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -467,7 +465,7 @@ impl Decode<'_> for OffsetFetchResponseGroup {
         }
         if version >= 8 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchResponseTopics::decode(buf, version)?);
@@ -490,7 +488,7 @@ impl OffsetFetchResponseGroup {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 8 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if version >= 8 {
             m.topics = vec![OffsetFetchResponseTopics::populated(version)];
@@ -504,7 +502,7 @@ impl OffsetFetchResponseGroup {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OffsetFetchResponseTopics {
     pub name: String,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<OffsetFetchResponsePartitions>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -513,25 +511,25 @@ impl Encode for OffsetFetchResponseTopics {
         let flex = version >= 6;
         if (8..=9).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 10 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -550,8 +548,7 @@ impl Encode for OffsetFetchResponseTopics {
         }
         if version >= 8 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -578,11 +575,11 @@ impl Decode<'_> for OffsetFetchResponseTopics {
             };
         }
         if version >= 10 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 8 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchResponsePartitions::decode(buf, version)?);
@@ -602,10 +599,10 @@ impl OffsetFetchResponseTopics {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (8..=9).contains(&version) {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 10 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 8 {
             m.partitions = vec![OffsetFetchResponsePartitions::populated(version)];
@@ -648,9 +645,9 @@ impl Encode for OffsetFetchResponsePartitions {
         }
         if version >= 8 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.metadata.as_deref());
+                put_compact_nullable_string(buf, self.metadata.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.metadata.as_deref());
+                put_nullable_string(buf, self.metadata.as_deref())?;
             }
         }
         if version >= 8 {
@@ -658,7 +655,7 @@ impl Encode for OffsetFetchResponsePartitions {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -735,7 +732,7 @@ impl OffsetFetchResponsePartitions {
             m.committed_leader_epoch = 1i32;
         }
         if version >= 8 {
-            m.metadata = Some("x".to_string());
+            m.metadata = Some("x".to_owned());
         }
         if version >= 8 {
             m.error_code = 1i16;
@@ -750,16 +747,16 @@ impl OffsetFetchResponsePartitions {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 3 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
     if version <= 7 {
-        obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     if (2..=7).contains(&version) {
-        obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+        obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     }
     if version >= 8 {
-        obj.insert("groups".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("groups".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     ::serde_json::Value::Object(obj)
 }

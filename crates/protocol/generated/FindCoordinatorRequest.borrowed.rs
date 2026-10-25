@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::find_coordinator_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -28,17 +30,14 @@ pub struct FindCoordinatorRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FindCoordinatorRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::find_coordinator_request::FindCoordinatorRequest {
-        crate::owned::find_coordinator_request::FindCoordinatorRequest {
-            key: (self.key).to_string(),
+    pub fn to_owned(&self) -> find_coordinator_request::FindCoordinatorRequest {
+        find_coordinator_request::FindCoordinatorRequest {
+            key: (self.key).to_owned(),
             key_type: (self.key_type),
             coordinator_keys: (self.coordinator_keys)
                 .iter()
-                .map(std::string::ToString::to_string)
+                .map(|&s| s.to_owned())
                 .collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -55,9 +54,9 @@ impl Encode for FindCoordinatorRequest<'_> {
         let flex = is_flexible(version);
         if (0..=3).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, self.key);
+                put_compact_string(buf, self.key)?;
             } else {
-                let () = put_string(buf, self.key);
+                put_string(buf, self.key)?;
             }
         }
         if version >= 1 {
@@ -65,19 +64,19 @@ impl Encode for FindCoordinatorRequest<'_> {
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.coordinator_keys).len(), flex);
+                put_array_len(buf, (self.coordinator_keys).len(), flex)?;
                 for it in &self.coordinator_keys {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -96,10 +95,7 @@ impl Encode for FindCoordinatorRequest<'_> {
         }
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.coordinator_keys).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.coordinator_keys).len(), flex);
                 let body: usize = (self.coordinator_keys)
                     .iter()
                     .map(|it| {
@@ -142,7 +138,7 @@ impl<'de> DecodeBorrow<'de> for FindCoordinatorRequest<'de> {
         }
         if version >= 4 {
             out.coordinator_keys = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

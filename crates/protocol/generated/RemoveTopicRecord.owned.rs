@@ -4,6 +4,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    primitives::uuid::{Uuid, get_uuid, put_uuid},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -16,7 +17,7 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoveTopicRecord {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for RemoveTopicRecord {
@@ -28,11 +29,11 @@ impl Encode for RemoveTopicRecord {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -59,7 +60,7 @@ impl Decode<'_> for RemoveTopicRecord {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -73,7 +74,7 @@ impl RemoveTopicRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -85,8 +86,8 @@ impl RemoveTopicRecord {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "topicId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "topicId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
     ::serde_json::Value::Object(obj)
 }

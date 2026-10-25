@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i32, put_i8, put_i32},
         string_bytes::{
             bytes_len, compact_bytes_len, compact_string_len, get_bytes_owned,
@@ -41,23 +42,23 @@ impl Encode for AlterUserScramCredentialsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.deletions).len(), flex);
+                put_array_len(buf, (self.deletions).len(), flex)?;
                 for it in &self.deletions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.upsertions).len(), flex);
+                put_array_len(buf, (self.upsertions).len(), flex)?;
                 for it in &self.upsertions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -66,8 +67,7 @@ impl Encode for AlterUserScramCredentialsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.deletions).len(), flex);
+                let prefix = array_len_prefix_len((self.deletions).len(), flex);
                 let body: usize = (self.deletions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -77,8 +77,7 @@ impl Encode for AlterUserScramCredentialsRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.upsertions).len(), flex);
+                let prefix = array_len_prefix_len((self.upsertions).len(), flex);
                 let body: usize = (self.upsertions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -105,7 +104,7 @@ impl Decode<'_> for AlterUserScramCredentialsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.deletions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ScramCredentialDeletion::decode(buf, version)?);
@@ -115,7 +114,7 @@ impl Decode<'_> for AlterUserScramCredentialsRequest {
         }
         if version >= 0 {
             out.upsertions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ScramCredentialUpsertion::decode(buf, version)?);
@@ -154,9 +153,9 @@ impl Encode for ScramCredentialDeletion {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -164,7 +163,7 @@ impl Encode for ScramCredentialDeletion {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -214,7 +213,7 @@ impl ScramCredentialDeletion {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.mechanism = 1i8;
@@ -236,9 +235,9 @@ impl Encode for ScramCredentialUpsertion {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -249,21 +248,21 @@ impl Encode for ScramCredentialUpsertion {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.salt);
+                put_compact_bytes(buf, &self.salt)?;
             } else {
-                let () = put_bytes(buf, &self.salt);
+                put_bytes(buf, &self.salt)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.salted_password);
+                put_compact_bytes(buf, &self.salted_password)?;
             } else {
-                let () = put_bytes(buf, &self.salted_password);
+                put_bytes(buf, &self.salted_password)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -347,7 +346,7 @@ impl ScramCredentialUpsertion {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.mechanism = 1i8;
@@ -370,8 +369,8 @@ impl ScramCredentialUpsertion {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("deletions".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("upsertions".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("deletions".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("upsertions".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for AlterUserScramCredentialsRequest {

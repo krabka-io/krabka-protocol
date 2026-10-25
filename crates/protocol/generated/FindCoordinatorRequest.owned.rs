@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -41,9 +42,9 @@ impl Encode for FindCoordinatorRequest {
         let flex = is_flexible(version);
         if (0..=3).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.key);
+                put_compact_string(buf, &self.key)?;
             } else {
-                let () = put_string(buf, &self.key);
+                put_string(buf, &self.key)?;
             }
         }
         if version >= 1 {
@@ -51,19 +52,19 @@ impl Encode for FindCoordinatorRequest {
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.coordinator_keys).len(), flex);
+                put_array_len(buf, (self.coordinator_keys).len(), flex)?;
                 for it in &self.coordinator_keys {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,10 +83,7 @@ impl Encode for FindCoordinatorRequest {
         }
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.coordinator_keys).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.coordinator_keys).len(), flex);
                 let body: usize = (self.coordinator_keys)
                     .iter()
                     .map(|it| {
@@ -128,7 +126,7 @@ impl Decode<'_> for FindCoordinatorRequest {
         }
         if version >= 4 {
             out.coordinator_keys = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -152,13 +150,13 @@ impl FindCoordinatorRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=3).contains(&version) {
-            m.key = "x".to_string();
+            m.key = "x".to_owned();
         }
         if version >= 1 {
             m.key_type = 1i8;
         }
         if version >= 4 {
-            m.coordinator_keys = vec!["x".to_string()];
+            m.coordinator_keys = vec!["x".to_owned()];
         }
         m
     }
@@ -170,17 +168,14 @@ impl FindCoordinatorRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version <= 3 {
-        obj.insert(
-            "key".to_string(),
-            ::serde_json::Value::String(String::new()),
-        );
+        obj.insert("key".to_owned(), ::serde_json::Value::String(String::new()));
     }
     if version >= 1 {
-        obj.insert("keyType".to_string(), ::serde_json::json!(0));
+        obj.insert("keyType".to_owned(), ::serde_json::json!(0));
     }
     if version >= 4 {
         obj.insert(
-            "coordinatorKeys".to_string(),
+            "coordinatorKeys".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }

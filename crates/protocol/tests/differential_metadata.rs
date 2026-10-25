@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod support;
 use bytes::BytesMut;
 use krabka_protocol::{
@@ -94,12 +96,11 @@ fn response_oracle_value(version: i16) -> serde_json::Value {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn metadata_request_default_byte_equal_every_version() {
-    let mut o = oracle::shared();
     for version in 0..=13i16 {
         let req = MetadataRequest::default();
         let rust = rust_encode(&req, version);
         let oracle_json = request_oracle_value(version);
-        let java = o.encode(3, version, true, &oracle_json);
+        let java = oracle::shared().encode(3, version, true, &oracle_json);
         assert2::assert!(rust == java);
         // Also verify decode roundtrip
         let decoded: MetadataRequest = rust_decode(&rust, version);
@@ -111,12 +112,11 @@ fn metadata_request_default_byte_equal_every_version() {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn metadata_response_default_byte_equal_every_version() {
-    let mut o = oracle::shared();
     for version in 0..=13i16 {
         let resp = MetadataResponse::default();
         let rust = rust_encode(&resp, version);
         let oracle_json = response_oracle_value(version);
-        let java = o.encode(3, version, false, &oracle_json);
+        let java = oracle::shared().encode(3, version, false, &oracle_json);
         assert2::assert!(rust == java);
         // Also verify decode roundtrip
         let decoded: MetadataResponse = rust_decode(&rust, version);

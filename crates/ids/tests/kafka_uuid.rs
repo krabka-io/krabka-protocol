@@ -1,8 +1,9 @@
 //! Every expected string, value, and error message below is the output of
 //! `org.apache.kafka.common.Uuid` from the `kafka-clients-4.3.1.jar` in the
 //! `apache/kafka:4.3.1` image, run on its Temurin 21 JVM.
+#![cfg(test)]
 
-use std::collections::HashSet;
+use std::{collections::HashSet, iter};
 
 use krabka_ids::{KafkaUuid, KafkaUuidError};
 use uuid::Uuid;
@@ -247,7 +248,7 @@ fn every_rendered_id_parses_back_to_itself() {
         KafkaUuid::from_bits(-1, -1),
         KafkaUuid::from_bits(i64::MIN, i64::MAX),
     ];
-    ids.extend((0..200).map(|_| KafkaUuid::random()));
+    ids.extend(iter::repeat_with(KafkaUuid::random).take(200));
     for id in ids {
         let rendered = id.to_string();
         assert2::assert!(rendered.len() == 22);

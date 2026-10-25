@@ -4,9 +4,12 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-        put_string, string_len,
+    primitives::{
+        array::{get_nullable_array_len, nullable_array_len_prefix_len, put_nullable_array_len},
+        string_bytes::{
+            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
+            put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -45,17 +48,17 @@ impl Encode for DescribeUserScramCredentialsRequest {
         if version >= 0 {
             {
                 let len = (self.users).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.users {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -65,10 +68,7 @@ impl Encode for DescribeUserScramCredentialsRequest {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.users).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -93,7 +93,7 @@ impl Decode<'_> for DescribeUserScramCredentialsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.users = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -133,14 +133,14 @@ impl Encode for UserName {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -184,7 +184,7 @@ impl UserName {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         m
     }
@@ -195,7 +195,7 @@ impl UserName {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("users".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("users".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeUserScramCredentialsRequest {

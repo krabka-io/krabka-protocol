@@ -10,6 +10,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -70,7 +72,7 @@ impl Encode for WritableBarrierPartition {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), ProtocolError> {
         put_i32(buf, self.partition);
         put_i32(buf, self.expected_leader_epoch);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -102,9 +104,9 @@ pub struct WritableBarrierTopic {
 
 impl Encode for WritableBarrierTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.topic);
+        put_compact_string(buf, &self.topic)?;
         encode_array(buf, &self.partitions, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -144,11 +146,11 @@ pub struct WriteBarrierMarkersRequest {
 impl Encode for WriteBarrierMarkersRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        put_compact_string(buf, &self.group);
+        put_compact_string(buf, &self.group)?;
         put_i64(buf, self.epoch);
         put_i64(buf, self.triggered_at);
         encode_array(buf, &self.topics, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -204,7 +206,7 @@ impl Encode for WrittenBarrierPartition {
         put_i32(buf, self.partition);
         put_i16(buf, self.error_code);
         put_i64(buf, self.offset);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -237,9 +239,9 @@ pub struct WrittenBarrierTopic {
 
 impl Encode for WrittenBarrierTopic {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
-        put_compact_string(buf, &self.topic);
+        put_compact_string(buf, &self.topic)?;
         encode_array(buf, &self.partitions, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -276,7 +278,7 @@ impl Encode for WriteBarrierMarkersResponse {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         encode_array(buf, &self.topics, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -300,12 +302,12 @@ impl WriteBarrierMarkersRequest {
     /// Builds a request with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            group: "orders".to_string(),
+            group: "orders".to_owned(),
             epoch: 41,
             triggered_at: 1_724_500_000_000,
             topics: vec![
                 WritableBarrierTopic {
-                    topic: "orders".to_string(),
+                    topic: "orders".to_owned(),
                     partitions: vec![
                         WritableBarrierPartition {
                             partition: 0,
@@ -315,8 +317,7 @@ impl WriteBarrierMarkersRequest {
                         WritableBarrierPartition {
                             partition: 3,
                             expected_leader_epoch: -1,
-                            unknown_tagged_fields:
-                                crate::krabka::test_support::sample_tagged_fields(),
+                            unknown_tagged_fields: sample_tagged_fields(),
                         },
                         WritableBarrierPartition {
                             partition: 7,
@@ -324,15 +325,15 @@ impl WriteBarrierMarkersRequest {
                             unknown_tagged_fields: UnknownTaggedFields::default(),
                         },
                     ],
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
                 WritableBarrierTopic {
-                    topic: "payments".to_string(),
+                    topic: "payments".to_owned(),
                     partitions: Vec::new(),
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 },
             ],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -343,7 +344,7 @@ impl WriteBarrierMarkersResponse {
     fn populated() -> Self {
         Self {
             topics: vec![WrittenBarrierTopic {
-                topic: "orders".to_string(),
+                topic: "orders".to_owned(),
                 partitions: vec![
                     WrittenBarrierPartition {
                         partition: 0,
@@ -355,12 +356,12 @@ impl WriteBarrierMarkersResponse {
                         partition: 3,
                         error_code: 6,
                         offset: -1,
-                        unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                        unknown_tagged_fields: sample_tagged_fields(),
                     },
                 ],
                 unknown_tagged_fields: UnknownTaggedFields::default(),
             }],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }

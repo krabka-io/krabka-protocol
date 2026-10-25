@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned DescribeGroups wrappers. The hand-written tests
 // used non-standard function names ("roundtrip_default_*"). Both are preserved
 // here for continuity. Relocated from hand-written wrappers.

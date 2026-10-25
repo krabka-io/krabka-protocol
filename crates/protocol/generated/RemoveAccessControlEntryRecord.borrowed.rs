@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remove_access_control_entry_record,
+    primitives::uuid::{Uuid, get_uuid, put_uuid},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -15,18 +17,13 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoveAccessControlEntryRecord {
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoveAccessControlEntryRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remove_access_control_entry_record::RemoveAccessControlEntryRecord {
-        crate::owned::remove_access_control_entry_record::RemoveAccessControlEntryRecord {
+    pub fn to_owned(&self) -> remove_access_control_entry_record::RemoveAccessControlEntryRecord {
+        remove_access_control_entry_record::RemoveAccessControlEntryRecord {
             id: (self.id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -41,11 +38,11 @@ impl Encode for RemoveAccessControlEntryRecord {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -72,7 +69,7 @@ impl<'de> DecodeBorrow<'de> for RemoveAccessControlEntryRecord {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -86,7 +83,7 @@ impl RemoveAccessControlEntryRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         m
     }

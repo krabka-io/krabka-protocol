@@ -12,7 +12,7 @@ use crate::{
     records::{
         RecordsError,
         crc::crc32c,
-        header::{Attributes, HEADER_LEN, RecordBatchHeader},
+        header::{Attributes, CRC_COVERAGE_START, HEADER_LEN, RecordBatchHeader},
     },
 };
 
@@ -28,7 +28,7 @@ pub struct RecordBatch<'a> {
     pub(crate) body: RecordBody<'a>,
 }
 
-pub(crate) enum RecordBody<'a> {
+pub enum RecordBody<'a> {
     Borrowed(&'a [u8]),
     Owned(Bytes),
 }
@@ -166,14 +166,13 @@ fn decode_borrow_impl<'de>(
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| RecordsError::RecordParse("negative or oversized batch_length".into()))?;
 
-    if rest.len() < body_len {
+    let Some((raw_body, after)) = rest.split_at_checked(body_len) else {
         return Err(RecordsError::BodyTooShort {
             needed: body_len - rest.len(),
         });
-    }
-    let (raw_body, after) = rest.split_at(body_len);
+    };
     // The covered header and raw body are contiguous in the input batch.
-    let computed = crc32c(&buf[21..HEADER_LEN + body_len]);
+    let computed = crc32c(crc_covered(buf, body_len)?);
     *buf = after;
 
     let expected = hdr.crc.get();
@@ -346,15 +345,14 @@ pub fn validate_one_v2_batch(buf: &[u8]) -> Result<ValidatedBatch<'_>, RecordsEr
     let body_len = i32::checked_sub(hdr.batch_length.get(), HEADER_TAIL_LEN)
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| RecordsError::RecordParse("negative or oversized batch_length".into()))?;
-    if rest.len() < body_len {
+    let Some(raw_body) = rest.get(..body_len) else {
         return Err(RecordsError::BodyTooShort {
             needed: body_len - rest.len(),
         });
-    }
-    let raw_body = &rest[..body_len];
+    };
 
     let expected = hdr.crc.get();
-    let computed = crc32c(&buf[21..HEADER_LEN + body_len]);
+    let computed = crc32c(crc_covered(buf, body_len)?);
     if computed != expected {
         return Err(RecordsError::CrcMismatch { expected, computed });
     }
@@ -364,6 +362,20 @@ pub fn validate_one_v2_batch(buf: &[u8]) -> Result<ValidatedBatch<'_>, RecordsEr
         total_len: HEADER_LEN + body_len,
         raw_body,
     })
+}
+
+/// Returns the bytes that a v2 batch's CRC covers.
+///
+/// `batch` starts at the batch header, and `body_len` is the body length
+/// that the header declares. The region runs from [`CRC_COVERAGE_START`] to
+/// the end of the body.
+fn crc_covered(batch: &[u8], body_len: usize) -> Result<&[u8], RecordsError> {
+    let end = HEADER_LEN + body_len;
+    batch
+        .get(CRC_COVERAGE_START..end)
+        .ok_or_else(|| RecordsError::BodyTooShort {
+            needed: end.saturating_sub(batch.len()),
+        })
 }
 
 /// Sums the `records_count` header field of every concatenated v2 batch in
@@ -378,28 +390,31 @@ pub fn count_records_in_v2_batches(buf: &[u8]) -> u64 {
     // Magic byte sits at offset 16; only v2 (magic == 2) carries a
     // `records_count` header. Legacy slices contribute 0 here.
     const MAGIC_OFFSET: usize = 16;
-    if buf.len() <= MAGIC_OFFSET || buf[MAGIC_OFFSET] != 2 {
+    if buf.get(MAGIC_OFFSET) != Some(&2) {
         return 0;
     }
 
     let mut total = 0u64;
     let mut remaining = buf;
-    while remaining.len() >= HEADER_LEN {
-        if remaining[MAGIC_OFFSET] != 2 {
+    while let Some((hdr_bytes, _)) = remaining.split_first_chunk::<HEADER_LEN>() {
+        if hdr_bytes[MAGIC_OFFSET] != 2 {
             break;
         }
-        let Ok(hdr) = RecordBatchHeader::ref_from_bytes(&remaining[..HEADER_LEN]) else {
+        let Ok(hdr) = RecordBatchHeader::ref_from_bytes(hdr_bytes) else {
             break;
         };
         let Ok(after_len) = usize::try_from(hdr.batch_length.get()) else {
             break;
         };
         let total_len = 12 + after_len;
-        if total_len < HEADER_LEN || total_len > remaining.len() {
+        if total_len < HEADER_LEN {
             break;
         }
+        let Some(next) = remaining.get(total_len..) else {
+            break;
+        };
         total += u64::try_from(hdr.records_count.get().max(0)).unwrap_or(0);
-        remaining = &remaining[total_len..];
+        remaining = next;
     }
     total
 }
@@ -413,15 +428,14 @@ impl RecordBatch<'_> {
     /// not from the original input buffer. For uncompressed batches the
     /// backing memory is the input buffer. For compressed batches it is the
     /// batch's internal decompressed `Bytes`.
-    /// # Panics
-    /// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
     pub fn iter(&self) -> RecordIter<'_> {
         let body: &[u8] = match &self.body {
             RecordBody::Borrowed(s) => s,
             RecordBody::Owned(b) => b.as_ref(),
         };
-        let count = usize::try_from(self.header.records_count.get().max(0))
-            .expect("non-negative record count must fit in usize");
+        // A negative count is no records. A count wider than `usize` saturates:
+        // the walk then stops at the end of the body.
+        let count = usize::try_from(self.header.records_count.get().max(0)).unwrap_or(usize::MAX);
         RecordIter {
             remaining: body,
             count,
@@ -458,7 +472,7 @@ impl<'a> Iterator for RecordIter<'a> {
 }
 
 #[inline]
-pub(crate) fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
+pub fn parse_one_record<'a>(buf: &mut &'a [u8]) -> Result<Record<'a>, RecordsError> {
     let mut headers = Vec::new();
     let summary = parse_one_record_into(buf, &mut headers)?;
     Ok(Record {
@@ -537,11 +551,11 @@ fn parse_body<'a>(
     body_len: usize,
     headers: &mut impl HeaderSink<'a>,
 ) -> Result<RecordSummary<'a>, RecordsError> {
-    if buf.is_empty() {
+    let Some((&attributes, rest)) = buf.split_first() else {
         return Err(RecordsError::RecordParse("record body empty".into()));
-    }
-    let attributes = i8::from_ne_bytes([buf[0]]);
-    *buf = &buf[1..];
+    };
+    let attributes = i8::from_ne_bytes([attributes]);
+    *buf = rest;
     let timestamp_delta =
         get_varlong(buf).map_err(|e| RecordsError::RecordParse(format!("timestamp_delta: {e}")))?;
     let offset_delta =
@@ -552,13 +566,11 @@ fn parse_body<'a>(
 
     let header_count =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("header_count: {e}")))?;
-    if header_count < 0 {
+    let Ok(header_count_usize) = usize::try_from(header_count) else {
         return Err(RecordsError::RecordParse(format!(
             "negative header count {header_count}"
         )));
-    }
-    let header_count_usize =
-        usize::try_from(header_count).expect("non-negative header count must fit in usize");
+    };
     // Bound pre-allocation: a record header is at least 1 byte on the wire, so
     // an honest `header_count` can never exceed the bytes left in the record
     // body. Clamp the capacity hint to reject huge declared counts.
@@ -566,12 +578,11 @@ fn parse_body<'a>(
     for i in 0..header_count {
         let key_len = get_varint(buf)
             .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key length: {e}")))?;
-        if key_len < 0 {
+        let Ok(n) = usize::try_from(key_len) else {
             return Err(RecordsError::RecordParse(format!(
                 "header[{i}] negative key length"
             )));
-        }
-        let n = usize::try_from(key_len).expect("non-negative key length must fit in usize");
+        };
         if buf.len() < n {
             return Err(RecordsError::BodyTooShort {
                 needed: n - buf.len(),
@@ -579,7 +590,7 @@ fn parse_body<'a>(
         }
         let (key_bytes, rest) = buf.split_at(n);
         *buf = rest;
-        let key_str = std::str::from_utf8(key_bytes)
+        let key_str = str::from_utf8(key_bytes)
             .map_err(|e| RecordsError::RecordParse(format!("header[{i}] key utf-8: {e}")))?;
 
         let value = read_nullable_slice(buf, SliceLabel::HeaderValue(i))?;
@@ -628,19 +639,18 @@ fn read_nullable_slice<'a>(
 ) -> Result<Option<&'a [u8]>, RecordsError> {
     let len =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("{label} length: {e}")))?;
-    if len < 0 {
-        Ok(None)
-    } else {
-        let n = usize::try_from(len).expect("non-negative value length must fit in usize");
-        if buf.len() < n {
-            return Err(RecordsError::BodyTooShort {
-                needed: n - buf.len(),
-            });
-        }
-        let (head, rest) = buf.split_at(n);
-        *buf = rest;
-        Ok(Some(head))
+    // A negative length is null.
+    let Ok(n) = usize::try_from(len) else {
+        return Ok(None);
+    };
+    if buf.len() < n {
+        return Err(RecordsError::BodyTooShort {
+            needed: n - buf.len(),
+        });
     }
+    let (head, rest) = buf.split_at(n);
+    *buf = rest;
+    Ok(Some(head))
 }
 
 // ── to_owned bridge ───────────────────────────────────────────────────────────
@@ -664,7 +674,7 @@ impl RecordBatch<'_> {
                     .headers
                     .into_iter()
                     .map(|h| super::owned::RecordHeader {
-                        key: h.key.to_string(),
+                        key: h.key.to_owned(),
                         value: h.value.map(Bytes::copy_from_slice),
                     })
                     .collect(),
@@ -690,8 +700,8 @@ impl RecordBatch<'_> {
 // RecordBatch<'a> holds a header reference and a body slice/bytes, so we can't
 // #[derive] these. We provide hand-rolled impls that delegate to the owned type.
 
-impl std::fmt::Debug for RecordBatch<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for RecordBatch<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.to_owned() {
             Ok(o) => o.fmt(f),
             Err(e) => write!(f, "RecordBatch(<decode error: {e}>)"),
@@ -738,10 +748,8 @@ impl crate::Encode for RecordBatch<'_> {
     }
 
     fn encoded_len(&self, version: i16) -> usize {
-        match self.to_owned() {
-            Ok(o) => crate::Encode::encoded_len(&o, version),
-            Err(_) => 0,
-        }
+        self.to_owned()
+            .map_or(0, |o| crate::Encode::encoded_len(&o, version))
     }
 }
 
@@ -759,12 +767,12 @@ mod tests {
 
     fn encode_owned_then_borrow(b: &super::super::owned::RecordBatch) -> Vec<u8> {
         let mut buf = BytesMut::new();
-        b.encode(&mut buf).unwrap();
+        b.encode_batch(&mut buf).unwrap();
         buf.to_vec()
     }
 
     fn refresh_batch_crc(encoded: &mut [u8]) {
-        let coverage_start = crate::records::CRC_COVERAGE_START;
+        let coverage_start = CRC_COVERAGE_START;
         let crc = crc32c(&encoded[coverage_start..]);
         encoded[coverage_start - 4..coverage_start].copy_from_slice(&crc.to_be_bytes());
     }
@@ -826,11 +834,11 @@ mod tests {
                     value: Some(Bytes::from_static(b"hello kafka")),
                     headers: vec![
                         OwnedHeader {
-                            key: "trace-id".to_string(),
+                            key: "trace-id".to_owned(),
                             value: Some(Bytes::from_static(b"abc")),
                         },
                         OwnedHeader {
-                            key: "null-val".to_string(),
+                            key: "null-val".to_owned(),
                             value: None,
                         },
                     ],
@@ -1056,11 +1064,11 @@ mod tests {
                         value: None,
                         headers: vec![
                             OwnedHeader {
-                                key: "trace-id".to_string(),
+                                key: "trace-id".to_owned(),
                                 value: Some(Bytes::from_static(b"abc")),
                             },
                             OwnedHeader {
-                                key: "null-val".to_string(),
+                                key: "null-val".to_owned(),
                                 value: None,
                             },
                         ],
@@ -1111,7 +1119,7 @@ mod tests {
         let owned = super::super::owned::RecordBatch {
             records: vec![super::super::owned::Record {
                 headers: vec![super::super::owned::RecordHeader {
-                    key: "ab".to_string(),
+                    key: "ab".to_owned(),
                     value: Some(Bytes::from_static(b"v")),
                 }],
                 ..Default::default()

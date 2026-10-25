@@ -14,12 +14,19 @@
 //! dependency surface small and keeps the temporal checks (`exp` / `iat` /
 //! `nbf`) injectable for deterministic tests.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+};
 
 use arc_swap::ArcSwap;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64URL};
 use ring::signature;
 use serde_json::Value;
+use tokio::sync::mpsc;
 
 use crate::AuthError;
 
@@ -148,7 +155,7 @@ impl Jwks {
         let key = self.select_key(kid)?;
         match (alg, key) {
             ("RS256", JwkKey::Rsa { n, e }) => {
-                let pk = ring::signature::RsaPublicKeyComponents { n, e };
+                let pk = signature::RsaPublicKeyComponents { n, e };
                 pk.verify(
                     &signature::RSA_PKCS1_2048_8192_SHA256,
                     signing_input,
@@ -170,16 +177,16 @@ impl Jwks {
     /// Pick the key for `kid`. With no `kid`, succeed only when the set holds a
     /// single key. Any other count makes the selection ambiguous.
     fn select_key(&self, kid: Option<&str>) -> Result<&JwkKey, AuthError> {
-        match kid {
-            Some(kid) => self.keys.get(kid).ok_or(AuthError::InvalidToken),
-            None => {
+        kid.map_or_else(
+            || {
                 if self.keys.len() == 1 {
                     self.keys.values().next().ok_or(AuthError::InvalidToken)
                 } else {
                     Err(AuthError::InvalidToken)
                 }
-            }
-        }
+            },
+            |kid| self.keys.get(kid).ok_or(AuthError::InvalidToken),
+        )
     }
 }
 
@@ -197,7 +204,7 @@ fn parse_one_jwk(jwk: &Value, ignore_key_use: bool) -> Option<(String, JwkKey)> 
         .get("kid")
         .and_then(Value::as_str)
         .unwrap_or("")
-        .to_string();
+        .to_owned();
     match jwk.get("kty").and_then(Value::as_str)? {
         "RSA" => {
             let n = b64url_field(jwk, "n")?;
@@ -233,11 +240,9 @@ fn b64url_field(jwk: &Value, key: &str) -> Option<Vec<u8>> {
 /// This function returns `None` if the input is already longer than 32 bytes,
 /// which is a malformed P-256 coordinate.
 fn left_pad_32(bytes: &[u8]) -> Option<[u8; 32]> {
-    if bytes.len() > 32 {
-        return None;
-    }
+    let start = 32usize.checked_sub(bytes.len())?;
     let mut out = [0u8; 32];
-    out[32 - bytes.len()..].copy_from_slice(bytes);
+    out.get_mut(start..)?.copy_from_slice(bytes);
     Some(out)
 }
 
@@ -260,13 +265,13 @@ pub struct JwksHandle {
     /// Epoch ms of the last successful refresh. Validators
     /// check this against `expiry_ms` to fail closed on a stale cache.
     /// The `0` sentinel means never successfully fetched, the initial state.
-    last_successful_fetch_ms: Arc<std::sync::atomic::AtomicI64>,
+    last_successful_fetch_ms: Arc<AtomicI64>,
     /// Fire-and-forget signal sender to the refresher.
     /// The validator calls `signal_refresh()` on a verify failure, which is an
     /// unknown kid or a bad signature. `None` when the validator is not paired
     /// with a refresher, such as a default-constructed `JwksHandle` in a
     /// non-signed validator or in the pre-`apply_to` state.
-    signal_tx: Option<tokio::sync::mpsc::Sender<()>>,
+    signal_tx: Option<mpsc::Sender<()>>,
 }
 
 impl JwksHandle {
@@ -280,7 +285,7 @@ impl JwksHandle {
     pub fn new(jwks: Jwks) -> Self {
         Self {
             keys: Arc::new(ArcSwap::from_pointee(jwks)),
-            last_successful_fetch_ms: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            last_successful_fetch_ms: Arc::new(AtomicI64::new(0)),
             signal_tx: None,
         }
     }
@@ -294,8 +299,8 @@ impl JwksHandle {
     #[must_use]
     pub fn new_with_refresher_handles(
         jwks: Jwks,
-        last_successful_fetch_ms: Arc<std::sync::atomic::AtomicI64>,
-        signal_tx: tokio::sync::mpsc::Sender<()>,
+        last_successful_fetch_ms: Arc<AtomicI64>,
+        signal_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
             keys: Arc::new(ArcSwap::from_pointee(jwks)),
@@ -326,8 +331,7 @@ impl JwksHandle {
     /// expiry.
     #[must_use]
     pub fn last_successful_fetch_ms(&self) -> i64 {
-        self.last_successful_fetch_ms
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.last_successful_fetch_ms.load(Ordering::Relaxed)
     }
 
     /// Fire-and-forget signal to the refresher that asks for an on-demand
@@ -353,7 +357,7 @@ impl Default for JwksHandle {
 // Token-minting helpers the sibling `oauthbearer` tests reuse. Declared before
 // the test module so clippy's `items_after_test_module` stays quiet.
 #[cfg(test)]
-pub(crate) use tests::{mint_es256, mint_rs256, mint_rs256_with_header};
+pub use tests::{mint_es256, mint_rs256, mint_rs256_with_header};
 
 #[cfg(test)]
 mod tests {
@@ -491,15 +495,12 @@ mod tests {
     fn parts(token: &str) -> (Option<String>, String, Vec<u8>, Vec<u8>) {
         let segs: Vec<&str> = token.split('.').collect();
         let header: Value = serde_json::from_slice(&B64URL.decode(segs[0]).unwrap()).unwrap();
-        let kid = header
-            .get("kid")
-            .and_then(Value::as_str)
-            .map(str::to_string);
+        let kid = header.get("kid").and_then(Value::as_str).map(str::to_owned);
         let alg = header
             .get("alg")
             .and_then(Value::as_str)
             .unwrap()
-            .to_string();
+            .to_owned();
         let signing_input = format!("{}.{}", segs[0], segs[1]).into_bytes();
         let sig = B64URL.decode(segs[2]).unwrap();
         (kid, alg, signing_input, sig)
@@ -722,15 +723,15 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn paired_handle_signal_refresh_delivers_to_receiver() {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
-        let ts = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let (tx, mut rx) = mpsc::channel::<()>(1);
+        let ts = Arc::new(AtomicI64::new(0));
         let h = JwksHandle::new_with_refresher_handles(Jwks::empty(), ts, tx);
         h.signal_refresh();
         assert2::assert!(rx.try_recv().is_ok());
     }
 
     // Expose minting helpers to the sibling `oauthbearer` tests.
-    pub(crate) fn mint_rs256(kid: &str, claims: &str) -> (String, String) {
+    pub fn mint_rs256(kid: &str, claims: &str) -> (String, String) {
         rs256(kid, claims)
     }
 
@@ -738,7 +739,7 @@ mod tests {
     /// can drive `typ` / `kid` / extra header fields.
     ///
     /// This helper returns `(token, jwks_json)` like the other minters.
-    pub(crate) fn mint_rs256_with_header(header_json: &str, claims: &str) -> (String, String) {
+    pub fn mint_rs256_with_header(header_json: &str, claims: &str) -> (String, String) {
         let der = rsa_pkcs8();
         let kp = RsaKeyPair::from_pkcs8(&der).unwrap();
         let signing_input = format!("{}.{}", b64(header_json.as_bytes()), b64(claims.as_bytes()));
@@ -768,7 +769,7 @@ mod tests {
     ///
     /// Each call generates a new key pair, so two calls give independent keys.
     /// That helps key-rotation tests, where RS256's fixed key cannot differ.
-    pub(crate) fn mint_es256(kid: &str, claims: &str) -> (String, String) {
+    pub fn mint_es256(kid: &str, claims: &str) -> (String, String) {
         let (kp, jwks) = es256_key(kid);
         let token = es256_token(&kp, kid, claims);
         (token, jwks)

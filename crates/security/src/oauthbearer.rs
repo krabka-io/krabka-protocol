@@ -12,7 +12,7 @@
 //!    the built-in development/testing validator. Signed-token (JWKS)
 //!    validation is separate.
 
-use std::sync::Arc;
+use std::{fmt, str::from_utf8, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64URL};
 use jsonpath_rust::{parser::model::JpQuery, query::js_path_process};
@@ -76,7 +76,7 @@ pub struct ClientInitialResponse {
 /// grammar, when the `auth` kvpair is missing, or when its scheme is not
 /// `Bearer`.
 pub fn parse_client_initial_response(bytes: &[u8]) -> Result<ClientInitialResponse, AuthError> {
-    let s = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
+    let s = from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
     let (authzid, rest) = parse_gs2_header(s)?;
 
     // `rest` is `*(key "=" value ^A) ^A`, with nothing after the final `^A`.
@@ -101,7 +101,7 @@ pub fn parse_client_initial_response(bytes: &[u8]) -> Result<ClientInitialRespon
 
     let token = parse_bearer_auth(auth.ok_or(AuthError::MalformedMessage)?)?;
     Ok(ClientInitialResponse {
-        token: token.to_string(),
+        token: token.to_owned(),
         authzid,
     })
 }
@@ -130,7 +130,7 @@ fn parse_gs2_header(message: &str) -> Result<(Option<String>, &str), AuthError> 
         if !is_saslname(name) {
             return Err(AuthError::MalformedMessage);
         }
-        (Some(name.to_string()), rest)
+        (Some(name.to_owned()), rest)
     };
     let rest = rest
         .strip_prefix(KVSEP)
@@ -143,8 +143,8 @@ fn parse_gs2_header(message: &str) -> Result<(Option<String>, &str), AuthError> 
 fn is_saslname(name: &str) -> bool {
     let bytes = name.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
+    while let Some(&byte) = bytes.get(i) {
+        match byte {
             b'=' => {
                 let escape = bytes.get(i + 1..i + 3);
                 if escape != Some(b"2C".as_slice()) && escape != Some(b"3D".as_slice()) {
@@ -240,7 +240,7 @@ pub struct UnsecuredJwsValidator {
 impl Default for UnsecuredJwsValidator {
     fn default() -> Self {
         Self {
-            principal_claim_name: "sub".to_string(),
+            principal_claim_name: "sub".to_owned(),
             allowable_clock_skew: <Time as TimeExt>::ZERO,
             custom_claim_check: None,
             valid_token_type: None,
@@ -248,7 +248,7 @@ impl Default for UnsecuredJwsValidator {
             fallback_user_name_prefix: None,
             groups_claim: None,
             groups_claim_delimiter: None,
-            scope_claim_name: "scope".to_string(),
+            scope_claim_name: "scope".to_owned(),
             required_scope: Vec::new(),
         }
     }
@@ -349,7 +349,7 @@ impl UnsecuredJwsValidator {
             .and_then(Value::as_str)
             .filter(|s| !is_java_blank(s))
         {
-            (n.to_string(), false)
+            (n.to_owned(), false)
         } else {
             let fallback_claim = self
                 .fallback_user_name_claim
@@ -360,7 +360,7 @@ impl UnsecuredJwsValidator {
                 .and_then(Value::as_str)
                 .filter(|s| !is_java_blank(s))
                 .ok_or(AuthError::InvalidToken)?;
-            (raw.to_string(), true)
+            (raw.to_owned(), true)
         };
         let name = if used_fallback {
             match &self.fallback_user_name_prefix {
@@ -372,10 +372,9 @@ impl UnsecuredJwsValidator {
         };
 
         // Groups extraction.
-        let groups = match &self.groups_claim {
-            Some(path) => extract_groups(path, &claims, self.groups_claim_delimiter.as_deref()),
-            None => Vec::new(),
-        };
+        let groups = self.groups_claim.as_ref().map_or_else(Vec::new, |path| {
+            extract_groups(path, &claims, self.groups_claim_delimiter.as_deref())
+        });
 
         // Kafka's `validateScope` runs last, so only a token that passes every
         // other check reports `insufficient_scope`.
@@ -530,7 +529,7 @@ pub fn oauth_error_json(err: &AuthError) -> String {
             "{{\"status\":\"insufficient_scope\", \"scope\":\"[{}]\"}}",
             required_scope.join(", ")
         ),
-        _ => "{\"status\":\"invalid_token\"}".to_string(),
+        _ => "{\"status\":\"invalid_token\"}".to_owned(),
     }
 }
 
@@ -562,9 +561,9 @@ pub fn parse_required_scope(option: &str) -> Result<Vec<String>, InvalidScopeIte
                 .chars()
                 .all(|c| matches!(c, '\x21' | '\x23'..='\x5B' | '\x5D'..='\x7E'))
             {
-                Ok(item.to_string())
+                Ok(item.to_owned())
             } else {
-                Err(InvalidScopeItem(item.to_string()))
+                Err(InvalidScopeItem(item.to_owned()))
             }
         })
         .collect()
@@ -589,7 +588,7 @@ fn jackson_text(v: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Null => "null".to_string(),
+        Value::Null => "null".to_owned(),
         Value::Array(_) | Value::Object(_) => String::new(),
     }
 }
@@ -615,7 +614,7 @@ fn scope_claim(claims: &Value, claim_name: &str) -> Result<Vec<String>, AuthErro
     Ok(items
         .iter()
         .filter(|item| !is_java_blank(item))
-        .map(|item| java_trim(item).to_string())
+        .map(|item| java_trim(item).to_owned())
         .collect())
 }
 
@@ -668,7 +667,7 @@ impl SignedJwsValidator {
     #[must_use]
     pub fn new(keys: JwksHandle) -> Self {
         Self {
-            principal_claim_name: "sub".to_string(),
+            principal_claim_name: "sub".to_owned(),
             allowable_clock_skew: secs(30),
             valid_issuer: None,
             expected_audience: None,
@@ -826,7 +825,7 @@ impl SignedJwsValidator {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
         {
-            (n.to_string(), false)
+            (n.to_owned(), false)
         } else {
             let fallback_claim = self
                 .fallback_user_name_claim
@@ -837,7 +836,7 @@ impl SignedJwsValidator {
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
                 .ok_or(AuthError::InvalidToken)?;
-            (raw.to_string(), true)
+            (raw.to_owned(), true)
         };
         let name = if used_fallback {
             match &self.fallback_user_name_prefix {
@@ -848,10 +847,9 @@ impl SignedJwsValidator {
             raw_name
         };
 
-        let groups = match &self.groups_claim {
-            Some(path) => extract_groups(path, claims, self.groups_claim_delimiter.as_deref()),
-            None => Vec::new(),
-        };
+        let groups = self.groups_claim.as_ref().map_or_else(Vec::new, |path| {
+            extract_groups(path, claims, self.groups_claim_delimiter.as_deref())
+        });
 
         Ok(AuthOutcome {
             principal: Principal {
@@ -924,7 +922,7 @@ impl OAuthBearerValidator {
 /// surface. The concrete reqwest-backed impl lives in `crates/broker`, in
 /// `oauth_introspection.rs`, so this crate stays I/O-free.
 #[async_trait::async_trait]
-pub trait IntrospectionClient: Send + Sync + std::fmt::Debug {
+pub trait IntrospectionClient: Send + Sync + fmt::Debug {
     /// POST the `IdP`'s introspection endpoint with `token` in a
     /// form-encoded body. The caller checks `active` + claims.
     async fn introspect(&self, token: &str) -> Result<serde_json::Value, IntrospectionError>;
@@ -1065,7 +1063,7 @@ impl IntrospectionValidator {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
         {
-            (n.to_string(), false)
+            (n.to_owned(), false)
         } else {
             let fallback_claim = self
                 .fallback_user_name_claim
@@ -1076,7 +1074,7 @@ impl IntrospectionValidator {
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
                 .ok_or(AuthError::InvalidToken)?;
-            (raw.to_string(), true)
+            (raw.to_owned(), true)
         };
         let name = if used_fallback {
             match &self.fallback_user_name_prefix {
@@ -1087,10 +1085,9 @@ impl IntrospectionValidator {
             raw_name
         };
 
-        let groups = match &self.groups_claim {
-            Some(path) => extract_groups(path, &claims, self.groups_claim_delimiter.as_deref()),
-            None => Vec::new(),
-        };
+        let groups = self.groups_claim.as_ref().map_or_else(Vec::new, |path| {
+            extract_groups(path, &claims, self.groups_claim_delimiter.as_deref())
+        });
 
         Ok(AuthOutcome {
             principal: Principal {
@@ -1742,7 +1739,7 @@ mod tests {
             ..Default::default()
         };
         let outcome = v.validate(&token, now_ms).expect("valid");
-        assert2::assert!(outcome.principal.groups == vec!["admin".to_string(), "ops".to_string()]);
+        assert2::assert!(outcome.principal.groups == vec!["admin".to_owned(), "ops".to_owned()]);
     }
 
     #[test]
@@ -1765,7 +1762,7 @@ mod tests {
         let outcome = v.validate(&token, now_ms).expect("valid");
         assert2::assert!(
             outcome.principal.groups
-                == vec!["admin".to_string(), "ops".to_string(), "kafka".to_string()]
+                == vec!["admin".to_owned(), "ops".to_owned(), "kafka".to_owned()]
         );
     }
 
@@ -1786,7 +1783,7 @@ mod tests {
             ..Default::default()
         };
         let outcome = v.validate(&token, now_ms).expect("valid");
-        assert2::assert!(outcome.principal.groups == vec!["admin".to_string(), "ops".to_string()]);
+        assert2::assert!(outcome.principal.groups == vec!["admin".to_owned(), "ops".to_owned()]);
     }
 
     #[test]
@@ -1828,7 +1825,7 @@ mod tests {
     #[test]
     fn validate_custom_principal_claim() {
         let v = UnsecuredJwsValidator {
-            principal_claim_name: "client_id".to_string(),
+            principal_claim_name: "client_id".to_owned(),
             ..Default::default()
         };
         let token = jws(
@@ -1844,7 +1841,7 @@ mod tests {
     fn outcome(name: &str, exp_ms: i64) -> AuthOutcome {
         AuthOutcome {
             principal: Principal {
-                name: name.to_string(),
+                name: name.to_owned(),
                 auth_method: AuthMethod::SaslOAuthBearer,
                 groups: Vec::new(),
             },
@@ -1951,8 +1948,8 @@ mod tests {
     #[test]
     fn unsecured_validate_treats_blank_principal_claims_as_absent() {
         let v = UnsecuredJwsValidator {
-            fallback_user_name_claim: Some("client_id".to_string()),
-            fallback_user_name_prefix: Some("service-account-".to_string()),
+            fallback_user_name_claim: Some("client_id".to_owned()),
+            fallback_user_name_prefix: Some("service-account-".to_owned()),
             ..Default::default()
         };
         for (name, claims, want) in [
@@ -1977,7 +1974,7 @@ mod tests {
     /// `insufficient_scope` and the whole required list.
     #[test]
     fn unsecured_validate_enforces_required_scope() {
-        let required = vec!["a".to_string(), "b".to_string()];
+        let required = vec!["a".to_owned(), "b".to_owned()];
         let insufficient = Err(AuthError::InsufficientScope {
             required_scope: required.clone(),
         });
@@ -1986,8 +1983,8 @@ mod tests {
             ..Default::default()
         };
         let scp_claim = UnsecuredJwsValidator {
-            required_scope: required.clone(),
-            scope_claim_name: "scp".to_string(),
+            required_scope: required,
+            scope_claim_name: "scp".to_owned(),
             ..Default::default()
         };
         let cases = [
@@ -2031,7 +2028,7 @@ mod tests {
                 "default claim name ignored once another is configured",
                 &scp_claim,
                 serde_json::json!({"sub": "admin", "exp": 1_006, "scope": ["a", "b"]}),
-                insufficient.clone(),
+                insufficient,
             ),
             (
                 "an expired token is invalid_token, not insufficient_scope",
@@ -2073,10 +2070,10 @@ mod tests {
             ("\t a   b \n", Ok(items(&["a", "b"]))),
             ("a,b", Ok(items(&["a,b"]))),
             ("!#[]~", Ok(items(&["!#[]~"]))),
-            ("a\"b", Err(InvalidScopeItem("a\"b".to_string()))),
-            ("a\\b", Err(InvalidScopeItem("a\\b".to_string()))),
-            ("a\tb", Err(InvalidScopeItem("a\tb".to_string()))),
-            ("a é", Err(InvalidScopeItem("é".to_string()))),
+            ("a\"b", Err(InvalidScopeItem("a\"b".to_owned()))),
+            ("a\\b", Err(InvalidScopeItem("a\\b".to_owned()))),
+            ("a\tb", Err(InvalidScopeItem("a\tb".to_owned()))),
+            ("a é", Err(InvalidScopeItem("é".to_owned()))),
         ] {
             assert2::check!(parse_required_scope(input) == want, "input: {input:?}");
         }
@@ -2089,18 +2086,18 @@ mod tests {
         for (err, want) in [
             (AuthError::InvalidToken, r#"{"status":"invalid_token"}"#),
             (
-                AuthError::IntrospectionTransport("connection refused".to_string()),
+                AuthError::IntrospectionTransport("connection refused".to_owned()),
                 r#"{"status":"invalid_token"}"#,
             ),
             (
                 AuthError::InsufficientScope {
-                    required_scope: vec!["a".to_string()],
+                    required_scope: vec!["a".to_owned()],
                 },
                 r#"{"status":"insufficient_scope", "scope":"[a]"}"#,
             ),
             (
                 AuthError::InsufficientScope {
-                    required_scope: vec!["a".to_string(), "b".to_string()],
+                    required_scope: vec!["a".to_owned(), "b".to_owned()],
                 },
                 r#"{"status":"insufficient_scope", "scope":"[a, b]"}"#,
             ),
@@ -2110,6 +2107,8 @@ mod tests {
     }
 
     // ---- SignedJwsValidator -------------------------------------
+
+    use tokio::sync::mpsc;
 
     use crate::jwks::{Jwks, JwksHandle, mint_es256, mint_rs256, mint_rs256_with_header};
 
@@ -2200,9 +2199,9 @@ mod tests {
             "{\"sub\":\"a\",\"exp\":9999999999,\"iss\":\"https://idp\"}",
         );
         let (mut v, _h) = signed(&jwks);
-        v.valid_issuer = Some("https://idp".to_string());
+        v.valid_issuer = Some("https://idp".to_owned());
         assert2::assert!(v.validate(&token, 1_000_000_000_000).is_ok());
-        v.valid_issuer = Some("https://other".to_string());
+        v.valid_issuer = Some("https://other".to_owned());
         assert2::assert!(v.validate(&token, 1_000_000_000_000) == Err(AuthError::InvalidToken));
     }
 
@@ -2210,7 +2209,7 @@ mod tests {
     fn signed_rejects_missing_issuer_when_required() {
         let (token, jwks) = mint_rs256("k1", "{\"sub\":\"a\",\"exp\":9999999999}");
         let (mut v, _h) = signed(&jwks);
-        v.valid_issuer = Some("https://idp".to_string());
+        v.valid_issuer = Some("https://idp".to_owned());
         assert2::assert!(v.validate(&token, 1_000_000_000_000) == Err(AuthError::InvalidToken));
     }
 
@@ -2219,7 +2218,7 @@ mod tests {
         let (tok_str, jwks) =
             mint_rs256("k1", "{\"sub\":\"a\",\"exp\":9999999999,\"aud\":\"kafka\"}");
         let (mut v, _h) = signed(&jwks);
-        v.expected_audience = Some("kafka".to_string());
+        v.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v.validate(&tok_str, 1_000_000_000_000).is_ok());
 
         let (tok_arr, jwks2) = mint_rs256(
@@ -2227,13 +2226,13 @@ mod tests {
             "{\"sub\":\"a\",\"exp\":9999999999,\"aud\":[\"other\",\"kafka\"]}",
         );
         let (mut v2, _h2) = signed(&jwks2);
-        v2.expected_audience = Some("kafka".to_string());
+        v2.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v2.validate(&tok_arr, 1_000_000_000_000).is_ok());
 
         let (tok_bad, jwks3) =
             mint_rs256("k1", "{\"sub\":\"a\",\"exp\":9999999999,\"aud\":\"web\"}");
         let (mut v3, _h3) = signed(&jwks3);
-        v3.expected_audience = Some("kafka".to_string());
+        v3.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v3.validate(&tok_bad, 1_000_000_000_000) == Err(AuthError::InvalidToken));
     }
 
@@ -2308,7 +2307,7 @@ mod tests {
     fn signed_custom_principal_claim() {
         let (token, jwks) = mint_rs256("k1", "{\"client_id\":\"svc-1\",\"exp\":9999999999}");
         let (mut v, _h) = signed(&jwks);
-        v.principal_claim_name = "client_id".to_string();
+        v.principal_claim_name = "client_id".to_owned();
         assert2::assert!(
             v.validate(&token, 1_000_000_000_000)
                 .unwrap()
@@ -2335,7 +2334,7 @@ mod tests {
                 v.validate(&token_a, 1_000_000_000_000),
                 v.validate(&token_b, 1_000_000_000_000)
                     .map(|outcome| outcome.principal.name),
-            ) == (Err(AuthError::InvalidToken), Ok("b".to_string()))
+            ) == (Err(AuthError::InvalidToken), Ok("b".to_owned()))
         );
     }
 
@@ -2354,7 +2353,7 @@ mod tests {
                 v.validate(&token_a, 1_000_000_000_000),
                 v.validate(&token_b, 1_000_000_000_000)
                     .map(|outcome| outcome.principal.name),
-            ) == (Err(AuthError::InvalidToken), Ok("b".to_string()))
+            ) == (Err(AuthError::InvalidToken), Ok("b".to_owned()))
         );
     }
 
@@ -2362,13 +2361,13 @@ mod tests {
     fn signed_rejects_tokens_with_expected_issuer_or_audience_missing() {
         let (token, jwks) = mint_rs256("k1", "{\"sub\":\"a\",\"exp\":9999999999}");
         let (mut issuer_validator, _h) = signed(&jwks);
-        issuer_validator.valid_issuer = Some("https://idp".to_string());
+        issuer_validator.valid_issuer = Some("https://idp".to_owned());
         assert2::assert!(
             issuer_validator.validate(&token, 1_000_000_000_000) == Err(AuthError::InvalidToken)
         );
 
         let (mut audience_validator, _h) = signed(&jwks);
-        audience_validator.expected_audience = Some("kafka".to_string());
+        audience_validator.expected_audience = Some("kafka".to_owned());
         assert2::assert!(
             audience_validator.validate(&token, 1_000_000_000_000) == Err(AuthError::InvalidToken)
         );
@@ -2436,7 +2435,7 @@ mod tests {
         let (mut v, _h) = signed(&jwks);
         v.groups_claim = Some(parse_jp("$.groups"));
         let outcome = v.validate(&token, 1_000_000_000_000).expect("valid");
-        assert2::assert!(outcome.principal.groups == vec!["admin".to_string(), "ops".to_string()]);
+        assert2::assert!(outcome.principal.groups == vec!["admin".to_owned(), "ops".to_owned()]);
     }
 
     // ---- cache expiry + signal-on-verify-failure ----------------
@@ -2449,9 +2448,9 @@ mod tests {
     fn signed_with_handles(
         jwks_json: &str,
         last_successful_fetch_ms: i64,
-    ) -> (SignedJwsValidator, tokio::sync::mpsc::Receiver<()>) {
+    ) -> (SignedJwsValidator, mpsc::Receiver<()>) {
         use std::sync::{Arc, atomic::AtomicI64};
-        let (tx, rx) = tokio::sync::mpsc::channel::<()>(1);
+        let (tx, rx) = mpsc::channel::<()>(1);
         let ts = Arc::new(AtomicI64::new(last_successful_fetch_ms));
         let handle = JwksHandle::new_with_refresher_handles(
             Jwks::from_json(jwks_json, false).unwrap(),
@@ -2533,7 +2532,7 @@ mod tests {
             mint_rs256("k1", &format!("{{\"sub\":\"alice\",\"exp\":{exp_secs}}}"));
         // Hand-craft a JWKS with a different kid so verify can't find k1.
         let mismatched_jwks =
-            r#"{"keys":[{"kty":"RSA","kid":"other","n":"AQAB","e":"AQAB"}]}"#.to_string();
+            r#"{"keys":[{"kty":"RSA","kid":"other","n":"AQAB","e":"AQAB"}]}"#.to_owned();
         let (v, mut rx) = signed_with_handles(&mismatched_jwks, now_ms);
         assert2::assert!(
             (v.validate(&token, now_ms), rx.try_recv().is_ok())
@@ -2575,7 +2574,7 @@ mod tests {
                     .validate(&token, 1_000_000_000_000)
                     .await
                     .map(|outcome| outcome.principal.name),
-            ) == (true, Ok("x".to_string()))
+            ) == (true, Ok("x".to_owned()))
         );
     }
 
@@ -2686,9 +2685,7 @@ mod introspection_tests {
                 .lock()
                 .unwrap()
                 .remove(token)
-                .unwrap_or(Err(IntrospectionError::Transport(
-                    "no canned response".into(),
-                )))
+                .unwrap_or_else(|| Err(IntrospectionError::Transport("no canned response".into())))
         }
         async fn userinfo(&self, token: &str) -> Result<Option<Value>, IntrospectionError> {
             self.userinfo_responses
@@ -2727,7 +2724,7 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "alice", "exp": NOW_MS/1000 + 60})),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         let outcome = v.validate("tok", NOW_MS).await.unwrap();
         assert2::assert!(outcome.principal.name.as_str() == "alice");
         assert2::assert!(outcome.principal.auth_method == AuthMethod::SaslOAuthBearer);
@@ -2737,7 +2734,7 @@ mod introspection_tests {
     async fn introspection_active_false_rejected() {
         let mock = MockIntrospectionClient::arc();
         mock.set_introspect("tok", Ok(json!({"active": false})));
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         assert2::assert!(matches!(
             v.validate("tok", NOW_MS).await,
             Err(AuthError::InvalidToken)
@@ -2748,7 +2745,7 @@ mod introspection_tests {
     async fn introspection_missing_active_field_rejected() {
         let mock = MockIntrospectionClient::arc();
         mock.set_introspect("tok", Ok(json!({"sub": "alice"})));
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         assert2::assert!(matches!(
             v.validate("tok", NOW_MS).await,
             Err(AuthError::InvalidToken)
@@ -2762,7 +2759,7 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "alice", "exp": NOW_MS/1000 - 3600})),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         assert2::assert!(matches!(
             v.validate("tok", NOW_MS).await,
             Err(AuthError::InvalidToken)
@@ -2783,7 +2780,7 @@ mod introspection_tests {
                 "scope": ["kafka.read"],
             })),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.custom_claim_check = Some(parse_jp("$.scope[?@ == 'kafka.admin']"));
         let result = v.validate("tok", NOW_MS).await;
         assert2::assert!(result.unwrap_err() == AuthError::InvalidToken);
@@ -2801,7 +2798,7 @@ mod introspection_tests {
                 "scope": ["kafka.admin", "kafka.read"],
             })),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.custom_claim_check = Some(parse_jp("$.scope[?@ == 'kafka.admin']"));
         let outcome = v.validate("tok", NOW_MS).await.expect("valid");
         assert2::assert!(outcome.principal.name == "alice");
@@ -2817,8 +2814,8 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "a", "exp": NOW_MS/1000 + 60, "aud": "kafka"})),
         );
-        let mut v = validator(mock.clone());
-        v.expected_audience = Some("kafka".to_string());
+        let mut v = validator(Arc::clone(&mock));
+        v.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v.validate("tok", NOW_MS).await.is_ok());
 
         // Matching value inside an `aud` array.
@@ -2830,8 +2827,8 @@ mod introspection_tests {
                 "aud": ["other", "kafka"],
             })),
         );
-        let mut v2 = validator(mock2.clone());
-        v2.expected_audience = Some("kafka".to_string());
+        let mut v2 = validator(Arc::clone(&mock2));
+        v2.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v2.validate("tok", NOW_MS).await.is_ok());
     }
 
@@ -2842,8 +2839,8 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "a", "exp": NOW_MS/1000 + 60, "aud": "web"})),
         );
-        let mut v = validator(mock.clone());
-        v.expected_audience = Some("kafka".to_string());
+        let mut v = validator(Arc::clone(&mock));
+        v.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v.validate("tok", NOW_MS).await == Err(AuthError::InvalidToken));
     }
 
@@ -2854,8 +2851,8 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "a", "exp": NOW_MS/1000 + 60})),
         );
-        let mut v = validator(mock.clone());
-        v.expected_audience = Some("kafka".to_string());
+        let mut v = validator(Arc::clone(&mock));
+        v.expected_audience = Some("kafka".to_owned());
         assert2::assert!(v.validate("tok", NOW_MS).await == Err(AuthError::InvalidToken));
     }
 
@@ -2867,7 +2864,7 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "a", "exp": NOW_MS/1000 + 60, "aud": "web"})),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         assert2::assert!(v.validate("tok", NOW_MS).await.is_ok());
     }
 
@@ -2887,7 +2884,7 @@ mod introspection_tests {
                 "exp": NOW_MS/1000 + 60,
             })),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         let outcome = v.validate("tok", NOW_MS).await.expect("valid");
         assert2::assert!(outcome.principal.name == "alice");
     }
@@ -2910,7 +2907,7 @@ mod introspection_tests {
                 json!({"preferred_username": "userinfo-name", "email": "a@b.c"}),
             )),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.call_userinfo = true;
         v.principal_claim_name = "preferred_username".into();
         let outcome = v.validate("tok", NOW_MS).await.unwrap();
@@ -2925,7 +2922,7 @@ mod introspection_tests {
             Ok(json!({"active": true, "sub": "alice", "exp": NOW_MS/1000 + 60})),
         );
         mock.set_userinfo("tok", Ok(Some(json!({"active": false, "sub": "mallory"}))));
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.call_userinfo = true;
         let outcome = v.validate("tok", NOW_MS).await.unwrap();
         assert2::assert!(outcome.principal.name == "alice");
@@ -2940,7 +2937,7 @@ mod introspection_tests {
         );
         // Deliberately set a userinfo response — should be ignored.
         mock.set_userinfo("tok", Ok(Some(json!({"preferred_username": "ignored"}))));
-        let v = validator(mock.clone()); // call_userinfo: false (default)
+        let v = validator(Arc::clone(&mock)); // call_userinfo: false (default)
         let outcome = v.validate("tok", NOW_MS).await.unwrap();
         assert2::assert!(outcome.principal.name == "alice");
     }
@@ -2952,7 +2949,7 @@ mod introspection_tests {
             "tok",
             Err(IntrospectionError::Transport("connection refused".into())),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         let err = v.validate("tok", NOW_MS).await.unwrap_err();
         assert2::assert!(
             matches!(err, AuthError::IntrospectionTransport(ref msg) if msg.contains("connection refused"))
@@ -2966,7 +2963,7 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "sub-name", "exp": NOW_MS/1000 + 60})),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         assert2::assert!(v.validate("tok", NOW_MS).await.unwrap().principal.name == "sub-name");
     }
 
@@ -2982,7 +2979,7 @@ mod introspection_tests {
                 "client_id": "my-client",
             })),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.principal_claim_name = "client_id".into();
         assert2::assert!(v.validate("tok", NOW_MS).await.unwrap().principal.name == "my-client");
     }
@@ -2998,7 +2995,7 @@ mod introspection_tests {
                 "client_id": "",
             })),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.fallback_user_name_claim = Some("client_id".into());
         assert2::assert!(v.validate("tok", NOW_MS).await == Err(AuthError::InvalidToken));
     }
@@ -3010,7 +3007,7 @@ mod introspection_tests {
             "tok",
             Ok(json!({"active": true, "sub": "alice", "exp": NOW_MS/1000 + 60})),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         let enum_v = OAuthBearerValidator::Introspection(v);
         let outcome = enum_v.validate("tok", NOW_MS).await.unwrap();
         assert2::assert!(outcome.principal.name == "alice");
@@ -3030,7 +3027,7 @@ mod introspection_tests {
                 "scope": "kafka.write",
             })),
         );
-        let v = validator(mock.clone());
+        let v = validator(Arc::clone(&mock));
         let outcome = v
             .validate("opaque-token", now_ms)
             .await
@@ -3055,9 +3052,9 @@ mod introspection_tests {
                 "groups": ["admin", "ops"],
             })),
         );
-        let mut v = validator(mock.clone());
+        let mut v = validator(Arc::clone(&mock));
         v.groups_claim = Some(parse_jp("$.groups"));
         let outcome = v.validate("opaque-token", now_ms).await.expect("valid");
-        assert2::assert!(outcome.principal.groups == vec!["admin".to_string(), "ops".to_string()]);
+        assert2::assert!(outcome.principal.groups == vec!["admin".to_owned(), "ops".to_owned()]);
     }
 }

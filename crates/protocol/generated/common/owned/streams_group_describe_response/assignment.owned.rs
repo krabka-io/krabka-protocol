@@ -3,6 +3,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    primitives::array::{array_len_prefix_len, get_array_len, put_array_len},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -17,31 +18,31 @@ impl Encode for Assignment {
         let flex = version >= 0;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.active_tasks).len(), flex);
+                put_array_len(buf, (self.active_tasks).len(), flex)?;
                 for it in &self.active_tasks {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.standby_tasks).len(), flex);
+                put_array_len(buf, (self.standby_tasks).len(), flex)?;
                 for it in &self.standby_tasks {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.warmup_tasks).len(), flex);
+                put_array_len(buf, (self.warmup_tasks).len(), flex)?;
                 for it in &self.warmup_tasks {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -50,8 +51,7 @@ impl Encode for Assignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.active_tasks).len(), flex);
+                let prefix = array_len_prefix_len((self.active_tasks).len(), flex);
                 let body: usize = (self.active_tasks)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -61,10 +61,7 @@ impl Encode for Assignment {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.standby_tasks).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.standby_tasks).len(), flex);
                 let body: usize = (self.standby_tasks)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -74,8 +71,7 @@ impl Encode for Assignment {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.warmup_tasks).len(), flex);
+                let prefix = array_len_prefix_len((self.warmup_tasks).len(), flex);
                 let body: usize = (self.warmup_tasks)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -96,7 +92,7 @@ impl Decode<'_> for Assignment {
         let mut out = Self::default();
         if version >= 0 {
             out.active_tasks = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::task_ids::TaskIds::decode(buf, version)?);
@@ -106,7 +102,7 @@ impl Decode<'_> for Assignment {
         }
         if version >= 0 {
             out.standby_tasks = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::task_ids::TaskIds::decode(buf, version)?);
@@ -116,7 +112,7 @@ impl Decode<'_> for Assignment {
         }
         if version >= 0 {
             out.warmup_tasks = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::task_ids::TaskIds::decode(buf, version)?);

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::add_raft_voter_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i32, get_u16, put_bool, put_i32, put_u16},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -32,7 +35,7 @@ pub struct AddRaftVoterRequest<'a> {
     pub cluster_id: Option<&'a str>,
     pub timeout_ms: i32,
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub listeners: Vec<Listener<'a>>,
     pub ack_when_committed: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -43,7 +46,7 @@ impl Default for AddRaftVoterRequest<'_> {
             cluster_id: Some(""),
             timeout_ms: 0i32,
             voter_id: 0i32,
-            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            voter_directory_id: Uuid::default(),
             listeners: Vec::new(),
             ack_when_committed: true,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -51,13 +54,10 @@ impl Default for AddRaftVoterRequest<'_> {
     }
 }
 impl AddRaftVoterRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::add_raft_voter_request::AddRaftVoterRequest {
-        crate::owned::add_raft_voter_request::AddRaftVoterRequest {
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> add_raft_voter_request::AddRaftVoterRequest {
+        add_raft_voter_request::AddRaftVoterRequest {
+            cluster_id: (self.cluster_id).map(str::to_owned),
             timeout_ms: (self.timeout_ms),
             voter_id: (self.voter_id),
             voter_directory_id: (self.voter_directory_id),
@@ -78,9 +78,9 @@ impl Encode for AddRaftVoterRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 0 {
@@ -90,22 +90,22 @@ impl Encode for AddRaftVoterRequest<'_> {
             put_i32(buf, self.voter_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.listeners).len(), flex);
+                put_array_len(buf, (self.listeners).len(), flex)?;
                 for it in &self.listeners {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_bool(buf, self.ack_when_committed);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -130,8 +130,7 @@ impl Encode for AddRaftVoterRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.listeners).len(), flex);
+                let prefix = array_len_prefix_len((self.listeners).len(), flex);
                 let body: usize = (self.listeners)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -173,11 +172,11 @@ impl<'de> DecodeBorrow<'de> for AddRaftVoterRequest<'de> {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.listeners = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Listener::decode_borrow(buf, version)?);
@@ -209,7 +208,7 @@ impl AddRaftVoterRequest<'_> {
             m.voter_id = 1i32;
         }
         if version >= 0 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.listeners = vec![Listener::populated(version)];
@@ -228,14 +227,11 @@ pub struct Listener<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Listener<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::add_raft_voter_request::Listener {
-        crate::owned::add_raft_voter_request::Listener {
-            name: (self.name).to_string(),
-            host: (self.host).to_string(),
+    pub fn to_owned(&self) -> add_raft_voter_request::Listener {
+        add_raft_voter_request::Listener {
+            name: (self.name).to_owned(),
+            host: (self.host).to_owned(),
             port: (self.port),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -246,16 +242,16 @@ impl Encode for Listener<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -263,7 +259,7 @@ impl Encode for Listener<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

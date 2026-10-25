@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::get_telemetry_subscriptions_request,
+    primitives::uuid::{Uuid, get_uuid, put_uuid},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 71;
@@ -17,18 +19,15 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GetTelemetrySubscriptionsRequest {
-    pub client_instance_id: crate::primitives::uuid::Uuid,
+    pub client_instance_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl GetTelemetrySubscriptionsRequest {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::get_telemetry_subscriptions_request::GetTelemetrySubscriptionsRequest {
-        crate::owned::get_telemetry_subscriptions_request::GetTelemetrySubscriptionsRequest {
+    ) -> get_telemetry_subscriptions_request::GetTelemetrySubscriptionsRequest {
+        get_telemetry_subscriptions_request::GetTelemetrySubscriptionsRequest {
             client_instance_id: (self.client_instance_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -44,11 +43,11 @@ impl Encode for GetTelemetrySubscriptionsRequest {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.client_instance_id);
+            put_uuid(buf, self.client_instance_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -76,7 +75,7 @@ impl<'de> DecodeBorrow<'de> for GetTelemetrySubscriptionsRequest {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.client_instance_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.client_instance_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -90,7 +89,7 @@ impl GetTelemetrySubscriptionsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.client_instance_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.client_instance_id = Uuid([1u8; 16]);
         }
         m
     }

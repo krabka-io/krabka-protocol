@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_describe_response::endpoint,
     primitives::{
         fixed::{get_u16, put_u16},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -17,15 +18,10 @@ pub struct Endpoint<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Endpoint<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_describe_response::endpoint::Endpoint {
-        crate::owned::common::streams_group_describe_response::endpoint::Endpoint {
-            host: (self.host).to_string(),
+    pub fn to_owned(&self) -> endpoint::Endpoint {
+        endpoint::Endpoint {
+            host: (self.host).to_owned(),
             port: (self.port),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -36,9 +32,9 @@ impl Encode for Endpoint<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -46,7 +42,7 @@ impl Encode for Endpoint<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

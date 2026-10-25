@@ -12,7 +12,7 @@
 //! already test-covered. The `borrowed_quote_parity` test asserts
 //! token-stream equality with the string emitter for every schema.
 
-use std::str::FromStr;
+use std::collections::{HashMap, HashSet};
 
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -28,8 +28,7 @@ use crate::{
             nullable_split_cond, owned_struct_path_for, spec_needs_lifetime, struct_path_for,
             tagged_field_needs_owned, tagged_is_default_cond, to_owned_field_expr, version_cond,
         },
-        common,
-        common::banner,
+        common::{self, banner, parse_tokens, statement, tag_literal},
         owned::{EmitError, tagged_version_cond},
         owned_quote::tagged_decode_arm,
     },
@@ -39,16 +38,12 @@ use crate::{
     type_map,
 };
 
-type ResMap = std::collections::HashMap<String, Resolution>;
+type ResMap = HashMap<String, Resolution>;
 
-fn parse_expr(s: &str) -> TokenStream {
-    TokenStream::from_str(s).expect("leaf generator produced an unlexable fragment")
-}
-
-fn tagged_should_encode(f: &FieldSpec) -> TokenStream {
+fn tagged_should_encode(f: &FieldSpec) -> Result<TokenStream, EmitError> {
     if base_type(&f.field_type) == "bool" {
         let field = format_ident!("{}", name_conv::field_name(&f.name));
-        return match &f.default {
+        return Ok(match &f.default {
             Some(serde_json::Value::Bool(true)) => {
                 quote!(!self.#field)
             }
@@ -59,8 +54,8 @@ fn tagged_should_encode(f: &FieldSpec) -> TokenStream {
                 quote!(self.#field)
             }
             Some(serde_json::Value::String(value)) if value == "false" => quote!(self.#field),
-            _ => tagged_should_encode_from_default(f),
-        };
+            _ => tagged_should_encode_from_default(f)?,
+        });
     }
     tagged_should_encode_from_default(f)
 }
@@ -68,33 +63,40 @@ fn tagged_should_encode(f: &FieldSpec) -> TokenStream {
 /// `tagged_should_encode` with the field's tagged-version range in front of
 /// it. KIP-482 binds a tag to the versions its schema declares, so a message
 /// must not write the tag below that range even when the value is non-default.
-fn gated_tagged_should_encode(f: &FieldSpec, flex_minimum: i16) -> TokenStream {
-    let value = tagged_should_encode(f);
-    match tagged_version_cond(f, flex_minimum) {
+fn gated_tagged_should_encode(f: &FieldSpec, flex_minimum: i16) -> Result<TokenStream, EmitError> {
+    let value = tagged_should_encode(f)?;
+    Ok(match tagged_version_cond(f, flex_minimum) {
         // Every leaf of `tagged_should_encode` and `version_cond` binds tighter
         // than `&&`, so neither side needs parentheses.
         Some(cond) => {
-            let cond = parse_expr(&cond);
+            let cond = parse_tokens(&cond)?;
             quote!(#cond && #value)
         }
         None => value,
-    }
+    })
 }
 
-fn tagged_should_encode_from_default(f: &FieldSpec) -> TokenStream {
+fn tagged_should_encode_from_default(f: &FieldSpec) -> Result<TokenStream, EmitError> {
     let default = tagged_is_default_cond(f);
     if let Some(option) = default.strip_suffix(".is_none()") {
-        return parse_expr(&format!("{option}.is_some()"));
+        return parse_tokens(&format!("{option}.is_some()"));
     }
     if let Some((value, expected)) = default.split_once(" == ") {
-        return parse_expr(&format!("{value} != {expected}"));
+        return parse_tokens(&format!("{value} != {expected}"));
     }
     if let Some(positive) = default.strip_prefix('!') {
-        parse_expr(positive)
-    } else {
-        let default = parse_expr(&default);
-        quote!(!(#default))
+        return parse_tokens(positive);
     }
+    let default = parse_tokens(&default)?;
+    Ok(quote!(!(#default)))
+}
+
+/// `crate::owned`, or `crate::<ns>::owned` for a namespaced run.
+fn owned_root(namespace: Option<&str>) -> String {
+    namespace.map_or_else(
+        || "crate::owned".to_owned(),
+        |ns| format!("crate::{ns}::owned"),
+    )
 }
 
 /// Shared context threaded through every struct block in one message file.
@@ -104,6 +106,48 @@ struct Ctx<'a> {
     parent_module: &'a str,
     /// `crate::owned` or `crate::<ns>::owned`.
     owned_root: &'a str,
+    /// The struct types whose `to_owned` can fail, because a `records` field
+    /// sits somewhere below them.
+    fallible: &'a HashSet<String>,
+}
+
+/// The struct types of `spec` whose `to_owned` can fail: the ones that hold a
+/// `records` field, directly or through a nested or common struct.
+pub(crate) fn fallible_structs(spec: &MessageSpec) -> HashSet<String> {
+    let mut structs: Vec<(String, &[FieldSpec])> =
+        vec![(spec.name.clone(), spec.fields.as_slice())];
+    let mut stack: Vec<&[FieldSpec]> = vec![spec.fields.as_slice()];
+    stack.extend(spec.common_structs.iter().map(|cs| cs.fields.as_slice()));
+    structs.extend(
+        spec.common_structs
+            .iter()
+            .map(|cs| (cs.name.clone(), cs.fields.as_slice())),
+    );
+    while let Some(fields) = stack.pop() {
+        for f in fields.iter().filter(|f| !f.fields.is_empty()) {
+            structs.push((base_type(&f.field_type).to_owned(), f.fields.as_slice()));
+            stack.push(&f.fields);
+        }
+    }
+    let mut fallible = HashSet::new();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (name, fields) in &structs {
+            if fallible.contains(name) {
+                continue;
+            }
+            let holds_records = fields.iter().any(|f| {
+                let base = base_type(&f.field_type);
+                base == "records" || fallible.contains(base)
+            });
+            if holds_records {
+                fallible.insert(name.clone());
+                changed = true;
+            }
+        }
+    }
+    fallible
 }
 
 enum FlexSource {
@@ -116,16 +160,16 @@ impl FlexSource {
     /// above it, so a tag whose range starts there needs no version test.
     fn minimum(&self) -> i16 {
         match self {
-            FlexSource::TopLevel(fm) | FlexSource::Nested(fm) => *fm,
+            Self::TopLevel(fm) | Self::Nested(fm) => *fm,
         }
     }
 
     fn tokens(&self) -> TokenStream {
         match self {
-            FlexSource::TopLevel(_) => quote!(is_flexible(version)),
-            FlexSource::Nested(i16::MIN) => quote!(true),
-            FlexSource::Nested(i16::MAX) => quote!(version == i16::MAX),
-            FlexSource::Nested(fm) => {
+            Self::TopLevel(_) => quote!(is_flexible(version)),
+            Self::Nested(i16::MIN) => quote!(true),
+            Self::Nested(i16::MAX) => quote!(version == i16::MAX),
+            Self::Nested(fm) => {
                 let n = Literal::i16_unsuffixed(*fm);
                 quote!(version >= #n)
             }
@@ -143,14 +187,13 @@ pub fn emit(
     // Resolve struct references — also validates that everything resolves.
     let res_map = resolve::resolve_message(spec)?;
     let parent_module = name_conv::module_name(&spec.name);
-    let owned_root = match namespace {
-        None => "crate::owned".to_string(),
-        Some(ns) => format!("crate::{ns}::owned"),
-    };
+    let owned_root = owned_root(namespace);
+    let fallible = fallible_structs(spec);
     let ctx = Ctx {
         res_map: &res_map,
         parent_module: &parent_module,
         owned_root: &owned_root,
+        fallible: &fallible,
     };
 
     let mut structural = struct_block(
@@ -161,11 +204,11 @@ pub fn emit(
         &FlexSource::TopLevel(flex_min(spec)),
         Some(version_err(spec)),
         (true, has_any_flex(spec)),
-    );
-    structural.extend(nested_structs(&ctx, &spec.fields, flex_min(spec)));
+    )?;
+    structural.extend(nested_structs(&ctx, &spec.fields, flex_min(spec))?);
 
     let imports = borrowed::emit_imports(spec, &res_map).to_string();
-    let constants = borrowed::emit_constants(spec).to_string();
+    let constants = borrowed::emit_constants(spec)?.to_string();
     let banner = common::banner(schemas_version);
 
     let primary = format!("{banner}{imports}{constants}\n{structural}\n");
@@ -176,7 +219,7 @@ pub fn emit(
         ))
     })?;
 
-    let commons = emit_commons(spec, &res_map, schemas_version, namespace);
+    let commons = emit_commons(spec, &res_map, schemas_version, namespace, &fallible)?;
 
     Ok(EmittedMessage { primary, commons })
 }
@@ -193,13 +236,11 @@ fn emit_commons(
     res_map: &ResMap,
     schemas_version: &str,
     namespace: Option<&str>,
-) -> Vec<(String, String)> {
+    fallible: &HashSet<String>,
+) -> Result<Vec<(String, String)>, EmitError> {
     let message_snake = name_conv::module_name(&spec.name);
     let fm = flex_min(spec);
-    let owned_root = match namespace {
-        None => "crate::owned".to_string(),
-        Some(ns) => format!("crate::{ns}::owned"),
-    };
+    let owned_root = owned_root(namespace);
     let mut commons: Vec<(String, String)> = Vec::new();
     for cs in &spec.common_structs {
         // Build a modified res_map for the common-struct context:
@@ -235,6 +276,7 @@ fn emit_commons(
             res_map: &common_res_map,
             parent_module: &cs_parent_module,
             owned_root: &owned_root,
+            fallible,
         };
 
         let name = name_conv::type_name(&cs.name);
@@ -247,8 +289,8 @@ fn emit_commons(
             &FlexSource::Nested(fm),
             None,
             (false, fm < i16::MAX),
-        );
-        struct_tokens.extend(nested_structs(&ctx, &cs.fields, fm));
+        )?;
+        struct_tokens.extend(nested_structs(&ctx, &cs.fields, fm)?);
 
         let body = format!(
             "{}{}{}",
@@ -259,7 +301,7 @@ fn emit_commons(
 
         commons.push((format!("{message_snake}/{cs_snake}"), body));
     }
-    commons
+    Ok(commons)
 }
 
 fn version_err(spec: &MessageSpec) -> TokenStream {
@@ -286,7 +328,7 @@ fn struct_block(
     flex: &FlexSource,
     guard: Option<TokenStream>,
     options: (bool, bool),
-) -> TokenStream {
+) -> Result<TokenStream, EmitError> {
     let (top_level, has_flex) = options;
     let ty = format_ident!("{name}");
     // `<'a>` on the value type / impls, `<'de>` on the Self type in DecodeBorrow.
@@ -299,6 +341,8 @@ fn struct_block(
     };
     let ty_a = quote!(#ty #gen_a);
     let ty_de = quote!(#ty #gen_de);
+    // An impl that never names the lifetime elides it.
+    let ty_elided = if has_lt { quote!(#ty<'_>) } else { quote!(#ty) };
 
     let eq = if has_float64_recursive(fields) {
         quote!()
@@ -307,19 +351,44 @@ fn struct_block(
     };
 
     let (field_defs, default_assigns, owned_target, to_owned_assigns) =
-        struct_members(ctx, name, fields, top_level);
+        struct_members(ctx, name, fields, top_level)?;
+    let owned_value = quote! {
+        #owned_target {
+            #to_owned_assigns
+            unknown_tagged_fields: self.unknown_tagged_fields.clone(),
+        }
+    };
+    let to_owned_fn = if ctx.fallible.contains(name) {
+        quote! {
+            /// # Errors
+            ///
+            /// Returns the error of a records field that holds an invalid
+            /// encoded record batch.
+            pub fn to_owned(&self) -> Result<#owned_target, crate::records::RecordsError> {
+                Ok(#owned_value)
+            }
+        }
+    } else {
+        quote! {
+            #[must_use]
+            pub fn to_owned(&self) -> #owned_target {
+                #owned_value
+            }
+        }
+    };
 
     let guard =
         guard.map(|err| quote!(if !(MIN_VERSION..=MAX_VERSION).contains(&version) { #err }));
     let flex_src = flex.tokens();
     let flex_minimum = flex.minimum();
-    let encode_body = encode_body(ctx, fields, has_flex, flex_minimum);
-    let len_body = len_body(ctx, fields, has_flex, flex_minimum);
-    let decode_body = decode_body(ctx, fields, has_flex, flex_minimum);
+    let encode_body = encode_body(ctx, fields, has_flex, flex_minimum)?;
+    let len_body = len_body(ctx, fields, has_flex, flex_minimum)?;
+    let decode_body = decode_body(ctx, fields, has_flex, flex_minimum)?;
     let (codec_helpers, encode_body, decode_body) = if fields.len() >= 8 {
-        let (encode_helpers, encode_calls) = split_encode_body(ctx, fields, has_flex, flex_minimum);
+        let (encode_helpers, encode_calls) =
+            split_encode_body(ctx, fields, has_flex, flex_minimum)?;
         let (decode_helpers, decode_calls) =
-            split_decode_body(ctx, fields, has_flex, flex_minimum, has_lt);
+            split_decode_body(ctx, fields, has_flex, flex_minimum, has_lt)?;
         (
             quote!(#encode_helpers #decode_helpers),
             encode_calls,
@@ -331,21 +400,34 @@ fn struct_block(
     let encode_flex = flex_binding(&encode_body, &flex_src);
     let len_flex = flex_binding(&len_body, &flex_src);
     let decode_flex = flex_binding(&decode_body, &flex_src);
+    // A field default such as `<Node<'a>>::default()` names the lifetime.
+    let (default_impl, default_ty) = if default_assigns.to_string().contains("'a") {
+        (impl_a.clone(), ty_a.clone())
+    } else {
+        (quote!(impl), ty_elided.clone())
+    };
+    // The split decode helpers take a `&mut &'a [u8]`, so only they keep the
+    // named lifetime on the inherent impl.
+    let inherent_impl = if fields.len() >= 8 {
+        quote!(#impl_a #ty_a)
+    } else {
+        quote!(impl #ty_elided)
+    };
     let populated_target = if has_lt {
         quote!(impl #ty<'_>)
     } else {
         quote!(impl #ty)
     };
-    let populated = populated_impl(ctx, &populated_target, fields);
+    let populated = populated_impl(ctx, &populated_target, fields)?;
 
-    quote! {
+    Ok(quote! {
         #[derive(Debug, Clone, PartialEq #eq)]
         pub struct #ty_a {
             #field_defs
             pub unknown_tagged_fields: UnknownTaggedFields,
         }
 
-        #impl_a Default for #ty_a {
+        #default_impl Default for #default_ty {
             fn default() -> Self {
                 Self {
                     #default_assigns
@@ -354,22 +436,13 @@ fn struct_block(
             }
         }
 
-        #impl_a #ty_a {
-            /// # Panics
-            ///
-            /// Panics if a records field contains an invalid encoded record batch.
-            #[must_use]
-            pub fn to_owned(&self) -> #owned_target {
-                #owned_target {
-                    #to_owned_assigns
-                    unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-                }
-            }
+        #inherent_impl {
+            #to_owned_fn
 
             #codec_helpers
         }
 
-        #impl_a Encode for #ty_a {
+        impl Encode for #ty_elided {
             fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
                 #guard
                 #encode_flex
@@ -395,49 +468,60 @@ fn struct_block(
         }
 
         #populated
-    }
+    })
 }
+
+/// The tokens a struct block splices in: the field definitions, the `Default`
+/// field assignments, the owned `to_owned` target type, and the `to_owned`
+/// field assignments.
+type Members = (TokenStream, TokenStream, TokenStream, TokenStream);
 
 fn struct_members(
     ctx: &Ctx,
     name: &str,
     fields: &[FieldSpec],
     top_level: bool,
-) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
-    let field_defs = ordered(fields).map(|field| {
-        let name = format_ident!("{}", name_conv::field_name(&field.name));
-        let ty = parse_expr(&field_type(ctx, field, top_level));
-        quote!(pub #name: #ty,)
-    });
-    let default_assigns = ordered(fields).map(|field| {
-        let name = format_ident!("{}", name_conv::field_name(&field.name));
-        let expr = if is_struct_type(base_type(&field.field_type))
-            && !field.field_type.starts_with("[]")
-            && field.default.is_none()
-            && !is_nullable(field)
-        {
-            let ty = parse_expr(&field_type(ctx, field, top_level));
-            quote!(<#ty>::default())
-        } else {
-            parse_expr(&borrowed_default_expr(field, ctx.res_map))
-        };
-        quote!(#name: #expr,)
-    });
-    let owned_target = parse_expr(&format!(
+) -> Result<Members, EmitError> {
+    let field_defs = ordered(fields)
+        .map(|field| {
+            let name = format_ident!("{}", name_conv::field_name(&field.name));
+            let ty = parse_tokens(&field_type(ctx, field, top_level))?;
+            Ok(quote!(pub #name: #ty,))
+        })
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    let default_assigns = ordered(fields)
+        .map(|field| {
+            let name = format_ident!("{}", name_conv::field_name(&field.name));
+            let expr = if is_struct_type(base_type(&field.field_type))
+                && !field.field_type.starts_with("[]")
+                && field.default.is_none()
+                && !is_nullable(field)
+            {
+                let ty = parse_tokens(&field_type(ctx, field, top_level))?;
+                quote!(<#ty>::default())
+            } else {
+                parse_tokens(&borrowed_default_expr(field, ctx.res_map))?
+            };
+            Ok(quote!(#name: #expr,))
+        })
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    let owned_target = parse_tokens(&format!(
         "{}::{}::{name}",
         ctx.owned_root, ctx.parent_module
-    ));
-    let to_owned_assigns = ordered(fields).map(|field| {
-        let name = format_ident!("{}", name_conv::field_name(&field.name));
-        let expr = parse_expr(&to_owned_expr(ctx, field, top_level));
-        quote!(#name: #expr,)
-    });
-    (
+    ))?;
+    let to_owned_assigns = ordered(fields)
+        .map(|field| {
+            let name = format_ident!("{}", name_conv::field_name(&field.name));
+            let expr = parse_tokens(&to_owned_expr(ctx, field, top_level))?;
+            Ok(quote!(#name: #expr,))
+        })
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    Ok((
         quote!(#(#field_defs)*),
         quote!(#(#default_assigns)*),
         owned_target,
         quote!(#(#to_owned_assigns)*),
-    )
+    ))
 }
 
 fn flex_binding(body: &TokenStream, flex_source: &TokenStream) -> Option<TokenStream> {
@@ -482,39 +566,67 @@ fn field_type(ctx: &Ctx, f: &FieldSpec, top_level: bool) -> String {
 fn to_owned_expr(ctx: &Ctx, f: &FieldSpec, top_level: bool) -> String {
     let field = name_conv::field_name(&f.name);
     let expr = format!("self.{field}");
+    // The borrowed struct a struct field holds, without its lifetime, so that
+    // `<path>::to_owned` names its inherent `to_owned`.
+    let struct_path = ctx
+        .res_map
+        .get(base_type(&f.field_type))
+        .map(|r| r.rust_path.as_str());
+    let fallible = ctx.fallible.contains(base_type(&f.field_type));
     if is_tagged(f) {
         let nullable = is_nullable(f) || default_is_null(f);
         if top_level && tagged_field_needs_owned(f, ctx.res_map) {
             return format!("self.{field}.clone()");
         }
-        return to_owned_field_expr(&f.field_type, &expr, nullable);
+        return to_owned_field_expr(&f.field_type, &expr, nullable, struct_path, fallible);
     }
-    to_owned_field_expr(&f.field_type, &expr, is_nullable(f))
+    to_owned_field_expr(&f.field_type, &expr, is_nullable(f), struct_path, fallible)
 }
 
 // --- encode / encoded_len (identical shape to owned, borrowed leaf codecs) ---
 
-fn encode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
-    let stmts = fields.iter().filter(|f| !is_tagged(f)).map(encode_one);
-    let trailer = has_flex.then(|| {
-        let mut_kw = if fields.iter().any(is_tagged) {
-            quote!(mut)
-        } else {
-            quote!()
-        };
-        let adds = fields
-            .iter()
-            .filter(|f| is_tagged(f))
-            .map(|f| encode_tagged(ctx, f, flex_minimum));
-        quote! {
-            if flex {
-                let #mut_kw tagged = WriteTaggedFields::new();
-                #(#adds)*
-                tagged.write(buf, &self.unknown_tagged_fields);
-            }
+fn encode_body(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    has_flex: bool,
+    flex_minimum: i16,
+) -> Result<TokenStream, EmitError> {
+    let stmts = fields
+        .iter()
+        .filter(|f| !is_tagged(f))
+        .map(encode_one)
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    let trailer = if has_flex {
+        Some(encode_tagged_trailer(ctx, fields, flex_minimum)?)
+    } else {
+        None
+    };
+    Ok(quote!(#(#stmts)* #trailer))
+}
+
+/// The `if flex { .. }` block that writes the known and unknown tagged fields.
+fn encode_tagged_trailer(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    flex_minimum: i16,
+) -> Result<TokenStream, EmitError> {
+    let mut_kw = if fields.iter().any(is_tagged) {
+        quote!(mut)
+    } else {
+        quote!()
+    };
+    let adds = fields
+        .iter()
+        .filter(|f| is_tagged(f))
+        .map(|f| encode_tagged(ctx, f, flex_minimum))
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    Ok(quote! {
+        if flex {
+            let #mut_kw tagged = WriteTaggedFields::new();
+            #(#adds)*
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
-    });
-    quote!(#(#stmts)* #trailer)
+    })
 }
 
 fn split_encode_body(
@@ -522,12 +634,12 @@ fn split_encode_body(
     fields: &[FieldSpec],
     has_flex: bool,
     flex_minimum: i16,
-) -> (TokenStream, TokenStream) {
+) -> Result<(TokenStream, TokenStream), EmitError> {
     let mut helpers = Vec::new();
     let mut calls = Vec::new();
     for (index, field) in fields.iter().filter(|field| !is_tagged(field)).enumerate() {
         let helper = format_ident!("encode_field_{index}");
-        let body = encode_one(field);
+        let body = encode_one(field)?;
         let flex = if body.to_string().contains("flex") {
             quote!(flex)
         } else {
@@ -549,7 +661,7 @@ fn split_encode_body(
         } else {
             helpers.push(quote! {
                 fn #helper<B: BufMut>(&self, buf: &mut B, version: i16, #flex: bool) {
-                    #body;
+                    #body
                 }
             });
             calls.push(quote!(self.#helper(buf, version, flex);));
@@ -557,19 +669,7 @@ fn split_encode_body(
     }
     if has_flex {
         let helper = format_ident!("encode_tagged_fields");
-        let has_tagged = fields.iter().any(is_tagged);
-        let mut_kw = if has_tagged { quote!(mut) } else { quote!() };
-        let adds = fields
-            .iter()
-            .filter(|field| is_tagged(field))
-            .map(|field| encode_tagged(ctx, field, flex_minimum));
-        let body = quote! {
-            if flex {
-                let #mut_kw tagged = WriteTaggedFields::new();
-                #(#adds)*
-                tagged.write(buf, &self.unknown_tagged_fields);
-            }
-        };
+        let body = encode_tagged_trailer(ctx, fields, flex_minimum)?;
         let version = if body.to_string().contains("version") {
             quote!(version)
         } else {
@@ -581,13 +681,14 @@ fn split_encode_body(
                 buf: &mut B,
                 #version: i16,
                 flex: bool,
-            ) {
+            ) -> Result<(), ProtocolError> {
                 #body
+                Ok(())
             }
         });
-        calls.push(quote!(self.#helper(buf, version, flex);));
+        calls.push(quote!(self.#helper(buf, version, flex)?;));
     }
-    (quote!(#(#helpers)*), quote!(#(#calls)*))
+    Ok((quote!(#(#helpers)*), quote!(#(#calls)*)))
 }
 
 fn non_flex_wrap(f: &FieldSpec, body: TokenStream) -> TokenStream {
@@ -598,22 +699,23 @@ fn non_flex_wrap(f: &FieldSpec, body: TokenStream) -> TokenStream {
     }
 }
 
-fn encode_one(f: &FieldSpec) -> TokenStream {
+fn encode_one(f: &FieldSpec) -> Result<TokenStream, EmitError> {
     let field = name_conv::field_name(&f.name);
-    let cond = parse_expr(&version_cond(f.versions, "version"));
+    let cond = parse_tokens(&version_cond(f.versions, "version"))?;
     let expr = format!("self.{field}");
     let inner = if let Some(ncond) = nullable_split_cond(f) {
-        let nb = parse_expr(&encode_call(&f.field_type, &expr, true));
-        let nnb = parse_expr(&encode_call_option_as_non_nullable(&f.field_type, &expr));
-        let nc = parse_expr(&ncond);
+        let nb = parse_tokens(&encode_call(&f.field_type, &expr, true))?;
+        let nnb = parse_tokens(&encode_call_option_as_non_nullable(&f.field_type, &expr))?;
+        let nc = parse_tokens(&ncond)?;
         non_flex_wrap(f, quote!(if #nc { #nb } else { #nnb }))
     } else {
         non_flex_wrap(
             f,
-            parse_expr(&encode_call(&f.field_type, &expr, is_nullable(f))),
+            parse_tokens(&encode_call(&f.field_type, &expr, is_nullable(f)))?,
         )
     };
-    quote!(if #cond { #inner; })
+    let inner = statement(&inner);
+    Ok(quote!(if #cond { #inner }))
 }
 
 /// Tagged string and bytes fields stored owned use the owned-flavor codec,
@@ -623,9 +725,9 @@ fn tagged_owned_codec(ctx: &Ctx, f: &FieldSpec) -> bool {
         && matches!(base_type(&f.field_type), "string" | "bytes")
 }
 
-fn encode_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
+fn encode_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> Result<TokenStream, EmitError> {
     let field = name_conv::field_name(&f.name);
-    let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
+    let tag = tag_literal(f)?;
     let nullable = is_nullable(f) || default_is_null(f);
     let expr = format!("self.{field}");
     let body_str = if tagged_owned_codec(ctx, f) {
@@ -633,15 +735,15 @@ fn encode_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
     } else {
         encode_call(&f.field_type, &expr, nullable)
     };
-    let body = parse_expr(&body_str.replace("buf", "b"));
-    let len = parse_expr(&tagged_len_str(ctx, f, &expr, nullable));
-    let should_encode = gated_tagged_should_encode(f, flex_minimum);
-    quote! {
+    let body = statement(&parse_tokens(&body_str.replace("buf", "b"))?);
+    let len = parse_tokens(&tagged_len_str(ctx, f, &expr, nullable))?;
+    let should_encode = gated_tagged_should_encode(f, flex_minimum)?;
+    Ok(quote! {
         if #should_encode {
-            let payload = encode_to_bytes(#len, |b| { #body; Ok(()) });
+            let payload = encode_to_bytes(#len, |b| { #body Ok(()) })?;
             tagged.add(#tag, payload);
         }
-    }
+    })
 }
 
 fn tagged_len_str(ctx: &Ctx, f: &FieldSpec, expr: &str, nullable: bool) -> String {
@@ -652,9 +754,18 @@ fn tagged_len_str(ctx: &Ctx, f: &FieldSpec, expr: &str, nullable: bool) -> Strin
     }
 }
 
-fn len_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
-    let stmts = fields.iter().filter(|f| !is_tagged(f)).map(len_one);
-    let trailer = has_flex.then(|| {
+fn len_body(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    has_flex: bool,
+    flex_minimum: i16,
+) -> Result<TokenStream, EmitError> {
+    let stmts = fields
+        .iter()
+        .filter(|f| !is_tagged(f))
+        .map(len_one)
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    let trailer = if has_flex {
         let mut_kw = if fields.iter().any(is_tagged) {
             quote!(mut)
         } else {
@@ -663,61 +774,74 @@ fn len_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) 
         let pushes = fields
             .iter()
             .filter(|f| is_tagged(f))
-            .map(|f| len_tagged(ctx, f, flex_minimum));
-        quote! {
+            .map(|f| len_tagged(ctx, f, flex_minimum))
+            .collect::<Result<Vec<_>, EmitError>>()?;
+        Some(quote! {
             if flex {
                 let #mut_kw known_pairs: Vec<(u32, usize)> = Vec::new();
                 #(#pushes)*
                 n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
             }
-        }
-    });
-    quote!(#(#stmts)* #trailer)
+        })
+    } else {
+        None
+    };
+    Ok(quote!(#(#stmts)* #trailer))
 }
 
-fn len_one(f: &FieldSpec) -> TokenStream {
+fn len_one(f: &FieldSpec) -> Result<TokenStream, EmitError> {
     let field = name_conv::field_name(&f.name);
-    let cond = parse_expr(&version_cond(f.versions, "version"));
+    let cond = parse_tokens(&version_cond(f.versions, "version"))?;
     let expr = format!("self.{field}");
     let inner = if let Some(ncond) = nullable_split_cond(f) {
-        let nb = parse_expr(&encoded_len_expr(&f.field_type, &expr, true));
-        let nnb = parse_expr(&encoded_len_expr_option_as_non_nullable(
+        let nb = parse_tokens(&encoded_len_expr(&f.field_type, &expr, true))?;
+        let nnb = parse_tokens(&encoded_len_expr_option_as_non_nullable(
             &f.field_type,
             &expr,
-        ));
-        let nc = parse_expr(&ncond);
+        ))?;
+        let nc = parse_tokens(&ncond)?;
         non_flex_wrap(f, quote!(if #nc { #nb } else { #nnb }))
     } else {
         non_flex_wrap(
             f,
-            parse_expr(&encoded_len_expr(&f.field_type, &expr, is_nullable(f))),
+            parse_tokens(&encoded_len_expr(&f.field_type, &expr, is_nullable(f)))?,
         )
     };
-    quote!(if #cond { n += #inner; })
+    Ok(quote!(if #cond { n += #inner; }))
 }
 
-fn len_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> TokenStream {
+fn len_tagged(ctx: &Ctx, f: &FieldSpec, flex_minimum: i16) -> Result<TokenStream, EmitError> {
     let field = name_conv::field_name(&f.name);
-    let tag = Literal::u32_unsuffixed(f.tag.expect("tagged field has tag"));
+    let tag = tag_literal(f)?;
     let nullable = is_nullable(f) || default_is_null(f);
-    let len = parse_expr(&tagged_len_str(ctx, f, &format!("self.{field}"), nullable));
-    let should_encode = gated_tagged_should_encode(f, flex_minimum);
-    quote! {
+    let len = parse_tokens(&tagged_len_str(ctx, f, &format!("self.{field}"), nullable))?;
+    let should_encode = gated_tagged_should_encode(f, flex_minimum)?;
+    Ok(quote! {
         if #should_encode {
             known_pairs.push((#tag, #len));
         }
-    }
+    })
 }
 
 // --- decode_borrow ----------------------------------------------------------
 
-fn decode_body(ctx: &Ctx, fields: &[FieldSpec], has_flex: bool, flex_minimum: i16) -> TokenStream {
+fn decode_body(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    has_flex: bool,
+    flex_minimum: i16,
+) -> Result<TokenStream, EmitError> {
     let stmts = fields
         .iter()
         .filter(|f| !is_tagged(f))
-        .map(|f| decode_one(ctx, f));
-    let trailer = has_flex.then(|| decode_tagged_block(ctx, fields, flex_minimum));
-    quote!(#(#stmts)* #trailer)
+        .map(|f| decode_one(ctx, f))
+        .collect::<Result<Vec<_>, EmitError>>()?;
+    let trailer = if has_flex {
+        Some(decode_tagged_block(ctx, fields, flex_minimum)?)
+    } else {
+        None
+    };
+    Ok(quote!(#(#stmts)* #trailer))
 }
 
 fn split_decode_body(
@@ -726,7 +850,7 @@ fn split_decode_body(
     has_flex: bool,
     flex_minimum: i16,
     has_lt: bool,
-) -> (TokenStream, TokenStream) {
+) -> Result<(TokenStream, TokenStream), EmitError> {
     let mut helpers = Vec::new();
     let mut calls = Vec::new();
     let helper_buf = if has_lt {
@@ -736,7 +860,7 @@ fn split_decode_body(
     };
     for (index, field) in fields.iter().filter(|field| !is_tagged(field)).enumerate() {
         let helper = format_ident!("decode_field_{index}");
-        let body = decode_one(ctx, field);
+        let body = decode_one(ctx, field)?;
         let flex = if body.to_string().contains("flex") {
             quote!(flex)
         } else {
@@ -757,7 +881,7 @@ fn split_decode_body(
     }
     if has_flex {
         let helper = format_ident!("decode_tagged_fields");
-        let body = decode_tagged_block(ctx, fields, flex_minimum);
+        let body = decode_tagged_block(ctx, fields, flex_minimum)?;
         let version = if body.to_string().contains("version") {
             quote!(version)
         } else {
@@ -776,61 +900,69 @@ fn split_decode_body(
         });
         calls.push(quote!(Self::#helper(&mut out, buf, version, flex)?;));
     }
-    (quote!(#(#helpers)*), quote!(#(#calls)*))
+    Ok((quote!(#(#helpers)*), quote!(#(#calls)*)))
 }
 
-fn decode_one(ctx: &Ctx, f: &FieldSpec) -> TokenStream {
+fn decode_one(ctx: &Ctx, f: &FieldSpec) -> Result<TokenStream, EmitError> {
     let field = format_ident!("{}", name_conv::field_name(&f.name));
-    let cond = parse_expr(&version_cond(f.versions, "version"));
+    let cond = parse_tokens(&version_cond(f.versions, "version"))?;
     let inner = if let Some(ncond) = nullable_split_cond(f) {
-        let nb = parse_expr(&decode_borrow_call(&f.field_type, true, ctx.res_map));
-        let nnb = parse_expr(&decode_borrow_call(&f.field_type, false, ctx.res_map));
-        let nc = parse_expr(&ncond);
+        let nb = parse_tokens(&decode_borrow_call(&f.field_type, true, ctx.res_map))?;
+        let nnb = parse_tokens(&decode_borrow_call(&f.field_type, false, ctx.res_map))?;
+        let nc = parse_tokens(&ncond)?;
         non_flex_wrap(f, quote!(if #nc { #nb } else { Some(#nnb) }))
     } else {
         non_flex_wrap(
             f,
-            parse_expr(&decode_borrow_call(
+            parse_tokens(&decode_borrow_call(
                 &f.field_type,
                 is_nullable(f),
                 ctx.res_map,
-            )),
+            ))?,
         )
     };
-    quote!(if #cond { out.#field = #inner; })
+    Ok(quote!(if #cond { out.#field = #inner; }))
 }
 
-fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec], flex_minimum: i16) -> TokenStream {
+fn decode_tagged_block(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    flex_minimum: i16,
+) -> Result<TokenStream, EmitError> {
     if !fields.iter().any(is_tagged) {
-        return quote! {
+        return Ok(quote! {
             if flex {
                 out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| { Ok(false) })?;
             }
-        };
+        });
     }
     let slots = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
         quote!(let mut #slot = None;)
     });
-    let arms = fields.iter().filter(|f| is_tagged(f)).map(|f| {
-        let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
-        let nullable = is_nullable(f) || default_is_null(f);
-        let call = if tagged_field_needs_owned(f, ctx.res_map) {
-            decode_owned_call(&f.field_type, nullable, ctx.parent_module, ctx.res_map)
-                .replace("buf", "b")
-        } else {
-            decode_borrow_call(&f.field_type, nullable, ctx.res_map).replace("buf", "b")
-        };
-        let call = parse_expr(&call);
-        let read = quote!(#slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true));
-        tagged_decode_arm(f, flex_minimum, &read)
-    });
+    let arms = fields
+        .iter()
+        .filter(|f| is_tagged(f))
+        .map(|f| {
+            let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
+            let nullable = is_nullable(f) || default_is_null(f);
+            let call = if tagged_field_needs_owned(f, ctx.res_map) {
+                decode_owned_call(&f.field_type, nullable, ctx.parent_module, ctx.res_map)
+                    .replace("buf", "b")
+            } else {
+                decode_borrow_call(&f.field_type, nullable, ctx.res_map).replace("buf", "b")
+            };
+            let call = parse_tokens(&call)?;
+            let read = quote!(#slot = Some({ let b: &mut &[u8] = payload; #call }); Ok(true));
+            tagged_decode_arm(f, flex_minimum, &read)
+        })
+        .collect::<Result<Vec<_>, EmitError>>()?;
     let writebacks = fields.iter().filter(|f| is_tagged(f)).map(|f| {
         let field = format_ident!("{}", name_conv::field_name(&f.name));
         let slot = format_ident!("tag_{}", name_conv::field_name(&f.name));
         quote!(if let Some(v) = #slot { out.#field = v; })
     });
-    quote! {
+    Ok(quote! {
         if flex {
             #(#slots)*
             out.unknown_tagged_fields = read_tagged_fields(buf, |tag, payload| {
@@ -841,29 +973,33 @@ fn decode_tagged_block(ctx: &Ctx, fields: &[FieldSpec], flex_minimum: i16) -> To
             })?;
             #(#writebacks)*
         }
-    }
+    })
 }
 
 // --- populated + nested -----------------------------------------------------
 
-fn populated_impl(ctx: &Ctx, impl_target: &TokenStream, fields: &[FieldSpec]) -> TokenStream {
-    let assigns: Vec<_> = ordered(fields)
+fn populated_impl(
+    ctx: &Ctx,
+    impl_target: &TokenStream,
+    fields: &[FieldSpec],
+) -> Result<TokenStream, EmitError> {
+    let assigns = ordered(fields)
         .filter(|f| base_type(&f.field_type) != "records")
         .map(|f| {
             let field = format_ident!("{}", name_conv::field_name(&f.name));
             let option = is_nullable(f) || (is_tagged(f) && default_is_null(f));
-            let value = parse_expr(&borrowed_populated_value(
+            let value = parse_tokens(&borrowed_populated_value(
                 f,
                 ctx.res_map,
                 ctx.parent_module,
                 option,
-            ));
-            let cond = parse_expr(&version_cond(f.versions, "version"));
-            quote!(if #cond { m.#field = #value; })
+            )?)?;
+            let cond = parse_tokens(&version_cond(f.versions, "version"))?;
+            Ok(quote!(if #cond { m.#field = #value; }))
         })
-        .collect();
+        .collect::<Result<Vec<_>, EmitError>>()?;
     if assigns.is_empty() {
-        return quote! {
+        return Ok(quote! {
             #[cfg(test)]
             #impl_target {
                 #[must_use]
@@ -871,7 +1007,7 @@ fn populated_impl(ctx: &Ctx, impl_target: &TokenStream, fields: &[FieldSpec]) ->
                     Self::default()
                 }
             }
-        };
+        });
     }
     let mut_kw = quote!(mut);
     let version = if assigns
@@ -882,7 +1018,7 @@ fn populated_impl(ctx: &Ctx, impl_target: &TokenStream, fields: &[FieldSpec]) ->
     } else {
         quote!(_version)
     };
-    quote! {
+    Ok(quote! {
         #[cfg(test)]
         #impl_target {
             #[must_use]
@@ -892,10 +1028,14 @@ fn populated_impl(ctx: &Ctx, impl_target: &TokenStream, fields: &[FieldSpec]) ->
                 m
             }
         }
-    }
+    })
 }
 
-fn nested_structs(ctx: &Ctx, fields: &[FieldSpec], flex_min_val: i16) -> TokenStream {
+fn nested_structs(
+    ctx: &Ctx,
+    fields: &[FieldSpec],
+    flex_min_val: i16,
+) -> Result<TokenStream, EmitError> {
     let mut out = TokenStream::new();
     for f in fields.iter().filter(|f| !f.fields.is_empty()) {
         let name = base_type(&f.field_type);
@@ -907,14 +1047,16 @@ fn nested_structs(ctx: &Ctx, fields: &[FieldSpec], flex_min_val: i16) -> TokenSt
             &FlexSource::Nested(flex_min_val),
             None,
             (false, flex_min_val < i16::MAX),
-        ));
-        out.extend(nested_structs(ctx, &f.fields, flex_min_val));
+        )?);
+        out.extend(nested_structs(ctx, &f.fields, flex_min_val)?);
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::slice;
+
     use assert2::assert;
 
     use super::*;
@@ -936,23 +1078,25 @@ mod tests {
             "nullableVersions": "1+"
         }))
         .unwrap();
-        let mut res_map: ResMap = std::collections::HashMap::new();
+        let mut res_map = ResMap::new();
         res_map.insert(
-            "OwnerStruct".to_string(),
+            "OwnerStruct".to_owned(),
             Resolution {
                 kind: StructKind::Nested,
-                rust_path: "OwnerStruct".to_string(),
+                rust_path: "OwnerStruct".to_owned(),
                 needs_lifetime: false,
             },
         );
+        let fallible = HashSet::new();
         let ctx = Ctx {
             res_map: &res_map,
             parent_module: "test",
             owned_root: "crate::owned",
+            fallible: &fallible,
         };
 
         let (_, default_assigns, _, _) =
-            struct_members(&ctx, "Test", std::slice::from_ref(&field), true);
+            struct_members(&ctx, "Test", slice::from_ref(&field), true).unwrap();
 
         let expected = quote!(owner: Some(OwnerStruct::default()),);
         assert!(default_assigns.to_string() == expected.to_string());

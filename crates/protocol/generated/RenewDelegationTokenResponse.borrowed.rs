@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::renew_delegation_token_response,
     primitives::fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -23,14 +24,9 @@ pub struct RenewDelegationTokenResponse {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RenewDelegationTokenResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::renew_delegation_token_response::RenewDelegationTokenResponse {
-        crate::owned::renew_delegation_token_response::RenewDelegationTokenResponse {
+    pub fn to_owned(&self) -> renew_delegation_token_response::RenewDelegationTokenResponse {
+        renew_delegation_token_response::RenewDelegationTokenResponse {
             error_code: (self.error_code),
             expiry_timestamp_ms: (self.expiry_timestamp_ms),
             throttle_time_ms: (self.throttle_time_ms),
@@ -58,7 +54,7 @@ impl Encode for RenewDelegationTokenResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

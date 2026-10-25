@@ -5,11 +5,13 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i16, get_i32, get_u16, put_bool, put_i16, put_i32, put_u16},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -26,7 +28,7 @@ pub fn is_flexible(version: i16) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ControllerRegistrationRequest {
     pub controller_id: i32,
-    pub incarnation_id: crate::primitives::uuid::Uuid,
+    pub incarnation_id: Uuid,
     pub zk_migration_ready: bool,
     pub listeners: Vec<Listener>,
     pub features: Vec<Feature>,
@@ -45,30 +47,30 @@ impl Encode for ControllerRegistrationRequest {
             put_i32(buf, self.controller_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.incarnation_id);
+            put_uuid(buf, self.incarnation_id);
         }
         if version >= 0 {
             put_bool(buf, self.zk_migration_ready);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.listeners).len(), flex);
+                put_array_len(buf, (self.listeners).len(), flex)?;
                 for it in &self.listeners {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.features).len(), flex);
+                put_array_len(buf, (self.features).len(), flex)?;
                 for it in &self.features {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,8 +88,7 @@ impl Encode for ControllerRegistrationRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.listeners).len(), flex);
+                let prefix = array_len_prefix_len((self.listeners).len(), flex);
                 let body: usize = (self.listeners)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -97,8 +98,7 @@ impl Encode for ControllerRegistrationRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.features).len(), flex);
+                let prefix = array_len_prefix_len((self.features).len(), flex);
                 let body: usize = (self.features)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -127,14 +127,14 @@ impl Decode<'_> for ControllerRegistrationRequest {
             out.controller_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.incarnation_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.incarnation_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.zk_migration_ready = get_bool(buf)?;
         }
         if version >= 0 {
             out.listeners = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Listener::decode(buf, version)?);
@@ -144,7 +144,7 @@ impl Decode<'_> for ControllerRegistrationRequest {
         }
         if version >= 0 {
             out.features = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Feature::decode(buf, version)?);
@@ -167,7 +167,7 @@ impl ControllerRegistrationRequest {
             m.controller_id = 1i32;
         }
         if version >= 0 {
-            m.incarnation_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.incarnation_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.zk_migration_ready = true;
@@ -194,16 +194,16 @@ impl Encode for Listener {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -214,7 +214,7 @@ impl Encode for Listener {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -284,10 +284,10 @@ impl Listener {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1u16;
@@ -310,9 +310,9 @@ impl Encode for Feature {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -323,7 +323,7 @@ impl Encode for Feature {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -379,7 +379,7 @@ impl Feature {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.min_supported_version = 1i16;
@@ -396,17 +396,17 @@ impl Feature {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("controllerId".to_string(), ::serde_json::json!(0));
+    obj.insert("controllerId".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "incarnationId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "incarnationId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
     obj.insert(
-        "zkMigrationReady".to_string(),
+        "zkMigrationReady".to_owned(),
         ::serde_json::Value::Bool(false),
     );
-    obj.insert("listeners".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("features".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("listeners".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("features".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ControllerRegistrationRequest {

@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_f64, get_i16, get_i32, put_f64, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -60,25 +64,25 @@ impl Encode for DescribeClientQuotasResponse {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 0 {
             {
                 let len = (self.entries).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.entries {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -101,10 +105,7 @@ impl Encode for DescribeClientQuotasResponse {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.entries).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -142,7 +143,7 @@ impl Decode<'_> for DescribeClientQuotasResponse {
         }
         if version >= 0 {
             out.entries = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -173,7 +174,7 @@ impl DescribeClientQuotasResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.entries = Some(vec![EntryData::populated(version)]);
@@ -192,23 +193,23 @@ impl Encode for EntryData {
         let flex = version >= 1;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.entity).len(), flex);
+                put_array_len(buf, (self.entity).len(), flex)?;
                 for it in &self.entity {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.values).len(), flex);
+                put_array_len(buf, (self.values).len(), flex)?;
                 for it in &self.values {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -217,16 +218,14 @@ impl Encode for EntryData {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.entity).len(), flex);
+                let prefix = array_len_prefix_len((self.entity).len(), flex);
                 let body: usize = (self.entity).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.values).len(), flex);
+                let prefix = array_len_prefix_len((self.values).len(), flex);
                 let body: usize = (self.values).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -244,7 +243,7 @@ impl Decode<'_> for EntryData {
         let mut out = Self::default();
         if version >= 0 {
             out.entity = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(EntityData::decode(buf, version)?);
@@ -254,7 +253,7 @@ impl Decode<'_> for EntryData {
         }
         if version >= 0 {
             out.values = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ValueData::decode(buf, version)?);
@@ -302,21 +301,21 @@ impl Encode for EntityData {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.entity_type);
+                put_compact_string(buf, &self.entity_type)?;
             } else {
-                let () = put_string(buf, &self.entity_type);
+                put_string(buf, &self.entity_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.entity_name.as_deref());
+                put_compact_nullable_string(buf, self.entity_name.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.entity_name.as_deref());
+                put_nullable_string(buf, self.entity_name.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -374,10 +373,10 @@ impl EntityData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.entity_type = "x".to_string();
+            m.entity_type = "x".to_owned();
         }
         if version >= 0 {
-            m.entity_name = Some("x".to_string());
+            m.entity_name = Some("x".to_owned());
         }
         m
     }
@@ -393,9 +392,9 @@ impl Encode for ValueData {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.key);
+                put_compact_string(buf, &self.key)?;
             } else {
-                let () = put_string(buf, &self.key);
+                put_string(buf, &self.key)?;
             }
         }
         if version >= 0 {
@@ -403,7 +402,7 @@ impl Encode for ValueData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -453,7 +452,7 @@ impl ValueData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.key = "x".to_string();
+            m.key = "x".to_owned();
         }
         if version >= 0 {
             m.value = 1.0f64;
@@ -467,12 +466,12 @@ impl ValueData {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "errorMessage".to_string(),
+        "errorMessage".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("entries".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("entries".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

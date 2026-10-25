@@ -42,16 +42,16 @@ impl Encode for StreamsGroupTopologyDescriptionUpdateRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.member_id);
+                put_compact_string(buf, &self.member_id)?;
             } else {
-                let () = put_string(buf, &self.member_id);
+                put_string(buf, &self.member_id)?;
             }
         }
         if version >= 0 {
@@ -62,7 +62,7 @@ impl Encode for StreamsGroupTopologyDescriptionUpdateRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -138,10 +138,10 @@ impl StreamsGroupTopologyDescriptionUpdateRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if version >= 0 {
-            m.member_id = "x".to_string();
+            m.member_id = "x".to_owned();
         }
         if version >= 0 {
             m.topology_epoch = 1i32;
@@ -159,16 +159,16 @@ impl StreamsGroupTopologyDescriptionUpdateRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "groupId".to_string(),
+        "groupId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "memberId".to_string(),
+        "memberId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("topologyEpoch".to_string(), ::serde_json::json!(0));
+    obj.insert("topologyEpoch".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "topologyDescription".to_string(),
+        "topologyDescription".to_owned(),
         ::serde_json::Value::Object(::serde_json::Map::new()),
     );
     ::serde_json::Value::Object(obj)

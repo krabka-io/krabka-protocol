@@ -12,10 +12,10 @@
 //! stays independent of the concrete `krabka_client_{producer,consumer}` header
 //! types. Callers convert to and from their own `Header` at the edge.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::from_utf8};
 
 use opentelemetry::{
-    Context,
+    Context, global,
     propagation::{Extractor, Injector},
 };
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
@@ -68,7 +68,7 @@ impl Extractor for MapExtractor<'_> {
 pub fn current_trace_headers() -> Vec<(String, String)> {
     let cx = tracing::Span::current().context();
     let mut out = Vec::new();
-    opentelemetry::global::get_text_map_propagator(|prop| {
+    global::get_text_map_propagator(|prop| {
         prop.inject_context(&cx, &mut VecInjector(&mut out));
     });
     out
@@ -88,12 +88,12 @@ where
     let map: HashMap<String, String> = headers
         .into_iter()
         .filter_map(|(k, v)| {
-            std::str::from_utf8(v.as_ref())
+            from_utf8(v.as_ref())
                 .ok()
                 .map(|s| (k.to_owned(), s.to_owned()))
         })
         .collect();
-    opentelemetry::global::get_text_map_propagator(|prop| prop.extract(&MapExtractor(&map)))
+    global::get_text_map_propagator(|prop| prop.extract(&MapExtractor(&map)))
 }
 
 /// Make `span` a child of the trace that `headers` carries.
@@ -113,7 +113,11 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::iter;
+
     use opentelemetry::trace::{TraceContextExt as _, TraceId};
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    use tracing::subscriber;
 
     use super::*;
 
@@ -122,9 +126,7 @@ mod tests {
         // The global propagator is a no-op until one is installed; install the
         // W3C propagator (idempotent for our purposes) so extraction works even
         // when `init()` has not run in this test process.
-        opentelemetry::global::set_text_map_propagator(
-            opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-        );
+        global::set_text_map_propagator(TraceContextPropagator::new());
 
         let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
         let cx = extract_context([(TRACEPARENT, traceparent.as_bytes())]);
@@ -139,9 +141,7 @@ mod tests {
 
     #[test]
     fn extract_context_skips_non_utf8_and_missing() {
-        opentelemetry::global::set_text_map_propagator(
-            opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-        );
+        global::set_text_map_propagator(TraceContextPropagator::new());
         // Invalid UTF-8 header value is dropped, leaving no valid context.
         let cx = extract_context([(TRACEPARENT, [0xff, 0xfe].as_slice())]);
         assert2::assert!(!cx.span().span_context().is_valid());
@@ -157,16 +157,14 @@ mod tests {
         use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
         use tracing_subscriber::prelude::*;
 
-        opentelemetry::global::set_text_map_propagator(
-            opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-        );
+        global::set_text_map_propagator(TraceContextPropagator::new());
         let provider = SdkTracerProvider::builder()
             .with_sampler(Sampler::AlwaysOn)
             .build();
         let tracer = provider.tracer("propagation-test");
         let subscriber =
             tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer));
-        tracing::subscriber::with_default(subscriber, f);
+        subscriber::with_default(subscriber, f);
     }
 
     #[test]
@@ -182,9 +180,8 @@ mod tests {
     fn map_extractor_reads_values_and_lists_keys() {
         // get() returns the stored value (None when absent); keys() must list the
         // real header keys, not an empty/placeholder set.
-        let map: HashMap<String, String> = [(TRACEPARENT.to_owned(), "v".to_owned())]
-            .into_iter()
-            .collect();
+        let map: HashMap<String, String> =
+            iter::once((TRACEPARENT.to_owned(), "v".to_owned())).collect();
         let ex = MapExtractor(&map);
         assert2::assert!(ex.get(TRACEPARENT) == Some("v"));
         assert2::assert!(ex.get("absent").is_none());

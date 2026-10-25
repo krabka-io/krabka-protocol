@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     Decode, DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::update_raft_voter_response,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -23,16 +25,13 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct UpdateRaftVoterResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
-    pub current_leader: crate::owned::update_raft_voter_response::CurrentLeader,
+    pub current_leader: update_raft_voter_response::CurrentLeader,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl UpdateRaftVoterResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_raft_voter_response::UpdateRaftVoterResponse {
-        crate::owned::update_raft_voter_response::UpdateRaftVoterResponse {
+    pub fn to_owned(&self) -> update_raft_voter_response::UpdateRaftVoterResponse {
+        update_raft_voter_response::UpdateRaftVoterResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             current_leader: self.current_leader.clone(),
@@ -57,14 +56,14 @@ impl Encode for UpdateRaftVoterResponse {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -79,7 +78,7 @@ impl Encode for UpdateRaftVoterResponse {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 known_pairs.push((0, self.current_leader.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -109,7 +108,7 @@ impl<'de> DecodeBorrow<'de> for UpdateRaftVoterResponse {
                 0 => {
                     tag_current_leader = Some({
                         let b: &mut &[u8] = payload;
-                        crate::owned::update_raft_voter_response::CurrentLeader::decode(b, version)?
+                        update_raft_voter_response::CurrentLeader::decode(b, version)?
                     });
                     Ok(true)
                 }
@@ -134,8 +133,7 @@ impl UpdateRaftVoterResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.current_leader =
-                crate::owned::update_raft_voter_response::CurrentLeader::populated(version);
+            m.current_leader = update_raft_voter_response::CurrentLeader::populated(version);
         }
         m
     }
@@ -160,15 +158,12 @@ impl Default for CurrentLeader<'_> {
     }
 }
 impl CurrentLeader<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_raft_voter_response::CurrentLeader {
-        crate::owned::update_raft_voter_response::CurrentLeader {
+    pub fn to_owned(&self) -> update_raft_voter_response::CurrentLeader {
+        update_raft_voter_response::CurrentLeader {
             leader_id: (self.leader_id),
             leader_epoch: (self.leader_epoch),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -185,9 +180,9 @@ impl Encode for CurrentLeader<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -195,7 +190,7 @@ impl Encode for CurrentLeader<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

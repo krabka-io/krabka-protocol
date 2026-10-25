@@ -1,3 +1,5 @@
+use std::fmt;
+
 use krabka_units::ByteSize;
 
 use super::{
@@ -39,16 +41,16 @@ struct AwaitingOffer {
     authzid: Option<String>,
 }
 
-impl std::fmt::Debug for Establishing {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Establishing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Establishing")
             .field("max_recv", &self.max_recv)
             .finish_non_exhaustive()
     }
 }
 
-impl std::fmt::Debug for AwaitingOffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for AwaitingOffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AwaitingOffer")
             .field("max_recv", &self.max_recv)
             .finish_non_exhaustive()
@@ -107,8 +109,8 @@ pub enum GssapiClientExchange {
     AwaitingOffer(AwaitingOffer),
 }
 
-impl std::fmt::Debug for GssapiClientExchange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for GssapiClientExchange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Establishing(inner) => f
                 .debug_tuple("GssapiClientExchange::Establishing")

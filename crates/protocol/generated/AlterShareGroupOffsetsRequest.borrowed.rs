@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_share_group_offsets_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -27,15 +29,10 @@ pub struct AlterShareGroupOffsetsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterShareGroupOffsetsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequest {
-        crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequest {
-            group_id: (self.group_id).to_string(),
+    pub fn to_owned(&self) -> alter_share_group_offsets_request::AlterShareGroupOffsetsRequest {
+        alter_share_group_offsets_request::AlterShareGroupOffsetsRequest {
+            group_id: (self.group_id).to_owned(),
             topics: (self.topics)
                 .iter()
                 .map(AlterShareGroupOffsetsRequestTopic::to_owned)
@@ -55,22 +52,22 @@ impl Encode for AlterShareGroupOffsetsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,8 +83,7 @@ impl Encode for AlterShareGroupOffsetsRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -118,7 +114,7 @@ impl<'de> DecodeBorrow<'de> for AlterShareGroupOffsetsRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterShareGroupOffsetsRequestTopic::decode_borrow(
@@ -155,15 +151,12 @@ pub struct AlterShareGroupOffsetsRequestTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterShareGroupOffsetsRequestTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequestTopic {
-        crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequestTopic {
-            topic_name: (self.topic_name).to_string(),
+    ) -> alter_share_group_offsets_request::AlterShareGroupOffsetsRequestTopic {
+        alter_share_group_offsets_request::AlterShareGroupOffsetsRequestTopic {
+            topic_name: (self.topic_name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(AlterShareGroupOffsetsRequestPartition::to_owned)
@@ -177,22 +170,22 @@ impl Encode for AlterShareGroupOffsetsRequestTopic<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -208,8 +201,7 @@ impl Encode for AlterShareGroupOffsetsRequestTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -237,7 +229,7 @@ impl<'de> DecodeBorrow<'de> for AlterShareGroupOffsetsRequestTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterShareGroupOffsetsRequestPartition::decode_borrow(
@@ -274,15 +266,11 @@ pub struct AlterShareGroupOffsetsRequestPartition {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterShareGroupOffsetsRequestPartition {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequestPartition
-    {
-        crate::owned::alter_share_group_offsets_request::AlterShareGroupOffsetsRequestPartition {
+    ) -> alter_share_group_offsets_request::AlterShareGroupOffsetsRequestPartition {
+        alter_share_group_offsets_request::AlterShareGroupOffsetsRequestPartition {
             partition_index: (self.partition_index),
             start_offset: (self.start_offset),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -300,7 +288,7 @@ impl Encode for AlterShareGroupOffsetsRequestPartition {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

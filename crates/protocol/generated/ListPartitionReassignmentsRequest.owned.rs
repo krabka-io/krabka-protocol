@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -53,17 +57,17 @@ impl Encode for ListPartitionReassignmentsRequest {
         if version >= 0 {
             {
                 let len = (self.topics).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.topics {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -76,10 +80,7 @@ impl Encode for ListPartitionReassignmentsRequest {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.topics).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -107,7 +108,7 @@ impl Decode<'_> for ListPartitionReassignmentsRequest {
         }
         if version >= 0 {
             out.topics = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -151,22 +152,22 @@ impl Encode for ListPartitionReassignmentsTopics {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_indexes).len(), flex);
+                put_array_len(buf, (self.partition_indexes).len(), flex)?;
                 for it in &self.partition_indexes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -182,10 +183,7 @@ impl Encode for ListPartitionReassignmentsTopics {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_indexes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_indexes).len(), flex);
                 let body: usize = (self.partition_indexes).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -210,7 +208,7 @@ impl Decode<'_> for ListPartitionReassignmentsTopics {
         }
         if version >= 0 {
             out.partition_indexes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -230,7 +228,7 @@ impl ListPartitionReassignmentsTopics {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partition_indexes = vec![1i32];
@@ -244,8 +242,8 @@ impl ListPartitionReassignmentsTopics {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(60_000));
-    obj.insert("topics".to_string(), ::serde_json::Value::Null);
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(60_000));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ListPartitionReassignmentsRequest {

@@ -3,19 +3,29 @@ use bytes::BufMut;
 
 use crate::{
     Decode, DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::fetch_response,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, nullable_string_len, put_bytes,
-            put_compact_bytes, put_compact_nullable_bytes, put_compact_nullable_string,
-            put_compact_string, put_nullable_bytes, put_nullable_string, put_string, string_len,
+            compact_bytes_len_from_size, compact_nullable_string_len, compact_string_len,
+            nullable_string_len, put_bytes, put_compact_bytes, put_compact_nullable_bytes,
+            put_compact_nullable_string, put_compact_string, put_nullable_bytes,
+            put_nullable_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_compact_nullable_bytes_borrowed, get_compact_nullable_string_borrowed,
             get_compact_string_borrowed, get_nullable_bytes_borrowed, get_nullable_string_borrowed,
             get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
+        varint::uvarint_len,
     },
+    records::{RecordsError, RecordsPayloadBorrowed},
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 1;
@@ -33,26 +43,26 @@ pub struct FetchResponse<'a> {
     pub error_code: i16,
     pub session_id: i32,
     pub responses: Vec<FetchableTopicResponse<'a>>,
-    pub node_endpoints: Vec<crate::owned::fetch_response::NodeEndpoint>,
+    pub node_endpoints: Vec<fetch_response::NodeEndpoint>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FetchResponse<'_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::FetchResponse {
-        crate::owned::fetch_response::FetchResponse {
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_response::FetchResponse, RecordsError> {
+        Ok(fetch_response::FetchResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             session_id: (self.session_id),
             responses: (self.responses)
                 .iter()
                 .map(FetchableTopicResponse::to_owned)
-                .collect(),
+                .collect::<Result<_, _>>()?,
             node_endpoints: self.node_endpoints.clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
 }
 impl Encode for FetchResponse<'_> {
@@ -75,21 +85,18 @@ impl Encode for FetchResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 16 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 16 && !(is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.node_endpoints).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                         let body: usize = (self.node_endpoints)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -98,21 +105,17 @@ impl Encode for FetchResponse<'_> {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.node_endpoints).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.node_endpoints).len(), flex)?;
                             for it in &self.node_endpoints {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -130,8 +133,7 @@ impl Encode for FetchResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -141,12 +143,9 @@ impl Encode for FetchResponse<'_> {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 16 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 16 && !(is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.node_endpoints).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                     let body: usize = (self.node_endpoints)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -180,7 +179,7 @@ impl<'de> DecodeBorrow<'de> for FetchResponse<'de> {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(FetchableTopicResponse::decode_borrow(buf, version)?);
@@ -195,12 +194,10 @@ impl<'de> DecodeBorrow<'de> for FetchResponse<'de> {
                     tag_node_endpoints = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(crate::owned::fetch_response::NodeEndpoint::decode(
-                                    b, version,
-                                )?);
+                                v.push(fetch_response::NodeEndpoint::decode(b, version)?);
                             }
                             v
                         }
@@ -235,9 +232,7 @@ impl FetchResponse<'_> {
             m.responses = vec![FetchableTopicResponse::populated(version)];
         }
         if version >= 16 {
-            m.node_endpoints = vec![crate::owned::fetch_response::NodeEndpoint::populated(
-                version,
-            )];
+            m.node_endpoints = vec![fetch_response::NodeEndpoint::populated(version)];
         }
         m
     }
@@ -245,25 +240,25 @@ impl FetchResponse<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FetchableTopicResponse<'a> {
     pub topic: &'a str,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FetchableTopicResponse<'_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::FetchableTopicResponse {
-        crate::owned::fetch_response::FetchableTopicResponse {
-            topic: (self.topic).to_string(),
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_response::FetchableTopicResponse, RecordsError> {
+        Ok(fetch_response::FetchableTopicResponse {
+            topic: (self.topic).to_owned(),
             topic_id: (self.topic_id),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionData::to_owned)
-                .collect(),
+                .collect::<Result<_, _>>()?,
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
 }
 impl Encode for FetchableTopicResponse<'_> {
@@ -271,25 +266,25 @@ impl Encode for FetchableTopicResponse<'_> {
         let flex = version >= 12;
         if (0..=12).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, self.topic);
+                put_compact_string(buf, self.topic)?;
             } else {
-                let () = put_string(buf, self.topic);
+                put_string(buf, self.topic)?;
             }
         }
         if version >= 13 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -308,8 +303,7 @@ impl Encode for FetchableTopicResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -336,11 +330,11 @@ impl<'de> DecodeBorrow<'de> for FetchableTopicResponse<'de> {
             };
         }
         if version >= 13 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -363,7 +357,7 @@ impl FetchableTopicResponse<'_> {
             m.topic = "x";
         }
         if version >= 13 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -380,7 +374,7 @@ pub struct PartitionData<'a> {
     pub log_start_offset: i64,
     pub aborted_transactions: Option<Vec<AbortedTransaction>>,
     pub preferred_read_replica: i32,
-    pub records: Option<crate::records::RecordsPayloadBorrowed<'a>>,
+    pub records: Option<RecordsPayloadBorrowed<'a>>,
     pub diverging_epoch: EpochEndOffset,
     pub current_leader: LeaderIdAndEpoch,
     pub snapshot_id: SnapshotId,
@@ -405,12 +399,12 @@ impl Default for PartitionData<'_> {
     }
 }
 impl<'a> PartitionData<'a> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::PartitionData {
-        crate::owned::fetch_response::PartitionData {
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_response::PartitionData, RecordsError> {
+        Ok(fetch_response::PartitionData {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
             high_watermark: (self.high_watermark),
@@ -422,12 +416,13 @@ impl<'a> PartitionData<'a> {
             preferred_read_replica: (self.preferred_read_replica),
             records: (self.records)
                 .as_ref()
-                .map(|rb| rb.to_owned().expect("records to_owned")),
+                .map(RecordsPayloadBorrowed::to_owned)
+                .transpose()?,
             diverging_epoch: (self.diverging_epoch).to_owned(),
             current_leader: (self.current_leader).to_owned(),
             snapshot_id: (self.snapshot_id).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -463,13 +458,13 @@ impl<'a> PartitionData<'a> {
         if version >= 4 {
             {
                 let len = (self.aborted_transactions).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.aborted_transactions {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -488,54 +483,60 @@ impl<'a> PartitionData<'a> {
             match &self.records {
                 None => {
                     if flex {
-                        let () = put_compact_nullable_bytes(buf, None);
+                        put_compact_nullable_bytes(buf, None)?;
                     } else {
-                        let () = put_nullable_bytes(buf, None);
+                        put_nullable_bytes(buf, None)?;
                     }
                 }
                 Some(__rb) => {
                     let mut __rb_buf = bytes::BytesMut::new();
-                    <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(
+                    <RecordsPayloadBorrowed as crate::Encode>::encode(
                         __rb,
                         &mut __rb_buf,
                         version,
                     )?;
                     if flex {
-                        let () = put_compact_bytes(buf, &__rb_buf);
+                        put_compact_bytes(buf, &__rb_buf)?;
                     } else {
-                        let () = put_bytes(buf, &__rb_buf);
+                        put_bytes(buf, &__rb_buf)?;
                     }
                 }
             }
         }
         Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.diverging_epoch)) {
+            if !(is_default(&self.diverging_epoch)) {
                 let payload = encode_to_bytes(self.diverging_epoch.encoded_len(version), |b| {
                     self.diverging_epoch.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
-            if !(crate::codegen_helpers::is_default(&self.snapshot_id)) {
+            if !(is_default(&self.snapshot_id)) {
                 let payload = encode_to_bytes(self.snapshot_id.encoded_len(version), |b| {
                     self.snapshot_id.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(2, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -600,7 +601,7 @@ impl<'a> PartitionData<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 4 {
             out.aborted_transactions = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -643,7 +644,12 @@ impl<'a> PartitionData<'a> {
                     None => None,
                     Some(__rb_slice) => {
                         let mut __rb_cur = __rb_slice;
-                        Some(<crate::records::RecordsPayloadBorrowed as crate::DecodeBorrow>::decode_borrow(&mut __rb_cur, version)?)
+                        Some(
+                            <RecordsPayloadBorrowed as crate::DecodeBorrow>::decode_borrow(
+                                &mut __rb_cur,
+                                version,
+                            )?,
+                        )
                     }
                 }
             };
@@ -708,7 +714,7 @@ impl Encode for PartitionData<'_> {
         self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex)?;
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -732,10 +738,7 @@ impl Encode for PartitionData<'_> {
         if version >= 4 {
             n += {
                 let opt: Option<&Vec<_>> = (self.aborted_transactions).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -745,36 +748,28 @@ impl Encode for PartitionData<'_> {
             n += 4;
         }
         if version >= 0 {
-            n += match &self.records {
-                None => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(0)
-                    } else {
-                        4
-                    }
-                }
-                Some(__rb) => {
+            n += (self.records).as_ref().map_or_else(
+                || if flex { uvarint_len(0) } else { 4 },
+                |__rb| {
                     let __rb_len =
-                        <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(
-                            __rb, version,
-                        );
+                        <RecordsPayloadBorrowed as crate::Encode>::encoded_len(__rb, version);
                     if flex {
-                        crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                        compact_bytes_len_from_size(__rb_len)
                     } else {
                         4 + __rb_len
                     }
-                }
-            };
+                },
+            );
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.diverging_epoch)) {
+            if !(is_default(&self.diverging_epoch)) {
                 known_pairs.push((0, self.diverging_epoch.encoded_len(version)));
             }
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 known_pairs.push((1, self.current_leader.encoded_len(version)));
             }
-            if !(crate::codegen_helpers::is_default(&self.snapshot_id)) {
+            if !(is_default(&self.snapshot_id)) {
                 known_pairs.push((2, self.snapshot_id.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -852,12 +847,9 @@ impl Default for EpochEndOffset {
     }
 }
 impl EpochEndOffset {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::EpochEndOffset {
-        crate::owned::fetch_response::EpochEndOffset {
+    pub fn to_owned(&self) -> fetch_response::EpochEndOffset {
+        fetch_response::EpochEndOffset {
             epoch: (self.epoch),
             end_offset: (self.end_offset),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -875,7 +867,7 @@ impl Encode for EpochEndOffset {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -941,12 +933,9 @@ impl Default for LeaderIdAndEpoch {
     }
 }
 impl LeaderIdAndEpoch {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::LeaderIdAndEpoch {
-        crate::owned::fetch_response::LeaderIdAndEpoch {
+    pub fn to_owned(&self) -> fetch_response::LeaderIdAndEpoch {
+        fetch_response::LeaderIdAndEpoch {
             leader_id: (self.leader_id),
             leader_epoch: (self.leader_epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -964,7 +953,7 @@ impl Encode for LeaderIdAndEpoch {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -1030,12 +1019,9 @@ impl Default for SnapshotId {
     }
 }
 impl SnapshotId {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::SnapshotId {
-        crate::owned::fetch_response::SnapshotId {
+    pub fn to_owned(&self) -> fetch_response::SnapshotId {
+        fetch_response::SnapshotId {
             end_offset: (self.end_offset),
             epoch: (self.epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -1053,7 +1039,7 @@ impl Encode for SnapshotId {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -1110,12 +1096,9 @@ pub struct AbortedTransaction {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AbortedTransaction {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::AbortedTransaction {
-        crate::owned::fetch_response::AbortedTransaction {
+    pub fn to_owned(&self) -> fetch_response::AbortedTransaction {
+        fetch_response::AbortedTransaction {
             producer_id: (self.producer_id),
             first_offset: (self.first_offset),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -1133,7 +1116,7 @@ impl Encode for AbortedTransaction {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -1192,16 +1175,13 @@ pub struct NodeEndpoint<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl NodeEndpoint<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_response::NodeEndpoint {
-        crate::owned::fetch_response::NodeEndpoint {
+    pub fn to_owned(&self) -> fetch_response::NodeEndpoint {
+        fetch_response::NodeEndpoint {
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
-            rack: (self.rack).map(std::string::ToString::to_string),
+            rack: (self.rack).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -1214,9 +1194,9 @@ impl Encode for NodeEndpoint<'_> {
         }
         if version >= 16 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 16 {
@@ -1224,14 +1204,14 @@ impl Encode for NodeEndpoint<'_> {
         }
         if version >= 16 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack);
+                put_compact_nullable_string(buf, self.rack)?;
             } else {
-                let () = put_nullable_string(buf, self.rack);
+                put_nullable_string(buf, self.rack)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

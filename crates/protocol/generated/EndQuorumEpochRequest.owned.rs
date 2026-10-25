@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_u16, put_i32, put_u16},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +13,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -43,30 +45,30 @@ impl Encode for EndQuorumEpochRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id.as_deref());
+                put_compact_nullable_string(buf, self.cluster_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id.as_deref());
+                put_nullable_string(buf, self.cluster_id.as_deref())?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.leader_endpoints).len(), flex);
+                put_array_len(buf, (self.leader_endpoints).len(), flex)?;
                 for it in &self.leader_endpoints {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,18 +84,14 @@ impl Encode for EndQuorumEpochRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.leader_endpoints).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.leader_endpoints).len(), flex);
                 let body: usize = (self.leader_endpoints)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -127,7 +125,7 @@ impl Decode<'_> for EndQuorumEpochRequest {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode(buf, version)?);
@@ -137,7 +135,7 @@ impl Decode<'_> for EndQuorumEpochRequest {
         }
         if version >= 1 {
             out.leader_endpoints = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(LeaderEndpoint::decode(buf, version)?);
@@ -157,7 +155,7 @@ impl EndQuorumEpochRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.topics = vec![TopicData::populated(version)];
@@ -179,22 +177,22 @@ impl Encode for TopicData {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic_name);
+                put_compact_string(buf, &self.topic_name)?;
             } else {
-                let () = put_string(buf, &self.topic_name);
+                put_string(buf, &self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -210,8 +208,7 @@ impl Encode for TopicData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -239,7 +236,7 @@ impl Decode<'_> for TopicData {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode(buf, version)?);
@@ -259,7 +256,7 @@ impl TopicData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_name = "x".to_string();
+            m.topic_name = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -290,31 +287,23 @@ impl Encode for PartitionData {
         }
         if version == 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.preferred_successors).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.preferred_successors).len(), flex)?;
                 for it in &self.preferred_successors {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.preferred_candidates).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.preferred_candidates).len(), flex)?;
                 for it in &self.preferred_candidates {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -332,20 +321,14 @@ impl Encode for PartitionData {
         }
         if version == 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.preferred_successors).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.preferred_successors).len(), flex);
                 let body: usize = (self.preferred_successors).iter().map(|_| 4).sum();
                 prefix + body
             };
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.preferred_candidates).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.preferred_candidates).len(), flex);
                 let body: usize = (self.preferred_candidates)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -375,7 +358,7 @@ impl Decode<'_> for PartitionData {
         }
         if version == 0 {
             out.preferred_successors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -385,7 +368,7 @@ impl Decode<'_> for PartitionData {
         }
         if version >= 1 {
             out.preferred_candidates = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ReplicaInfo::decode(buf, version)?);
@@ -425,7 +408,7 @@ impl PartitionData {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReplicaInfo {
     pub candidate_id: i32,
-    pub candidate_directory_id: crate::primitives::uuid::Uuid,
+    pub candidate_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for ReplicaInfo {
@@ -435,11 +418,11 @@ impl Encode for ReplicaInfo {
             put_i32(buf, self.candidate_id);
         }
         if version >= 1 {
-            crate::primitives::uuid::put_uuid(buf, self.candidate_directory_id);
+            put_uuid(buf, self.candidate_directory_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -467,7 +450,7 @@ impl Decode<'_> for ReplicaInfo {
             out.candidate_id = get_i32(buf)?;
         }
         if version >= 1 {
-            out.candidate_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.candidate_directory_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -484,7 +467,7 @@ impl ReplicaInfo {
             m.candidate_id = 1i32;
         }
         if version >= 1 {
-            m.candidate_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.candidate_directory_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -501,16 +484,16 @@ impl Encode for LeaderEndpoint {
         let flex = version >= 1;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 1 {
@@ -518,7 +501,7 @@ impl Encode for LeaderEndpoint {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -582,10 +565,10 @@ impl LeaderEndpoint {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 1 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 1 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 1 {
             m.port = 1u16;
@@ -599,11 +582,11 @@ impl LeaderEndpoint {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("clusterId".to_owned(), ::serde_json::Value::Null);
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 1 {
         obj.insert(
-            "leaderEndpoints".to_string(),
+            "leaderEndpoints".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }

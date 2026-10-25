@@ -4,7 +4,11 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 56;
@@ -51,15 +55,15 @@ impl Encode for AlterPartitionRequest {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -74,8 +78,7 @@ impl Encode for AlterPartitionRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -105,7 +108,7 @@ impl Decode<'_> for AlterPartitionRequest {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode(buf, version)?);
@@ -138,7 +141,7 @@ impl AlterPartitionRequest {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicData {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -146,19 +149,19 @@ impl Encode for TopicData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 2 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -170,8 +173,7 @@ impl Encode for TopicData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -191,11 +193,11 @@ impl Decode<'_> for TopicData {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 2 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode(buf, version)?);
@@ -215,7 +217,7 @@ impl TopicData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 2 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -244,23 +246,19 @@ impl Encode for PartitionData {
         }
         if (0..=2).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.new_isr).len(), flex);
+                put_array_len(buf, (self.new_isr).len(), flex)?;
                 for it in &self.new_isr {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if version >= 3 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.new_isr_with_epochs).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.new_isr_with_epochs).len(), flex)?;
                 for it in &self.new_isr_with_epochs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i8(buf, self.leader_recovery_state);
@@ -270,7 +268,7 @@ impl Encode for PartitionData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -285,18 +283,14 @@ impl Encode for PartitionData {
         }
         if (0..=2).contains(&version) {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.new_isr).len(), flex);
+                let prefix = array_len_prefix_len((self.new_isr).len(), flex);
                 let body: usize = (self.new_isr).iter().map(|_| 4).sum();
                 prefix + body
             };
         }
         if version >= 3 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.new_isr_with_epochs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.new_isr_with_epochs).len(), flex);
                 let body: usize = (self.new_isr_with_epochs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -329,7 +323,7 @@ impl Decode<'_> for PartitionData {
         }
         if (0..=2).contains(&version) {
             out.new_isr = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -339,7 +333,7 @@ impl Decode<'_> for PartitionData {
         }
         if version >= 3 {
             out.new_isr_with_epochs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(BrokerState::decode(buf, version)?);
@@ -411,7 +405,7 @@ impl Encode for BrokerState {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -467,9 +461,9 @@ impl BrokerState {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("brokerId".to_string(), ::serde_json::json!(0));
-    obj.insert("brokerEpoch".to_string(), ::serde_json::json!(-1));
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("brokerEpoch".to_owned(), ::serde_json::json!(-1));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for AlterPartitionRequest {

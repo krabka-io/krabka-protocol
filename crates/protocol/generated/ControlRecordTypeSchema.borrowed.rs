@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::control_record_type_schema,
     primitives::fixed::{get_i16, put_i16},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -19,12 +20,9 @@ pub struct ControlRecordTypeSchema {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ControlRecordTypeSchema {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::control_record_type_schema::ControlRecordTypeSchema {
-        crate::owned::control_record_type_schema::ControlRecordTypeSchema {
+    pub fn to_owned(&self) -> control_record_type_schema::ControlRecordTypeSchema {
+        control_record_type_schema::ControlRecordTypeSchema {
             type_: (self.type_),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }

@@ -34,7 +34,7 @@ pub fn crc32c_append(seed: u32, data: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
+    use proptest::{collection, prelude::*};
 
     use super::*;
 
@@ -58,7 +58,7 @@ mod tests {
     proptest! {
         #[test]
         fn matches_reference_for_unaligned_and_seeded_chunks(
-            data in proptest::collection::vec(any::<u8>(), 0..131_072),
+            data in collection::vec(any::<u8>(), 0..131_072),
             seed in any::<u32>(),
             split in any::<usize>(),
             prefix in 0..64_usize,

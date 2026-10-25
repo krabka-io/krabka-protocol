@@ -201,18 +201,18 @@ pub fn produce_framing(mut body: Bytes, version: i16) -> Result<ProduceFraming, 
     let mut topics = Vec::with_capacity(topic_count);
     for topic_index in 0..topic_count {
         // name: STRING/COMPACT_STRING for v<=12; topic_id (16 bytes) for v>=13.
-        let mut name = String::new();
-        if version <= 12 {
-            name = if flex {
-                get_compact_nullable_string_owned(buf)?.unwrap_or_default()
-            } else {
-                get_nullable_string_owned(buf)?.unwrap_or_default()
-            };
-        }
-        let mut topic_id = Uuid::ZERO;
-        if version >= 13 {
-            topic_id = get_uuid(buf)?;
-        }
+        let name = if version > 12 {
+            String::new()
+        } else if flex {
+            get_compact_nullable_string_owned(buf)?.unwrap_or_default()
+        } else {
+            get_nullable_string_owned(buf)?.unwrap_or_default()
+        };
+        let topic_id = if version >= 13 {
+            get_uuid(buf)?
+        } else {
+            Uuid::ZERO
+        };
 
         let partition_count = get_array_len(buf, flex)?;
         let mut partitions = Vec::with_capacity(partition_count);
@@ -263,11 +263,11 @@ fn read_nullable_bytes_slice(buf: &mut Bytes, flex: bool) -> Result<Option<Bytes
         }
         (raw - 1) as usize
     } else {
-        let n = get_i32(buf)?;
-        if n < 0 {
+        // A negative length is null.
+        let Ok(n) = usize::try_from(get_i32(buf)?) else {
             return Ok(None);
-        }
-        usize::try_from(n).expect("non-negative i32 fits usize")
+        };
+        n
     };
     if buf.remaining() < len {
         return Err(ProtocolError::UnexpectedEof {
@@ -319,7 +319,7 @@ mod tests {
         req.encode(&mut buf, version).unwrap();
         let body = buf.freeze();
 
-        let slices = produce_record_slices(body.clone(), version).unwrap();
+        let slices = produce_record_slices(body, version).unwrap();
 
         // Flatten the request's (topic, partition) records in wire order.
         let mut expected: Vec<Option<Bytes>> = Vec::new();
@@ -348,14 +348,14 @@ mod tests {
     fn multi_partition_request(version: i16) -> ProduceRequest {
         let topic = |name: &str, parts: usize| TopicProduceData {
             name: if version <= 12 {
-                name.to_string()
+                name.to_owned()
             } else {
                 String::new()
             },
             topic_id: if version >= 13 {
-                crate::primitives::uuid::Uuid([7u8; 16])
+                Uuid([7u8; 16])
             } else {
-                crate::primitives::uuid::Uuid::ZERO
+                Uuid::ZERO
             },
             partition_data: (0..parts)
                 .map(|i| PartitionProduceData {
@@ -391,11 +391,11 @@ mod tests {
     fn handles_null_records_field() {
         let version = 9;
         let req = ProduceRequest {
-            transactional_id: Some("txn".to_string()),
+            transactional_id: Some("txn".to_owned()),
             acks: 1,
             timeout_ms: 0,
             topic_data: vec![TopicProduceData {
-                name: "t".to_string(),
+                name: "t".to_owned(),
                 partition_data: vec![PartitionProduceData {
                     index: 0,
                     records: None,
@@ -422,7 +422,7 @@ mod tests {
         let body_start = body.as_ptr() as usize;
         let body_end = body_start + body.len();
 
-        let slices = produce_record_slices(body.clone(), version).unwrap();
+        let slices = produce_record_slices(body, version).unwrap();
         let first = slices[0].records.as_ref().unwrap();
         let ptr = first.as_ptr() as usize;
         assert2::assert!(ptr >= body_start && ptr < body_end);
@@ -437,7 +437,7 @@ mod tests {
         req.encode(&mut buf, version).unwrap();
         let body = buf.freeze();
 
-        let framing = produce_framing(body.clone(), version).unwrap();
+        let framing = produce_framing(body, version).unwrap();
 
         let expected = ProduceFraming {
             transactional_id: req.transactional_id.clone(),
@@ -483,11 +483,11 @@ mod tests {
     fn framing_captures_transactional_id_and_acks() {
         let version = 9;
         let req = ProduceRequest {
-            transactional_id: Some("my-txn".to_string()),
+            transactional_id: Some("my-txn".to_owned()),
             acks: -1,
             timeout_ms: 7777,
             topic_data: vec![TopicProduceData {
-                name: "t".to_string(),
+                name: "t".to_owned(),
                 partition_data: vec![PartitionProduceData {
                     index: 3,
                     records: None,
@@ -501,11 +501,11 @@ mod tests {
         req.encode(&mut buf, version).unwrap();
         let framing = produce_framing(buf.freeze(), version).unwrap();
         let expected = ProduceFraming {
-            transactional_id: Some("my-txn".to_string()),
+            transactional_id: Some("my-txn".to_owned()),
             acks: -1,
             timeout_ms: 7777,
             topics: vec![ProduceFramingTopic {
-                name: "t".to_string(),
+                name: "t".to_owned(),
                 topic_id: Uuid::ZERO,
                 partitions: vec![PartitionRecordSlice {
                     topic_index: 0,

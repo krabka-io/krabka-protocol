@@ -1,9 +1,16 @@
-use std::io::Write as _;
+#![cfg(test)]
+
+use std::io::{Read, Write as _};
 
 use assert2::assert;
 use bytes::Bytes;
 use krabka_compression::{CompressionError, CompressionType, decompress};
 use krabka_units::{ByteSize, convert::ByteSizeExt as _};
+use zstd::{
+    bulk,
+    stream::{Decoder, Encoder},
+    zstd_safe,
+};
 const MAX_DIRECT_OUTPUT: usize = 128 * 1024;
 fn original_decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionError> {
     if data.is_empty() {
@@ -11,24 +18,24 @@ fn original_decompress(data: &[u8], max_output: usize) -> Result<Bytes, Compress
     }
     // The streaming path owns errors: malformed frames can differ in when
     // direct and incremental decoders report a size mismatch or output cap.
-    if let Ok(Some(size)) = zstd::zstd_safe::get_frame_content_size(data)
+    if let Ok(Some(size)) = zstd_safe::get_frame_content_size(data)
         && let Ok(size) = usize::try_from(size)
         && size <= max_output.min(MAX_DIRECT_OUTPUT)
         // Single-segment frames use the content size as their window size.
         // Other frames retain the streaming decoder's window limit.
         && data.get(4).is_some_and(|descriptor| descriptor & 0x20 != 0)
-        && zstd::zstd_safe::find_frame_compressed_size(data) == Ok(data.len())
-        && let Ok(out) = zstd::bulk::decompress(data, size)
+        && zstd_safe::find_frame_compressed_size(data) == Ok(data.len())
+        && let Ok(out) = bulk::decompress(data, size)
     {
         return Ok(Bytes::from(out));
     }
-    let decoder = zstd::stream::Decoder::new(data)
-        .map_err(|e| CompressionError::InvalidData(format!("zstd open: {e}")))?;
+    let decoder =
+        Decoder::new(data).map_err(|e| CompressionError::InvalidData(format!("zstd open: {e}")))?;
     // Read at most `max_output + 1` bytes so we can detect overflow without
     // materializing the oversized output.
-    let mut limited = std::io::Read::take(decoder, (max_output as u64).saturating_add(1));
+    let mut limited = Read::take(decoder, (max_output as u64).saturating_add(1));
     let mut out = Vec::with_capacity(data.len().saturating_mul(2).min(max_output));
-    std::io::Read::read_to_end(&mut limited, &mut out)
+    Read::read_to_end(&mut limited, &mut out)
         .map_err(|e| CompressionError::InvalidData(format!("zstd decode: {e}")))?;
     if out.len() > max_output {
         return Err(CompressionError::TooLarge { limit: max_output });
@@ -58,7 +65,7 @@ fn zstd_input_boundaries_preserve_complete_results_and_errors() {
                 .collect();
             for known_size in [false, true] {
                 for checksum in [false, true] {
-                    let mut encoder = zstd::stream::Encoder::new(Vec::new(), 3).unwrap();
+                    let mut encoder = Encoder::new(Vec::new(), 3).unwrap();
                     encoder.include_checksum(checksum).unwrap();
                     if known_size {
                         encoder
@@ -112,7 +119,7 @@ fn zstd_input_boundaries_preserve_complete_results_and_errors() {
                     trailing.extend_from_slice(&[0; 32]);
                     variants.push(trailing);
                     let mut concat = wire.clone();
-                    concat.extend_from_slice(&zstd::bulk::compress(b"another frame", 3).unwrap());
+                    concat.extend_from_slice(&bulk::compress(b"another frame", 3).unwrap());
                     variants.push(concat);
                     let mut skipped = 0x184D_2A50_u32.to_le_bytes().to_vec();
                     skipped.extend_from_slice(&4_u32.to_le_bytes());

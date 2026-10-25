@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::streams_group_topology_description_update_request,
     primitives::{
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -29,14 +30,11 @@ pub struct StreamsGroupTopologyDescriptionUpdateRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl StreamsGroupTopologyDescriptionUpdateRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest{
-        crate::owned::streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest {
-            group_id: (self.group_id).to_string(),
-            member_id: (self.member_id).to_string(),
+    pub fn to_owned(&self) -> streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest{
+        streams_group_topology_description_update_request::StreamsGroupTopologyDescriptionUpdateRequest {
+            group_id: (self.group_id).to_owned(),
+            member_id: (self.member_id).to_owned(),
             topology_epoch: (self.topology_epoch),
             topology_description: (self.topology_description).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -54,16 +52,16 @@ impl Encode for StreamsGroupTopologyDescriptionUpdateRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 0 {
@@ -74,7 +72,7 @@ impl Encode for StreamsGroupTopologyDescriptionUpdateRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

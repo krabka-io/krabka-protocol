@@ -5,10 +5,15 @@
 //! differential sweep skips it. These tests pin the wire shape directly: every
 //! valid version round-trips through the owned and borrowed codecs, and one
 //! hand-encoded frame per direction fixes the exact bytes Kafka writes.
+#![cfg(test)]
 
 use bytes::BytesMut;
 use krabka_protocol::{
     ApiKey, Decode, DecodeBorrow, Encode, UnknownTaggedFields,
+    borrowed::{
+        unregister_controller_request::UnregisterControllerRequest as BorrowedRequest,
+        unregister_controller_response::UnregisterControllerResponse as BorrowedResponse,
+    },
     owned::{
         unregister_controller_request::{self, UnregisterControllerRequest},
         unregister_controller_response::{self, UnregisterControllerResponse},
@@ -95,11 +100,7 @@ fn request_round_trips_at_every_version() {
             assert2::assert!(decode::<UnregisterControllerRequest>(&bytes, version) == *msg);
 
             let mut cur: &[u8] = &bytes;
-            let borrowed =
-                krabka_protocol::borrowed::unregister_controller_request::UnregisterControllerRequest::decode_borrow(
-                    &mut cur, version,
-                )
-                .unwrap();
+            let borrowed = BorrowedRequest::decode_borrow(&mut cur, version).unwrap();
             assert2::assert!(cur.is_empty());
             assert2::assert!(borrowed.to_owned() == *msg);
             assert2::assert!(encode(&borrowed, version) == bytes);
@@ -130,11 +131,7 @@ fn response_round_trips_at_every_version() {
             assert2::assert!(decode::<UnregisterControllerResponse>(&bytes, version) == *msg);
 
             let mut cur: &[u8] = &bytes;
-            let borrowed =
-                krabka_protocol::borrowed::unregister_controller_response::UnregisterControllerResponse::decode_borrow(
-                    &mut cur, version,
-                )
-                .unwrap();
+            let borrowed = BorrowedResponse::decode_borrow(&mut cur, version).unwrap();
             assert2::assert!(cur.is_empty());
             assert2::assert!(borrowed.to_owned() == *msg);
             assert2::assert!(encode(&borrowed, version) == bytes);

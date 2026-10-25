@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::end_transaction_record,
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -18,12 +19,9 @@ pub struct EndTransactionRecord {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EndTransactionRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_transaction_record::EndTransactionRecord {
-        crate::owned::end_transaction_record::EndTransactionRecord {
+    pub fn to_owned(&self) -> end_transaction_record::EndTransactionRecord {
+        end_transaction_record::EndTransactionRecord {
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -38,7 +36,7 @@ impl Encode for EndTransactionRecord {
         let flex = is_flexible(version);
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

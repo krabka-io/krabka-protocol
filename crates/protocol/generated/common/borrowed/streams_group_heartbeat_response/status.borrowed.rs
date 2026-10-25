@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_heartbeat_response::status,
     primitives::{
         fixed::{get_i8, put_i8},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -17,16 +18,11 @@ pub struct Status<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Status<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_heartbeat_response::status::Status {
-        crate::owned::common::streams_group_heartbeat_response::status::Status {
+    pub fn to_owned(&self) -> status::Status {
+        status::Status {
             status_code: (self.status_code),
-            status_detail: (self.status_detail).to_string(),
+            status_detail: (self.status_detail).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -39,14 +35,14 @@ impl Encode for Status<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.status_detail);
+                put_compact_string(buf, self.status_detail)?;
             } else {
-                let () = put_string(buf, self.status_detail);
+                put_string(buf, self.status_detail)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

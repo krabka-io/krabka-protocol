@@ -48,6 +48,8 @@
 //! - `DelegationToken`: `KafkaPrincipal`s map through their `Type:Name`
 //!   string form.
 
+use std::{collections::BTreeMap, vec};
+
 use bytes::Bytes;
 use krabka_protocol::{
     owned::{
@@ -70,6 +72,7 @@ use krabka_protocol::{
             RegisterControllerRecord,
         },
         remove_access_control_entry_record::RemoveAccessControlEntryRecord,
+        remove_delegation_token_record::RemoveDelegationTokenRecord,
         remove_topic_record::RemoveTopicRecord,
         remove_user_scram_credential_record::RemoveUserScramCredentialRecord,
         topic_record::TopicRecord as KTopicRecord,
@@ -87,14 +90,20 @@ use wincode::{SchemaRead, Serialize as _, config::DefaultConfig};
 use crate::{
     MetadataImage,
     acl::{AclEntry, AclEntryFilter, AclOperation, PatternType, PermissionType, ResourceType},
+    directory_id::MIGRATING,
+    metadata_version::{
+        CORDONED_LOG_DIRS_MIN_LEVEL, DIRECTORY_ASSIGNMENT_MIN_LEVEL, ELR_MIN_LEVEL,
+        METADATA_VERSION_MAX,
+    },
     records::{
         BrokerConfigRecord, BrokerEndpoint, BrokerRegistrationChangeRecord as ChangeRecord,
-        BrokerRegistrationRecord, ClientQuotaRecord, ControllerRegistrationRecord,
-        DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord, DeleteScramCredentialRecord,
-        DeleteTopicRecord, FeatureLevelRecord, FencingChange, GroupConfigRecord, LeaderEpoch,
-        LeaderRecoveryState, MetadataRecord, NodeId, PartitionDirAssignmentRecord, PartitionRecord,
-        ProducerIdsRecord, QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord,
-        UnregisterBrokerRecord, UnregisterControllerRecord,
+        BrokerRegistrationRecord, ClientMetricsConfigRecord, ClientQuotaRecord,
+        ControllerRegistrationRecord, DEFAULT_BROKER_CONFIG_NODE_ID, DelegationTokenRecord,
+        DeleteDelegationTokenRecord, DeleteScramCredentialRecord, DeleteTopicRecord,
+        FeatureLevelRecord, FencingChange, GroupConfigRecord, LeaderEpoch, LeaderRecoveryState,
+        MetadataRecord, NodeId, PartitionDirAssignmentRecord, PartitionRecord, ProducerIdsRecord,
+        QuotaEntity, ScramCredentialRecord, TopicConfigRecord, TopicRecord, UnregisterBrokerRecord,
+        UnregisterControllerRecord,
     },
 };
 
@@ -426,15 +435,17 @@ pub fn to_kraft_records(
 }
 
 /// The engine/snapshot framing entrypoint: translate one [`MetadataRecord`] to
-/// the KIP-631 value byte blobs to put on the log — one per fanned-out record
-/// (most records yield one; whole-map configs yield one per key plus
-/// tombstones, and `V1DeleteAccessControlEntry` yields one per matched ACL).
+/// the KIP-631 value byte blobs to put on the log.
+///
+/// There is one blob per fanned-out record (most records yield one; whole-map
+/// configs yield one per key plus tombstones, and `V1DeleteAccessControlEntry`
+/// yields one per matched ACL).
+///
 /// Multi-version metadata records are framed at the version selected by the
 /// image's finalized `metadata.version`; every other modeled record frames at
-/// apiVersion 0. Yields an empty `Vec` when a record
-/// fans out to nothing (an empty config clear with no prior keys, or a
-/// delete-ACL filter matching nothing) — callers treat an all-empty batch as a
-/// committed no-op.
+/// apiVersion 0. Yields an empty `Vec` when a record fans out to nothing (an
+/// empty config clear with no prior keys, or a delete-ACL filter matching
+/// nothing) — callers treat an all-empty batch as a committed no-op.
 ///
 /// A missing finalized metadata.version is treated as the latest supported
 /// level, matching standalone bootstrap. `Partition` and `PartitionChange` use
@@ -454,17 +465,17 @@ pub fn to_kraft_values(
 ) -> Result<Vec<Bytes>, TranslateError> {
     let metadata_version = image
         .finalized_metadata_version()
-        .unwrap_or(crate::metadata_version::METADATA_VERSION_MAX);
+        .unwrap_or(METADATA_VERSION_MAX);
     to_kraft_records(rec, image)?
         .into_iter()
         .map(|mut kr| {
             // A registration change carries log dirs only from 3.7-IV2 and
             // cordoned log dirs only from 4.3-IV0, like RegisterBroker below.
             if let KraftMetadataRecord::BrokerRegistrationChange(change) = &mut kr {
-                if metadata_version < crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL {
+                if metadata_version < DIRECTORY_ASSIGNMENT_MIN_LEVEL {
                     change.log_dirs.clear();
                 }
-                if metadata_version < crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                if metadata_version < CORDONED_LOG_DIRS_MIN_LEVEL {
                     change.cordoned_log_dirs = None;
                 }
             }
@@ -474,22 +485,15 @@ pub fn to_kraft_values(
                 }
                 KraftMetadataRecord::Partition(_) | KraftMetadataRecord::PartitionChange(_) => {
                     match metadata_version {
-                        version if version >= crate::metadata_version::ELR_MIN_LEVEL => 2,
-                        version
-                            if version
-                                >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL =>
-                        {
-                            1
-                        }
+                        version if version >= ELR_MIN_LEVEL => 2,
+                        version if version >= DIRECTORY_ASSIGNMENT_MIN_LEVEL => 1,
                         _ => 0,
                     }
                 }
                 KraftMetadataRecord::RegisterBroker(_) => {
-                    if metadata_version >= crate::metadata_version::CORDONED_LOG_DIRS_MIN_LEVEL {
+                    if metadata_version >= CORDONED_LOG_DIRS_MIN_LEVEL {
                         4
-                    } else if metadata_version
-                        >= crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL
-                    {
+                    } else if metadata_version >= DIRECTORY_ASSIGNMENT_MIN_LEVEL {
                         3
                     } else if metadata_version >= 8 {
                         2
@@ -542,10 +546,10 @@ pub fn from_kraft_value(
 }
 
 fn topic_config_to_kraft(
-    config: &crate::records::TopicConfigRecord,
+    config: &TopicConfigRecord,
     image: &MetadataImage,
 ) -> Vec<KraftMetadataRecord> {
-    let empty = std::collections::BTreeMap::new();
+    let empty = BTreeMap::new();
     let old = image.topic_config(&config.topic).unwrap_or(&empty);
     let mut output = Vec::with_capacity(config.overrides.len());
     for (key, value) in &config.overrides {
@@ -575,7 +579,7 @@ fn group_config_to_kraft(
     config: &GroupConfigRecord,
     image: &MetadataImage,
 ) -> Vec<KraftMetadataRecord> {
-    let empty = std::collections::BTreeMap::new();
+    let empty = BTreeMap::new();
     let old = image.group_config(&config.group_id).unwrap_or(&empty);
     let mut output = Vec::with_capacity(config.configs.len());
     for (key, value) in &config.configs {
@@ -602,10 +606,10 @@ fn group_config_to_kraft(
 }
 
 fn client_metrics_config_to_kraft(
-    config: &crate::records::ClientMetricsConfigRecord,
+    config: &ClientMetricsConfigRecord,
     image: &MetadataImage,
 ) -> Vec<KraftMetadataRecord> {
-    let empty = std::collections::BTreeMap::new();
+    let empty = BTreeMap::new();
     let old = image.client_metrics_config(&config.name).unwrap_or(&empty);
     let mut output = Vec::with_capacity(config.configs.len());
     for (key, value) in &config.configs {
@@ -698,7 +702,7 @@ fn scram_to_kraft(record: &MetadataRecord) -> Result<Vec<KraftMetadataRecord>, T
 fn to_kraft_iter(
     rec: &MetadataRecord,
     image: &MetadataImage,
-) -> Result<std::vec::IntoIter<KraftMetadataRecord>, TranslateError> {
+) -> Result<vec::IntoIter<KraftMetadataRecord>, TranslateError> {
     let recs: Vec<KraftMetadataRecord> = match rec {
         MetadataRecord::V1FeatureLevel(f) => {
             vec![KraftMetadataRecord::FeatureLevel(KFeatureLevelRecord {
@@ -753,11 +757,11 @@ fn to_kraft_iter(
         }
         MetadataRecord::V1DeleteDelegationToken(t) => {
             vec![KraftMetadataRecord::RemoveDelegationToken(
-            krabka_protocol::owned::remove_delegation_token_record::RemoveDelegationTokenRecord {
-                token_id: t.token_id.clone(),
-                ..Default::default()
-            },
-        )]
+                RemoveDelegationTokenRecord {
+                    token_id: t.token_id.clone(),
+                    ..Default::default()
+                },
+            )]
         }
         MetadataRecord::V1BrokerConfig(c) => {
             vec![KraftMetadataRecord::Config(ConfigRecord {
@@ -1201,8 +1205,10 @@ fn partition_dir_assignment_to_kraft(
     // An empty list is every replica `MIGRATING`, as Kafka's
     // `PartitionRegistration.defaultToMigrating` reads it.
     let mut directories = partition.directories.clone();
-    directories.resize(partition.replicas.len(), crate::directory_id::MIGRATING);
-    directories[replica_slot] = assignment.directory;
+    directories.resize(partition.replicas.len(), MIGRATING);
+    if let Some(directory) = directories.get_mut(replica_slot) {
+        *directory = assignment.directory;
+    }
 
     Ok(KPartitionChangeRecord {
         partition_id: assignment.partition,
@@ -1222,7 +1228,7 @@ fn partition_state_to_kraft(
 ) -> Result<KPartitionChangeRecord, TranslateError> {
     let topic_id = image
         .topic(topic)
-        .ok_or_else(|| TranslateError::UnknownTopicName(topic.to_string()))?
+        .ok_or_else(|| TranslateError::UnknownTopicName(topic.to_owned()))?
         .topic_id;
     let nodes = |values: &[NodeId], field| {
         values
@@ -1328,10 +1334,7 @@ fn client_quota_to_kraft(q: &ClientQuotaRecord) -> KClientQuotaRecord {
         .collect();
     // KIP-631 splits Krabka's Option<f64> into (value, remove): None => the
     // remove tombstone; Some(v) => value with remove=false.
-    let (value, remove) = match q.config_value {
-        Some(v) => (v, false),
-        None => (0.0, true),
-    };
+    let (value, remove) = q.config_value.map_or((0.0, true), |v| (v, false));
     KClientQuotaRecord {
         entity,
         key: q.config_key.clone(),
@@ -1449,7 +1452,7 @@ pub fn from_kraft(
             delegation_token_from_kraft(t)?,
         )),
         KraftMetadataRecord::RemoveDelegationToken(t) => Ok(
-            MetadataRecord::V1DeleteDelegationToken(crate::records::DeleteDelegationTokenRecord {
+            MetadataRecord::V1DeleteDelegationToken(DeleteDelegationTokenRecord {
                 token_id: t.token_id.clone(),
             }),
         ),
@@ -1995,7 +1998,7 @@ fn config_from_kraft(
                 }
             }
             Ok(MetadataRecord::V1ClientMetricsConfig(
-                crate::records::ClientMetricsConfigRecord {
+                ClientMetricsConfigRecord {
                     name: c.resource_name.clone(),
                     configs,
                 },
@@ -2037,14 +2040,21 @@ fn topic_name_for_id(image: &MetadataImage, id: uuid::Uuid) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use assert2::check;
+    use krabka_protocol::owned::{
+        begin_transaction_record::BeginTransactionRecord,
+        end_transaction_record::EndTransactionRecord,
+    };
 
     use super::*;
     use crate::{
         acl::AclEntryFilter,
+        break_glass::{BreakGlassAction, BreakGlassApproval, BreakGlassProposalRecord},
+        metadata_version::METADATA_VERSION_FEATURE,
         records::{
-            ClientMetricsConfigRecord, DeleteDelegationTokenRecord, FeaturesEpochRecord,
-            KRaftVersionRecord, PartitionDirAssignmentRecord, VotersRecord,
+            FeaturesEpochRecord, KRaftVersionRecord, PartitionDirAssignmentRecord, VotersRecord,
         },
+        voters::VoterSet,
+        write_freeze::TopicFreezeRecord,
     };
 
     fn img() -> MetadataImage {
@@ -2084,7 +2094,7 @@ mod tests {
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
                 endpoints: vec![],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             }),
             &img(),
         );
@@ -2120,7 +2130,7 @@ mod tests {
                         protocol: ListenerProtocol::Plaintext,
                     },
                 ],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             }),
             &img(),
         );
@@ -2145,7 +2155,7 @@ mod tests {
                 port: 9093,
                 protocol: ListenerProtocol::SaslSsl,
             }],
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         });
 
         let KraftMetadataRecord::RegisterBroker(k) = to_kraft(&rec, &img()).unwrap() else {
@@ -2179,7 +2189,7 @@ mod tests {
                     port: 9093,
                     protocol: ListenerProtocol::Plaintext,
                 }],
-                features: std::collections::BTreeMap::from([("metadata.version".into(), (7, 25))]),
+                features: BTreeMap::from([("metadata.version".into(), (7, 25))]),
             }),
             &img(),
         );
@@ -2201,7 +2211,7 @@ mod tests {
                 in_controlled_shutdown: false,
                 cordoned_log_dirs: None,
                 endpoints: vec![],
-                features: std::collections::BTreeMap::new(),
+                features: BTreeMap::new(),
             }),
             &img(),
         );
@@ -2222,13 +2232,13 @@ mod tests {
             fenced: false,
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         });
 
         let mut kip858_image = img();
         kip858_image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
-            name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
-            level: crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL,
+            name: METADATA_VERSION_FEATURE.into(),
+            level: DIRECTORY_ASSIGNMENT_MIN_LEVEL,
         }));
         let value = to_kraft_values(&record, &kip858_image).unwrap().remove(0);
         let (wire, version) = KraftMetadataRecord::decode_value(&value).unwrap();
@@ -2237,8 +2247,8 @@ mod tests {
 
         let mut pre_kip858_image = img();
         pre_kip858_image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
-            name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
-            level: crate::metadata_version::DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1,
+            name: METADATA_VERSION_FEATURE.into(),
+            level: DIRECTORY_ASSIGNMENT_MIN_LEVEL - 1,
         }));
         let value = to_kraft_values(&record, &pre_kip858_image)
             .unwrap()
@@ -2305,7 +2315,7 @@ mod tests {
             fenced: true,
             in_controlled_shutdown: true,
             cordoned_log_dirs: Some(vec![directory]),
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         };
         let without_cordoned = BrokerRegistrationRecord {
             cordoned_log_dirs: None,
@@ -2327,7 +2337,7 @@ mod tests {
         ] {
             let mut image = img();
             image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
-                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                name: METADATA_VERSION_FEATURE.into(),
                 level,
             }));
             let record = MetadataRecord::V1BrokerRegistration(full.clone());
@@ -2537,7 +2547,7 @@ mod tests {
         ] {
             let mut image = img();
             image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
-                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                name: METADATA_VERSION_FEATURE.into(),
                 level,
             }));
             let values = to_kraft_values(
@@ -2621,7 +2631,7 @@ mod tests {
                 replication_factor: 1,
             }));
             image.apply(&MetadataRecord::V1FeatureLevel(FeatureLevelRecord {
-                name: crate::metadata_version::METADATA_VERSION_FEATURE.into(),
+                name: METADATA_VERSION_FEATURE.into(),
                 level,
             }));
 
@@ -2653,9 +2663,9 @@ mod tests {
             fenced: false,
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
-            features: std::collections::BTreeMap::from([
-                ("metadata.version".to_string(), (7_i16, 25_i16)),
-                ("kraft.version".to_string(), (0, 1)),
+            features: BTreeMap::from([
+                ("metadata.version".to_owned(), (7_i16, 25_i16)),
+                ("kraft.version".to_owned(), (0, 1)),
             ]),
         });
         round_trip(&broker, &image);
@@ -2664,16 +2674,13 @@ mod tests {
             node_id: NodeId(3),
             incarnation_id: uuid::Uuid::from_u128(9),
             zk_migration_ready: true,
-            endpoints: vec![crate::records::BrokerEndpoint {
+            endpoints: vec![BrokerEndpoint {
                 name: "CONTROLLER".into(),
                 host: "controller-3".into(),
                 port: 9093,
                 protocol: krabka_security::ListenerProtocol::SaslSsl,
             }],
-            features: std::collections::BTreeMap::from([(
-                "kraft.version".to_string(),
-                (0_i16, 1_i16),
-            )]),
+            features: BTreeMap::from([("kraft.version".to_owned(), (0_i16, 1_i16))]),
         });
         round_trip(&controller, &image);
     }
@@ -3219,8 +3226,8 @@ mod tests {
         let rec = MetadataRecord::V1ClientMetricsConfig(ClientMetricsConfigRecord {
             name: "metrics-sub-1".into(),
             configs: [
-                ("interval.ms".to_string(), "60000".to_string()),
-                ("metrics".to_string(), "org.apache.kafka".to_string()),
+                ("interval.ms".to_owned(), "60000".to_owned()),
+                ("metrics".to_owned(), "org.apache.kafka".to_owned()),
             ]
             .into_iter()
             .collect(),
@@ -3251,7 +3258,7 @@ mod tests {
         image.apply(&MetadataRecord::V1ClientMetricsConfig(
             ClientMetricsConfigRecord {
                 name: "metrics-sub-1".into(),
-                configs: std::collections::BTreeMap::from([
+                configs: BTreeMap::from([
                     ("interval.ms".into(), "60000".into()),
                     ("metrics".into(), "org.apache.kafka".into()),
                 ]),
@@ -3259,7 +3266,7 @@ mod tests {
         ));
         let clear = MetadataRecord::V1ClientMetricsConfig(ClientMetricsConfigRecord {
             name: "metrics-sub-1".into(),
-            configs: std::collections::BTreeMap::new(),
+            configs: BTreeMap::new(),
         });
 
         let records = to_kraft_records(&clear, &image).unwrap();
@@ -3348,7 +3355,7 @@ mod tests {
     #[test]
     fn voters_and_kraft_version_have_no_counterpart() {
         let v = MetadataRecord::V1Voters(VotersRecord {
-            voters: crate::voters::VoterSet::default(),
+            voters: VoterSet::default(),
         });
         let k = MetadataRecord::V1KRaftVersion(KRaftVersionRecord { kraft_version: 1 });
         for (_name, record, expected) in [
@@ -3395,7 +3402,7 @@ mod tests {
         }
         let cfg = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
-            overrides: [("retention.ms".to_string(), "9".to_string())].into(),
+            overrides: [("retention.ms".to_owned(), "9".to_owned())].into(),
         });
         let k = to_kraft(&cfg, &image).unwrap();
         assert2::assert!(from_kraft(&k, &image).unwrap() == cfg);
@@ -3429,8 +3436,8 @@ mod tests {
         let cfg = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
             overrides: [
-                ("retention.ms".to_string(), "9".to_string()),
-                ("segment.bytes".to_string(), "1048576".to_string()),
+                ("retention.ms".to_owned(), "9".to_owned()),
+                ("segment.bytes".to_owned(), "1048576".to_owned()),
             ]
             .into(),
         });
@@ -3460,7 +3467,7 @@ mod tests {
         }));
         let cfg = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
-            overrides: [("retention.ms".to_string(), "9".to_string())].into(),
+            overrides: [("retention.ms".to_owned(), "9".to_owned())].into(),
         });
         let records = to_kraft_records(&cfg, &image).unwrap();
         assert2::assert!(records.len() == 1);
@@ -3483,7 +3490,7 @@ mod tests {
             topic: "t".into(),
             overrides: kv
                 .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
                 .collect(),
         }));
     }
@@ -3495,7 +3502,7 @@ mod tests {
         seed_topic_config(&mut image, &[("a", "1"), ("b", "2")]);
         let submit = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
-            overrides: [("a".to_string(), "9".to_string())].into(),
+            overrides: [("a".to_owned(), "9".to_owned())].into(),
         });
         let records = to_kraft_records(&submit, &image).unwrap();
         // One set (a=9) + one tombstone (b removed).
@@ -3506,8 +3513,7 @@ mod tests {
             let back = from_kraft(k, &image).unwrap();
             image.apply(&back);
         }
-        let want: std::collections::BTreeMap<String, String> =
-            [("a".to_string(), "9".to_string())].into();
+        let want: BTreeMap<String, String> = [("a".to_owned(), "9".to_owned())].into();
         assert2::assert!(image.topic_config("t") == Some(&want));
     }
 
@@ -3518,7 +3524,7 @@ mod tests {
         seed_topic_config(&mut image, &[("a", "1"), ("b", "2")]);
         let submit = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
-            overrides: std::collections::BTreeMap::new(),
+            overrides: BTreeMap::new(),
         });
         let records = to_kraft_records(&submit, &image).unwrap();
         assert2::assert!(records.len() == 2);
@@ -3535,17 +3541,14 @@ mod tests {
         let mut image = img();
         image.apply(&MetadataRecord::V1GroupConfig(GroupConfigRecord {
             group_id: "streams-app".into(),
-            configs: std::collections::BTreeMap::from([
+            configs: BTreeMap::from([
                 ("streams.num.standby.replicas".into(), "0".into()),
                 ("streams.num.warmup.replicas".into(), "2".into()),
             ]),
         }));
         let submitted = MetadataRecord::V1GroupConfig(GroupConfigRecord {
             group_id: "streams-app".into(),
-            configs: std::collections::BTreeMap::from([(
-                "streams.num.standby.replicas".into(),
-                "1".into(),
-            )]),
+            configs: BTreeMap::from([("streams.num.standby.replicas".into(), "1".into())]),
         });
 
         let records = to_kraft_records(&submitted, &image).expect("translate group config");
@@ -3649,7 +3652,7 @@ mod tests {
         [
             (
                 "topic freeze",
-                MetadataRecord::V1TopicFreeze(crate::write_freeze::TopicFreezeRecord {
+                MetadataRecord::V1TopicFreeze(TopicFreezeRecord {
                     scope: "tenant-a.".into(),
                     pattern_type: PatternType::Prefixed,
                     frozen: true,
@@ -3664,25 +3667,23 @@ mod tests {
             ),
             (
                 "break-glass proposal",
-                MetadataRecord::V1BreakGlassProposal(
-                    crate::break_glass::BreakGlassProposalRecord {
-                        proposal_id: id,
-                        action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
-                        target: "literal:orders".into(),
-                        proposer: "User:alice".into(),
-                        reason: "incident 4711 closed".into(),
-                        created_at_ms: 1_700_000_000_000,
-                        expires_at_ms: 1_700_000_600_000,
-                        approvals: vec![crate::break_glass::BreakGlassApproval {
-                            principal: "User:bob".into(),
-                            approved_at_ms: 1_700_000_060_000,
-                            key_id: "bob-yubi".into(),
-                            signature: vec![0xCD; 64],
-                        }],
-                        consumed_at_ms: 1_700_000_120_000,
-                        withdrawn: false,
-                    },
-                ),
+                MetadataRecord::V1BreakGlassProposal(BreakGlassProposalRecord {
+                    proposal_id: id,
+                    action: BreakGlassAction::ThawTopicFreeze,
+                    target: "literal:orders".into(),
+                    proposer: "User:alice".into(),
+                    reason: "incident 4711 closed".into(),
+                    created_at_ms: 1_700_000_000_000,
+                    expires_at_ms: 1_700_000_600_000,
+                    approvals: vec![BreakGlassApproval {
+                        principal: "User:bob".into(),
+                        approved_at_ms: 1_700_000_060_000,
+                        key_id: "bob-yubi".into(),
+                        signature: vec![0xCD; 64],
+                    }],
+                    consumed_at_ms: 1_700_000_120_000,
+                    withdrawn: false,
+                }),
                 PRIVATE_BREAK_GLASS_PROPOSAL_TAG,
             ),
             (
@@ -4046,26 +4047,17 @@ mod tests {
         for (record, want) in [
             (
                 KraftMetadataRecord::BrokerRegistrationChange(
-                    krabka_protocol::owned::broker_registration_change_record::BrokerRegistrationChangeRecord::default(),
+                    BrokerRegistrationChangeRecord::default(),
                 ),
                 "BrokerRegistrationChange",
             ),
+            (KraftMetadataRecord::NoOp(NoOpRecord::default()), "NoOp"),
             (
-                KraftMetadataRecord::NoOp(
-                    krabka_protocol::owned::no_op_record::NoOpRecord::default(),
-                ),
-                "NoOp",
-            ),
-            (
-                KraftMetadataRecord::BeginTransaction(
-                    krabka_protocol::owned::begin_transaction_record::BeginTransactionRecord::default(),
-                ),
+                KraftMetadataRecord::BeginTransaction(BeginTransactionRecord::default()),
                 "BeginTransaction",
             ),
             (
-                KraftMetadataRecord::EndTransaction(
-                    krabka_protocol::owned::end_transaction_record::EndTransactionRecord::default(),
-                ),
+                KraftMetadataRecord::EndTransaction(EndTransactionRecord::default()),
                 "EndTransaction",
             ),
             (
@@ -4414,7 +4406,7 @@ mod tests {
                         in_controlled_shutdown: false,
                         cordoned_log_dirs: None,
                         endpoints: vec![],
-                        features: std::collections::BTreeMap::new(),
+                        features: BTreeMap::new(),
                     },
                 )),
                 value("broker_id", "node_id 2147483648 exceeds i32"),
@@ -4427,7 +4419,7 @@ mod tests {
                         incarnation_id: uuid::Uuid::nil(),
                         zk_migration_ready: false,
                         endpoints: vec![],
-                        features: std::collections::BTreeMap::new(),
+                        features: BTreeMap::new(),
                     },
                 )),
                 value("controller_id", "node_id 2147483648 exceeds i32"),

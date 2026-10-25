@@ -261,10 +261,9 @@ pub fn frequency(input: &str) -> Result<Frequency, ParseError> {
 /// anything other than `%`.
 pub fn ratio(input: &str) -> Result<Ratio, ParseError> {
     let trimmed = input.trim();
-    let (body, scale) = match trimmed.strip_suffix('%') {
-        Some(body) => (body.trim(), 0.01),
-        None => (trimmed, 1.0),
-    };
+    let (body, scale) = trimmed
+        .strip_suffix('%')
+        .map_or((trimmed, 1.0), |body| (body.trim(), 0.01));
     if body.is_empty() {
         return Err(ParseError::Empty);
     }

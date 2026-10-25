@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::heartbeat_request,
     primitives::{
         fixed::{get_i32, put_i32},
         string_bytes::{
@@ -36,16 +37,13 @@ pub struct HeartbeatRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl HeartbeatRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::heartbeat_request::HeartbeatRequest {
-        crate::owned::heartbeat_request::HeartbeatRequest {
-            group_id: (self.group_id).to_string(),
+    pub fn to_owned(&self) -> heartbeat_request::HeartbeatRequest {
+        heartbeat_request::HeartbeatRequest {
+            group_id: (self.group_id).to_owned(),
             generation_id: (self.generation_id),
-            member_id: (self.member_id).to_string(),
-            group_instance_id: (self.group_instance_id).map(std::string::ToString::to_string),
+            member_id: (self.member_id).to_owned(),
+            group_instance_id: (self.group_instance_id).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -61,9 +59,9 @@ impl Encode for HeartbeatRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
@@ -71,21 +69,21 @@ impl Encode for HeartbeatRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id);
+                put_compact_nullable_string(buf, self.group_instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id);
+                put_nullable_string(buf, self.group_instance_id)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

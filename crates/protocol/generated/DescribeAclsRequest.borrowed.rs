@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_acls_request,
     primitives::{
         fixed::{get_i8, put_i8},
         string_bytes::{
@@ -51,17 +52,14 @@ impl Default for DescribeAclsRequest<'_> {
     }
 }
 impl DescribeAclsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_acls_request::DescribeAclsRequest {
-        crate::owned::describe_acls_request::DescribeAclsRequest {
+    pub fn to_owned(&self) -> describe_acls_request::DescribeAclsRequest {
+        describe_acls_request::DescribeAclsRequest {
             resource_type_filter: (self.resource_type_filter),
-            resource_name_filter: (self.resource_name_filter).map(std::string::ToString::to_string),
+            resource_name_filter: (self.resource_name_filter).map(str::to_owned),
             pattern_type_filter: (self.pattern_type_filter),
-            principal_filter: (self.principal_filter).map(std::string::ToString::to_string),
-            host_filter: (self.host_filter).map(std::string::ToString::to_string),
+            principal_filter: (self.principal_filter).map(str::to_owned),
+            host_filter: (self.host_filter).map(str::to_owned),
             operation: (self.operation),
             permission_type: (self.permission_type),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -82,9 +80,9 @@ impl Encode for DescribeAclsRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.resource_name_filter);
+                put_compact_nullable_string(buf, self.resource_name_filter)?;
             } else {
-                let () = put_nullable_string(buf, self.resource_name_filter);
+                put_nullable_string(buf, self.resource_name_filter)?;
             }
         }
         if version >= 1 {
@@ -92,16 +90,16 @@ impl Encode for DescribeAclsRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.principal_filter);
+                put_compact_nullable_string(buf, self.principal_filter)?;
             } else {
-                let () = put_nullable_string(buf, self.principal_filter);
+                put_nullable_string(buf, self.principal_filter)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.host_filter);
+                put_compact_nullable_string(buf, self.host_filter)?;
             } else {
-                let () = put_nullable_string(buf, self.host_filter);
+                put_nullable_string(buf, self.host_filter)?;
             }
         }
         if version >= 0 {
@@ -112,7 +110,7 @@ impl Encode for DescribeAclsRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -1,3 +1,5 @@
+use std::str::Utf8Error;
+
 use thiserror::Error;
 
 /// Errors that can occur during wire-protocol encoding or decoding.
@@ -15,7 +17,7 @@ pub enum ProtocolError {
 
     /// Decoded UTF-8 bytes that are not valid UTF-8.
     #[error("invalid UTF-8 in string field")]
-    InvalidUtf8(#[source] std::str::Utf8Error),
+    InvalidUtf8(#[source] Utf8Error),
 
     /// Decoded a varint that exceeds the maximum legal length.
     #[error("varint exceeds {max} bytes")]
@@ -34,6 +36,11 @@ pub enum ProtocolError {
     /// `read` method throws.
     #[error("Tag {tag} is not valid for version {version}")]
     TagNotValidForVersion { tag: u32, version: i16 },
+
+    /// An encoder was given a length that its wire-format length prefix
+    /// cannot hold, such as a string longer than `i16::MAX` bytes.
+    #[error("{what} length {len} does not fit its wire-format length prefix")]
+    LengthOverflow { what: &'static str, len: usize },
 }
 
 #[cfg(test)]

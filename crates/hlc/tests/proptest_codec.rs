@@ -4,6 +4,7 @@
 //! [`HLC_ENCODED_LEN`] bytes and a decode reads back the same stamp. Every
 //! 16-byte value is a stamp, and re-rendering it gives the same bytes. Every
 //! other length is a [`HlcError::Length`], and no input panics.
+#![cfg(test)]
 
 use krabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};
 use krabka_ids::NodeId;

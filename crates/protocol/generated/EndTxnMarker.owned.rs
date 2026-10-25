@@ -70,6 +70,6 @@ impl EndTxnMarker {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("coordinatorEpoch".to_string(), ::serde_json::json!(0));
+    obj.insert("coordinatorEpoch".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

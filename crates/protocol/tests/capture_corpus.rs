@@ -5,11 +5,16 @@
 //! per `(api_key, version, direction)`, then synthesizes the remainder with the
 //! JVM oracle. Run it manually:
 //!   `cargo test -p krabka-protocol --test capture_corpus -- --ignored --nocapture`
+#![cfg(test)]
 mod support;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 
 use krabka_kafka_tap::{Recorder, frame::CapturedFrame, spawn};
@@ -110,13 +115,13 @@ fn wait_ready() {
         if ok {
             return;
         }
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(2));
     }
     panic!("broker not ready");
 }
 
-fn corpus_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
+fn corpus_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
 }
 
 fn hex_encode(b: &[u8]) -> String {
@@ -172,11 +177,11 @@ fn write_entry(
         .unwrap_or_else(|| panic!("no CASES name for api_key {api_key}"));
     let dirn = if is_request { "request" } else { "response" };
     let stem = format!("{}_{dirn}_v{version}_001", to_snake(name));
-    std::fs::write(dir.join(format!("{stem}.hex")), hex_encode(message_body)).unwrap();
+    fs::write(dir.join(format!("{stem}.hex")), hex_encode(message_body)).unwrap();
     let toml = format!(
         "api_key = {api_key}\nversion = {version}\ndirection = \"{dirn}\"\nsource_kafka_version = \"4.3.0\"\nsynthetic = {synthetic}\ndescription = \"{desc}\"\n"
     );
-    std::fs::write(dir.join(format!("{stem}.toml")), toml).unwrap();
+    fs::write(dir.join(format!("{stem}.toml")), toml).unwrap();
 }
 
 #[test]
@@ -186,13 +191,13 @@ fn capture_and_generate_corpus() {
         eprintln!("docker unavailable; skipping");
         return;
     }
-    let check_only = std::env::var("CORPUS_CHECK_ONLY").is_ok();
+    let check_only = env::var("CORPUS_CHECK_ONLY").is_ok();
     docker_run_broker();
     wait_ready();
 
     let captured: CaptureMap = Arc::new(Mutex::new(BTreeMap::new()));
     let rec: Recorder = {
-        let captured = captured.clone();
+        let captured = Arc::clone(&captured);
         Arc::new(move |f: CapturedFrame| {
             captured
                 .lock()
@@ -205,9 +210,9 @@ fn capture_and_generate_corpus() {
     eprintln!("tap on {addr} -> {}", tap_upstream());
 
     driver::run(CONTAINER);
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    thread::sleep(Duration::from_secs(2));
 
-    let pairs = captured.lock().unwrap();
+    let pairs = captured.lock().unwrap().clone();
     eprintln!(
         "captured {} distinct (api_key,version,dir) pairs",
         pairs.len()
@@ -216,23 +221,22 @@ fn capture_and_generate_corpus() {
     // Clear any previously generated corpus so a re-run is deterministic.
     // Skipped in check-only mode, which must be fully read-only.
     if !check_only {
-        for e in std::fs::read_dir(corpus_dir()).unwrap() {
+        for e in fs::read_dir(corpus_dir()).unwrap() {
             let p = e.unwrap().path();
             if matches!(p.extension().and_then(|s| s.to_str()), Some("hex" | "toml")) {
-                let _ = std::fs::remove_file(p);
+                let _ = fs::remove_file(p);
             }
         }
     }
 
     // Post-process captured frames: strip header -> message body, synthetic=false.
-    let mut covered: std::collections::BTreeSet<(i16, i16, bool)> =
-        std::collections::BTreeSet::new();
-    for (&(api_key, version, is_request), frame) in pairs.iter() {
+    let mut covered: BTreeSet<(i16, i16, bool)> = BTreeSet::new();
+    for (&(api_key, version, is_request), frame) in &pairs {
         let Some(name) = name_for(api_key, is_request) else {
             continue;
         };
-        let body = strip_frame_header(name, version, is_request, frame);
-        let re = roundtrip(name, version, &body);
+        let body = strip_frame_header(name, version, is_request, frame).unwrap();
+        let re = roundtrip(name, version, &body).unwrap();
         if re != body {
             eprintln!(
                 "WARN captured {name} v{version} req={is_request} does not round-trip; skipping"
@@ -242,8 +246,8 @@ fn capture_and_generate_corpus() {
         if check_only {
             let dirn = if is_request { "request" } else { "response" };
             let stem = format!("{}_{dirn}_v{version}_001", to_snake(name));
-            let committed = std::fs::read_to_string(corpus_dir().join(format!("{stem}.hex")))
-                .unwrap_or_default();
+            let committed =
+                fs::read_to_string(corpus_dir().join(format!("{stem}.hex"))).unwrap_or_default();
             let committed: String = committed.chars().filter(|c| !c.is_whitespace()).collect();
             assert2::assert!(committed == hex_encode(&body));
             covered.insert((api_key, version, is_request));
@@ -267,7 +271,6 @@ fn capture_and_generate_corpus() {
     // Skipped in check-only mode so a drift run never needs the JVM oracle and
     // stays fully read-only.
     if !check_only {
-        let mut o = oracle::shared();
         let mut synth = 0usize;
         for c in CASES {
             let is_request = match c.kind {
@@ -278,9 +281,9 @@ fn capture_and_generate_corpus() {
             if covered.contains(&(c.api_key, c.version, is_request)) {
                 continue;
             }
-            let jval = default_json_for(c.name, c.version);
-            let body = o.encode(c.api_key, c.version, is_request, &jval);
-            let re = roundtrip(c.name, c.version, &body);
+            let jval = default_json_for(c.name, c.version).unwrap();
+            let body = oracle::shared().encode(c.api_key, c.version, is_request, &jval);
+            let re = roundtrip(c.name, c.version, &body).unwrap();
             assert2::assert!(re == body);
             write_entry(
                 c.api_key,

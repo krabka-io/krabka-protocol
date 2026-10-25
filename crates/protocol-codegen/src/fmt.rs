@@ -17,24 +17,38 @@
 //! prettyplease rendered them. Both passes also work as validation. Malformed
 //! generated code fails to parse or exits non-zero here, so codegen bugs
 //! surface at regeneration time rather than three crates downstream.
+//!
+//! Between parsing and pretty-printing, [`hoist::hoist_absolute_paths`]
+//! rewrites the long crate-rooted paths the emitters write into module-scope
+//! `use` items, so the committed code passes `clippy::absolute_paths`.
 
 use std::{
-    io::Write,
+    io::{self, Write},
     process::{Command, Stdio},
 };
+
+use crate::hoist;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FmtError {
     #[error("spawning rustfmt (is it on PATH? `rustup component add rustfmt`): {0}")]
-    Spawn(#[source] std::io::Error),
+    Spawn(#[source] io::Error),
     #[error("rustfmt I/O: {0}")]
-    Io(#[source] std::io::Error),
+    Io(#[source] io::Error),
     #[error("rustfmt rejected generated source (status {status}):\n{stderr}")]
     Rejected { status: String, stderr: String },
+    #[error("rustfmt started without a stdin pipe")]
+    NoStdin,
 }
 
-/// Pretty-print `src` with prettyplease, refine it through `rustfmt` at
-/// edition 2024, and return the formatted output.
+/// A pass that turns generated source into the text the generator writes:
+/// [`rustfmt`] for the committed tree, or one built on [`prettyprint`] where
+/// no rustfmt binary is available.
+pub type Formatter = fn(&str) -> Result<String, FmtError>;
+
+/// Hoist long paths into imports, pretty-print `src` with prettyplease,
+/// refine it through `rustfmt` at edition 2024, and return the formatted
+/// output.
 ///
 /// `src` must be a complete Rust source file, which every generated file is.
 /// This function keeps the leading `//`-style banner comment. `syn` discards
@@ -43,15 +57,26 @@ pub enum FmtError {
 /// # Errors
 /// Returns an error when the schema model is invalid or generated Rust cannot be formatted or written.
 pub fn rustfmt(src: &str) -> Result<String, FmtError> {
+    run_rustfmt(&prettyprint(src))
+}
+
+/// The first pass of [`rustfmt`]: hoist long paths into imports and
+/// pretty-print `src` with prettyplease, keeping its leading banner.
+///
+/// prettyplease normalizes spacing and breaks lines rustfmt would otherwise
+/// give up on. If the body does not parse (a real codegen bug), this function
+/// returns `src` unchanged, so the rustfmt pass surfaces the precise error.
+#[must_use]
+pub fn prettyprint(src: &str) -> String {
     let (banner, body) = split_banner(src);
-    // prettyplease normalizes spacing and breaks lines rustfmt would otherwise
-    // give up on. If the body does not parse (a real codegen bug), fall back to
-    // the raw body so the rustfmt pass surfaces the precise error.
-    let body = match syn::parse_file(body) {
-        Ok(file) => prettyplease::unparse(&file),
-        Err(_) => body.to_string(),
-    };
-    run_rustfmt(&format!("{banner}{body}"))
+    let body = syn::parse_file(body).map_or_else(
+        |_| body.to_owned(),
+        |mut file| {
+            hoist::hoist_absolute_paths(&mut file);
+            prettyplease::unparse(&file)
+        },
+    );
+    format!("{banner}{body}")
 }
 
 /// Split the leading banner block off from the code body. The banner is the
@@ -89,7 +114,7 @@ fn run_rustfmt(src: &str) -> Result<String, FmtError> {
     child
         .stdin
         .take()
-        .expect("stdin was piped")
+        .ok_or(FmtError::NoStdin)?
         .write_all(src.as_bytes())
         .map_err(FmtError::Io)?;
     let out = child.wait_with_output().map_err(FmtError::Io)?;

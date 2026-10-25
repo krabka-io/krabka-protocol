@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delegation_token_record,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -30,22 +32,16 @@ pub struct DelegationTokenRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DelegationTokenRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delegation_token_record::DelegationTokenRecord {
-        crate::owned::delegation_token_record::DelegationTokenRecord {
-            owner: (self.owner).to_string(),
-            requester: (self.requester).to_string(),
-            renewers: (self.renewers)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> delegation_token_record::DelegationTokenRecord {
+        delegation_token_record::DelegationTokenRecord {
+            owner: (self.owner).to_owned(),
+            requester: (self.requester).to_owned(),
+            renewers: (self.renewers).iter().map(|&s| s.to_owned()).collect(),
             issue_timestamp: (self.issue_timestamp),
             max_timestamp: (self.max_timestamp),
             expiration_timestamp: (self.expiration_timestamp),
-            token_id: (self.token_id).to_string(),
+            token_id: (self.token_id).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -60,29 +56,29 @@ impl Encode for DelegationTokenRecord<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.owner);
+                put_compact_string(buf, self.owner)?;
             } else {
-                let () = put_string(buf, self.owner);
+                put_string(buf, self.owner)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.requester);
+                put_compact_string(buf, self.requester)?;
             } else {
-                let () = put_string(buf, self.requester);
+                put_string(buf, self.requester)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.renewers).len(), flex);
+                put_array_len(buf, (self.renewers).len(), flex)?;
                 for it in &self.renewers {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i64(buf, self.issue_timestamp);
@@ -95,14 +91,14 @@ impl Encode for DelegationTokenRecord<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.token_id);
+                put_compact_string(buf, self.token_id)?;
             } else {
-                let () = put_string(buf, self.token_id);
+                put_string(buf, self.token_id)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -125,8 +121,7 @@ impl Encode for DelegationTokenRecord<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.renewers).len(), flex);
+                let prefix = array_len_prefix_len((self.renewers).len(), flex);
                 let body: usize = (self.renewers)
                     .iter()
                     .map(|it| {
@@ -188,7 +183,7 @@ impl<'de> DecodeBorrow<'de> for DelegationTokenRecord<'de> {
         }
         if version >= 0 {
             out.renewers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

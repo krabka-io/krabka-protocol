@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::leave_group_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -34,12 +36,9 @@ pub struct LeaveGroupResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaveGroupResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::leave_group_response::LeaveGroupResponse {
-        crate::owned::leave_group_response::LeaveGroupResponse {
+    pub fn to_owned(&self) -> leave_group_response::LeaveGroupResponse {
+        leave_group_response::LeaveGroupResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             members: (self.members)
@@ -67,15 +66,15 @@ impl Encode for LeaveGroupResponse<'_> {
         }
         if version >= 3 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -90,8 +89,7 @@ impl Encode for LeaveGroupResponse<'_> {
         }
         if version >= 3 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -124,7 +122,7 @@ impl<'de> DecodeBorrow<'de> for LeaveGroupResponse<'de> {
         }
         if version >= 3 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MemberResponse::decode_borrow(buf, version)?);
@@ -173,14 +171,11 @@ impl Default for MemberResponse<'_> {
     }
 }
 impl MemberResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::leave_group_response::MemberResponse {
-        crate::owned::leave_group_response::MemberResponse {
-            member_id: (self.member_id).to_string(),
-            group_instance_id: (self.group_instance_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> leave_group_response::MemberResponse {
+        leave_group_response::MemberResponse {
+            member_id: (self.member_id).to_owned(),
+            group_instance_id: (self.group_instance_id).map(str::to_owned),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -191,16 +186,16 @@ impl Encode for MemberResponse<'_> {
         let flex = version >= 4;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id);
+                put_compact_nullable_string(buf, self.group_instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id);
+                put_nullable_string(buf, self.group_instance_id)?;
             }
         }
         if version >= 3 {
@@ -208,7 +203,7 @@ impl Encode for MemberResponse<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

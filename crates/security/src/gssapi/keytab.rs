@@ -27,6 +27,8 @@
 //!
 //! [keytab file format]: https://web.mit.edu/kerberos/krb5-devel/doc/formats/keytab_file_format.html
 
+use std::collections::BTreeMap;
+
 /// aes256-cts-hmac-sha1-96. The only enctype Krabka's acceptor uses.
 pub const ENCTYPE_AES256_CTS_HMAC_SHA1_96: u16 = 18;
 
@@ -81,43 +83,45 @@ impl<'a> Reader<'a> {
         Self { bytes, pos: 0 }
     }
 
-    fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.pos)
-    }
-
     fn at_end(&self) -> bool {
         self.pos >= self.bytes.len()
     }
 
     fn take(&mut self, n: usize) -> Result<&'a [u8], KeytabError> {
-        if self.remaining() < n {
-            return Err(KeytabError::Truncated {
-                offset: self.pos,
-                needed: n,
-            });
-        }
-        let slice = &self.bytes[self.pos..self.pos + n];
+        let truncated = KeytabError::Truncated {
+            offset: self.pos,
+            needed: n,
+        };
+        let slice = self
+            .pos
+            .checked_add(n)
+            .and_then(|end| self.bytes.get(self.pos..end))
+            .ok_or(truncated)?;
         self.pos += n;
         Ok(slice)
     }
 
+    /// The next `N` bytes, as an array.
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N], KeytabError> {
+        let offset = self.pos;
+        <[u8; N]>::try_from(self.take(N)?).map_err(|_| KeytabError::Truncated { offset, needed: N })
+    }
+
     fn u8(&mut self) -> Result<u8, KeytabError> {
-        Ok(self.take(1)?[0])
+        let [byte] = self.take_array()?;
+        Ok(byte)
     }
 
     fn u16(&mut self) -> Result<u16, KeytabError> {
-        let b = self.take(2)?;
-        Ok(u16::from_be_bytes([b[0], b[1]]))
+        self.take_array().map(u16::from_be_bytes)
     }
 
     fn i32(&mut self) -> Result<i32, KeytabError> {
-        let b = self.take(4)?;
-        Ok(i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+        self.take_array().map(i32::from_be_bytes)
     }
 
     fn u32(&mut self) -> Result<u32, KeytabError> {
-        let b = self.take(4)?;
-        Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+        self.take_array().map(u32::from_be_bytes)
     }
 
     /// Read a `u16`-length-prefixed string with a lossy UTF-8 decode.
@@ -134,8 +138,6 @@ impl<'a> Reader<'a> {
 ///
 /// Returns [`KeytabError::BadMagic`] if the file header is wrong, or
 /// [`KeytabError::Truncated`] if any entry runs past the end of the buffer.
-/// # Panics
-/// Panics if validated key material has an impossible size or synchronized credential state is poisoned.
 pub fn parse_keytab(bytes: &[u8]) -> Result<Vec<KeytabKey>, KeytabError> {
     let mut reader = Reader::new(bytes);
 
@@ -154,15 +156,15 @@ pub fn parse_keytab(bytes: &[u8]) -> Result<Vec<KeytabKey>, KeytabError> {
             Err(e) => return Err(e),
         };
 
-        if entry_size <= 0 {
-            // Hole: skip |entry_size| bytes of freed space.
-            let hole = entry_size.unsigned_abs() as usize;
-            reader.take(hole)?;
-            continue;
-        }
-
-        // `entry_size > 0` is guaranteed above, so the conversion is exact.
-        let entry_size = usize::try_from(entry_size).expect("entry_size is positive");
+        let entry_size = match usize::try_from(entry_size) {
+            Ok(size) if size > 0 => size,
+            _ => {
+                // Hole: skip |entry_size| bytes of freed space.
+                let hole = entry_size.unsigned_abs() as usize;
+                reader.take(hole)?;
+                continue;
+            }
+        };
         let entry_start = reader.pos;
         let entry_end = entry_start + entry_size;
         if entry_end > bytes.len() {
@@ -257,8 +259,7 @@ pub fn load_service_keys(
     enctype: u16,
 ) -> Result<Vec<KeytabKey>, KeytabError> {
     let entries = parse_keytab(keytab_bytes)?;
-    let mut best: std::collections::BTreeMap<Vec<String>, KeytabKey> =
-        std::collections::BTreeMap::new();
+    let mut best: BTreeMap<Vec<String>, KeytabKey> = BTreeMap::new();
     for e in entries {
         if e.enctype != enctype || e.components.first().is_none_or(|c| c != service_name) {
             continue;
@@ -340,8 +341,8 @@ mod tests {
         assert2::assert!(
             entries
                 == vec![KeytabKey {
-                    components: vec!["kafka".to_string(), "localhost".to_string()],
-                    realm: "KRABKA.TEST".to_string(),
+                    components: vec!["kafka".to_owned(), "localhost".to_owned()],
+                    realm: "KRABKA.TEST".to_owned(),
                     enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
                     kvno: 1,
                     key: key.clone(),
@@ -453,18 +454,18 @@ mod tests {
         assert2::assert!(
             keys == vec![
                 KeytabKey {
-                    components: vec!["kafka".to_string(), "host.docker.internal".to_string()],
-                    realm: "R".to_string(),
+                    components: vec!["kafka".to_owned(), "host.docker.internal".to_owned()],
+                    realm: "R".to_owned(),
                     enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
                     kvno: 1,
-                    key: dock.clone(),
+                    key: dock,
                 },
                 KeytabKey {
-                    components: vec!["kafka".to_string(), "localhost".to_string()],
-                    realm: "R".to_string(),
+                    components: vec!["kafka".to_owned(), "localhost".to_owned()],
+                    realm: "R".to_owned(),
                     enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
                     kvno: 3,
-                    key: loc_v3.clone(),
+                    key: loc_v3,
                 },
             ]
         );
@@ -496,11 +497,11 @@ mod tests {
         let keys = load_service_keys(&kt, "kafka", ENCTYPE_AES256_CTS_HMAC_SHA1_96).expect("load");
         assert2::assert!(
             keys == vec![KeytabKey {
-                components: vec!["kafka".to_string(), "localhost".to_string()],
-                realm: "R".to_string(),
+                components: vec!["kafka".to_owned(), "localhost".to_owned()],
+                realm: "R".to_owned(),
                 enctype: ENCTYPE_AES256_CTS_HMAC_SHA1_96,
                 kvno: 7,
-                key: first.clone(),
+                key: first,
             }]
         );
     }

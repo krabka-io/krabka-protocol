@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::request_header,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
@@ -43,16 +44,13 @@ impl Default for RequestHeader<'_> {
     }
 }
 impl RequestHeader<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::request_header::RequestHeader {
-        crate::owned::request_header::RequestHeader {
+    pub fn to_owned(&self) -> request_header::RequestHeader {
+        request_header::RequestHeader {
             request_api_key: (self.request_api_key),
             request_api_version: (self.request_api_version),
             correlation_id: (self.correlation_id),
-            client_id: (self.client_id).map(std::string::ToString::to_string),
+            client_id: (self.client_id).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -78,15 +76,15 @@ impl Encode for RequestHeader<'_> {
             {
                 let flex = false;
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.client_id);
+                    put_compact_nullable_string(buf, self.client_id)?;
                 } else {
-                    let () = put_nullable_string(buf, self.client_id);
+                    put_nullable_string(buf, self.client_id)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

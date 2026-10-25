@@ -6,8 +6,9 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::primitives::varint::{get_uvarint, put_uvarint, uvarint_len};
 
-/// The only `KRaft` metadata frame version, which is part of the krabka 1.x
-/// on-disk contract. Kafka's `AbstractApiMessageSerde.DEFAULT_FRAME_VERSION`
+/// The only `KRaft` metadata frame version.
+///
+/// The value is part of the krabka 1.x on-disk contract. Kafka's `AbstractApiMessageSerde.DEFAULT_FRAME_VERSION`
 /// is 1, and the `__cluster_metadata` record values of
 /// mirror.gcr.io/apache/kafka:4.0.0 start with `0x01`.
 pub const FRAME_VERSION: u32 = 1;

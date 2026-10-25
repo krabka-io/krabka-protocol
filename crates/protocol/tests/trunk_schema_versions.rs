@@ -7,6 +7,9 @@
 //! the differential sweep cannot check them. Each case here is a frame encoded
 //! by hand from the trunk schema, and the owned codec must both write it and
 //! read it back to the same message.
+#![cfg(test)]
+
+use std::fmt;
 
 use bytes::BytesMut;
 use krabka_protocol::{
@@ -48,7 +51,7 @@ fn decode<'de, T: Decode<'de>>(bytes: &'de [u8], version: i16) -> T {
 
 fn check_frame<T>(msg: &T, version: i16, wire: &[u8])
 where
-    T: Encode + for<'de> Decode<'de> + PartialEq + std::fmt::Debug,
+    T: Encode + for<'de> Decode<'de> + PartialEq + fmt::Debug,
 {
     assert2::assert!(encode(msg, version) == wire);
     assert2::assert!(decode::<T>(wire, version) == *msg);

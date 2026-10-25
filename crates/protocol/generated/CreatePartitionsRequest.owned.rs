@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, get_i32, put_bool, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -41,11 +45,11 @@ impl Encode for CreatePartitionsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.timeout_ms);
@@ -55,7 +59,7 @@ impl Encode for CreatePartitionsRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +68,7 @@ impl Encode for CreatePartitionsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -95,7 +98,7 @@ impl Decode<'_> for CreatePartitionsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(CreatePartitionsTopic::decode(buf, version)?);
@@ -154,9 +157,9 @@ impl Encode for CreatePartitionsTopic {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -165,17 +168,17 @@ impl Encode for CreatePartitionsTopic {
         if version >= 0 {
             {
                 let len = (self.assignments).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.assignments {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -195,10 +198,7 @@ impl Encode for CreatePartitionsTopic {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.assignments).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -227,7 +227,7 @@ impl Decode<'_> for CreatePartitionsTopic {
         }
         if version >= 0 {
             out.assignments = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -252,7 +252,7 @@ impl CreatePartitionsTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.count = 1i32;
@@ -273,15 +273,15 @@ impl Encode for CreatePartitionsAssignment {
         let flex = version >= 2;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.broker_ids).len(), flex);
+                put_array_len(buf, (self.broker_ids).len(), flex)?;
                 for it in &self.broker_ids {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -290,8 +290,7 @@ impl Encode for CreatePartitionsAssignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.broker_ids).len(), flex);
+                let prefix = array_len_prefix_len((self.broker_ids).len(), flex);
                 let body: usize = (self.broker_ids).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -309,7 +308,7 @@ impl Decode<'_> for CreatePartitionsAssignment {
         let mut out = Self::default();
         if version >= 0 {
             out.broker_ids = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -340,9 +339,9 @@ impl CreatePartitionsAssignment {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(0));
-    obj.insert("validateOnly".to_string(), ::serde_json::Value::Bool(false));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("validateOnly".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for CreatePartitionsRequest {

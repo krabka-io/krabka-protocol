@@ -19,6 +19,8 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::test_support::sample_tagged_fields;
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::common::{
@@ -77,10 +79,10 @@ impl Encode for ApproveBreakGlassRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_uuid(buf, self.proposal_id);
-        put_compact_string(buf, &self.key_id);
-        put_compact_bytes(buf, &self.signature);
+        put_compact_string(buf, &self.key_id)?;
+        put_compact_bytes(buf, &self.signature)?;
         put_bool(buf, self.withdraw);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -143,10 +145,10 @@ impl Encode for ApproveBreakGlassResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         put_i32(buf, self.approvals_held);
         put_i32(buf, self.approvals_required);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -182,10 +184,10 @@ impl ApproveBreakGlassRequest {
             proposal_id: Uuid([
                 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,
             ]),
-            key_id: "bob-yubi".to_string(),
+            key_id: "bob-yubi".to_owned(),
             signature: (0..64).collect(),
             withdraw: false,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -197,10 +199,10 @@ impl ApproveBreakGlassResponse {
         Self {
             throttle_time_ms: 9,
             error_code: 1007,
-            error_message: Some("principal already approved this proposal".to_string()),
+            error_message: Some("principal already approved this proposal".to_owned()),
             approvals_held: 1,
             approvals_required: 2,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }

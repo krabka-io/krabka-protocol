@@ -63,9 +63,9 @@ impl Encode for DescribeAclsRequest {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.resource_name_filter.as_deref());
+                put_compact_nullable_string(buf, self.resource_name_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.resource_name_filter.as_deref());
+                put_nullable_string(buf, self.resource_name_filter.as_deref())?;
             }
         }
         if version >= 1 {
@@ -73,16 +73,16 @@ impl Encode for DescribeAclsRequest {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.principal_filter.as_deref());
+                put_compact_nullable_string(buf, self.principal_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.principal_filter.as_deref());
+                put_nullable_string(buf, self.principal_filter.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.host_filter.as_deref());
+                put_compact_nullable_string(buf, self.host_filter.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.host_filter.as_deref());
+                put_nullable_string(buf, self.host_filter.as_deref())?;
             }
         }
         if version >= 0 {
@@ -93,7 +93,7 @@ impl Encode for DescribeAclsRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -198,16 +198,16 @@ impl DescribeAclsRequest {
             m.resource_type_filter = 1i8;
         }
         if version >= 0 {
-            m.resource_name_filter = Some("x".to_string());
+            m.resource_name_filter = Some("x".to_owned());
         }
         if version >= 1 {
             m.pattern_type_filter = 1i8;
         }
         if version >= 0 {
-            m.principal_filter = Some("x".to_string());
+            m.principal_filter = Some("x".to_owned());
         }
         if version >= 0 {
-            m.host_filter = Some("x".to_string());
+            m.host_filter = Some("x".to_owned());
         }
         if version >= 0 {
             m.operation = 1i8;
@@ -224,24 +224,24 @@ impl DescribeAclsRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("resourceTypeFilter".to_string(), ::serde_json::json!(0));
+    obj.insert("resourceTypeFilter".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "resourceNameFilter".to_string(),
+        "resourceNameFilter".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     if version >= 1 {
-        obj.insert("patternTypeFilter".to_string(), ::serde_json::json!(3));
+        obj.insert("patternTypeFilter".to_owned(), ::serde_json::json!(3));
     }
     obj.insert(
-        "principalFilter".to_string(),
+        "principalFilter".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "hostFilter".to_string(),
+        "hostFilter".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("operation".to_string(), ::serde_json::json!(0));
-    obj.insert("permissionType".to_string(), ::serde_json::json!(0));
+    obj.insert("operation".to_owned(), ::serde_json::json!(0));
+    obj.insert("permissionType".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeAclsRequest {

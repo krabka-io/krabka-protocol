@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use krabka_ids::{Offset, PartitionIndex};
 
 #[test]

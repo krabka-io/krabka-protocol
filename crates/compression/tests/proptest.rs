@@ -1,12 +1,15 @@
+#![cfg(test)]
+
 use krabka_compression::{CompressionType, compress, decompress};
-use proptest::prelude::*;
+use krabka_units::{ByteSize, convert::ByteSizeExt as _};
+use proptest::{collection, prelude::*};
 
 fn arb_payload() -> impl Strategy<Value = Vec<u8>> {
     // Sizes 0..=32 KiB. Mix of all-zeros (highly compressible) and random
     // (worst case) via prop_oneof.
     prop_oneof![
-        proptest::collection::vec(any::<u8>(), 0..=32 * 1024),
-        proptest::collection::vec(0u8..=0u8, 0..=32 * 1024),
+        collection::vec(any::<u8>(), 0..=32 * 1024),
+        collection::vec(0u8..=0u8, 0..=32 * 1024),
     ]
 }
 
@@ -16,7 +19,7 @@ macro_rules! roundtrip_for {
             #[test]
             fn $name(data in arb_payload()) {
                 let z = compress($ct, &data).unwrap();
-                let back = decompress($ct, &z, krabka_units::convert::ByteSizeExt::from_bytes(u64::MAX)).unwrap();
+                let back = decompress($ct, &z, ByteSize::from_bytes(u64::MAX)).unwrap();
                 prop_assert_eq!(back.as_ref(), data.as_slice());
             }
         }

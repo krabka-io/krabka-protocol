@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +13,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -44,15 +46,15 @@ impl Encode for DeleteTopicsResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +66,7 @@ impl Encode for DeleteTopicsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -95,7 +96,7 @@ impl Decode<'_> for DeleteTopicsResponse {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeletableTopicResult::decode(buf, version)?);
@@ -126,7 +127,7 @@ impl DeleteTopicsResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletableTopicResult {
     pub name: Option<String>,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub error_code: i16,
     pub error_message: Option<String>,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -135,7 +136,7 @@ impl Default for DeletableTopicResult {
     fn default() -> Self {
         Self {
             name: Some(String::new()),
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             error_code: 0i16,
             error_message: None,
             unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -148,34 +149,34 @@ impl Encode for DeletableTopicResult {
         if version >= 0 {
             if version >= 6 {
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.name.as_deref());
+                    put_compact_nullable_string(buf, self.name.as_deref())?;
                 } else {
-                    let () = put_nullable_string(buf, self.name.as_deref());
+                    put_nullable_string(buf, self.name.as_deref())?;
                 }
             } else {
                 if flex {
-                    let () = put_compact_string(buf, (self.name).as_deref().unwrap_or(""));
+                    put_compact_string(buf, (self.name).as_deref().unwrap_or(""))?;
                 } else {
-                    let () = put_string(buf, (self.name).as_deref().unwrap_or(""));
+                    put_string(buf, (self.name).as_deref().unwrap_or(""))?;
                 }
             }
         }
         if version >= 6 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             put_i16(buf, self.error_code);
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -237,7 +238,7 @@ impl Decode<'_> for DeletableTopicResult {
             };
         }
         if version >= 6 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.error_code = get_i16(buf)?;
@@ -261,16 +262,16 @@ impl DeletableTopicResult {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = Some("x".to_string());
+            m.name = Some("x".to_owned());
         }
         if version >= 6 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.error_code = 1i16;
         }
         if version >= 5 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         m
     }
@@ -282,8 +283,8 @@ impl DeletableTopicResult {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
-    obj.insert("responses".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("responses".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

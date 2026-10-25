@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, put_i16},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -41,15 +42,15 @@ impl Encode for SaslHandshakeResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.mechanisms).len(), flex);
+                put_array_len(buf, (self.mechanisms).len(), flex)?;
                 for it in &self.mechanisms {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -61,8 +62,7 @@ impl Encode for SaslHandshakeResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.mechanisms).len(), flex);
+                let prefix = array_len_prefix_len((self.mechanisms).len(), flex);
                 let body: usize = (self.mechanisms)
                     .iter()
                     .map(|it| {
@@ -94,7 +94,7 @@ impl Decode<'_> for SaslHandshakeResponse {
         }
         if version >= 0 {
             out.mechanisms = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -118,7 +118,7 @@ impl SaslHandshakeResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.mechanisms = vec!["x".to_string()];
+            m.mechanisms = vec!["x".to_owned()];
         }
         m
     }
@@ -129,7 +129,7 @@ impl SaslHandshakeResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("mechanisms".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("mechanisms".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

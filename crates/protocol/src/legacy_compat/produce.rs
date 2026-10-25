@@ -1,6 +1,9 @@
 use crate::{
     kafka_3_6_2,
-    owned::{produce_request::ProduceRequest, produce_response::ProduceResponse},
+    owned::{
+        produce_request::{self, ProduceRequest},
+        produce_response::{self, ProduceResponse},
+    },
 };
 
 // ── Request: legacy → canonical ──────────────────────────────────────────────
@@ -18,7 +21,7 @@ impl From<kafka_3_6_2::owned::produce_request::ProduceRequest> for ProduceReques
 }
 
 impl From<kafka_3_6_2::owned::produce_request::TopicProduceData>
-    for crate::owned::produce_request::TopicProduceData
+    for produce_request::TopicProduceData
 {
     fn from(l: kafka_3_6_2::owned::produce_request::TopicProduceData) -> Self {
         Self {
@@ -31,7 +34,7 @@ impl From<kafka_3_6_2::owned::produce_request::TopicProduceData>
 }
 
 impl From<kafka_3_6_2::owned::produce_request::PartitionProduceData>
-    for crate::owned::produce_request::PartitionProduceData
+    for produce_request::PartitionProduceData
 {
     fn from(l: kafka_3_6_2::owned::produce_request::PartitionProduceData) -> Self {
         Self {
@@ -55,10 +58,10 @@ impl From<ProduceResponse> for kafka_3_6_2::owned::produce_response::ProduceResp
     }
 }
 
-impl From<crate::owned::produce_response::TopicProduceResponse>
+impl From<produce_response::TopicProduceResponse>
     for kafka_3_6_2::owned::produce_response::TopicProduceResponse
 {
-    fn from(c: crate::owned::produce_response::TopicProduceResponse) -> Self {
+    fn from(c: produce_response::TopicProduceResponse) -> Self {
         Self {
             name: c.name,
             partition_responses: c.partition_responses.into_iter().map(Into::into).collect(),
@@ -67,10 +70,10 @@ impl From<crate::owned::produce_response::TopicProduceResponse>
     }
 }
 
-impl From<crate::owned::produce_response::PartitionProduceResponse>
+impl From<produce_response::PartitionProduceResponse>
     for kafka_3_6_2::owned::produce_response::PartitionProduceResponse
 {
-    fn from(c: crate::owned::produce_response::PartitionProduceResponse) -> Self {
+    fn from(c: produce_response::PartitionProduceResponse) -> Self {
         Self {
             index: c.index,
             error_code: c.error_code,
@@ -84,10 +87,10 @@ impl From<crate::owned::produce_response::PartitionProduceResponse>
     }
 }
 
-impl From<crate::owned::produce_response::BatchIndexAndErrorMessage>
+impl From<produce_response::BatchIndexAndErrorMessage>
     for kafka_3_6_2::owned::produce_response::BatchIndexAndErrorMessage
 {
-    fn from(c: crate::owned::produce_response::BatchIndexAndErrorMessage) -> Self {
+    fn from(c: produce_response::BatchIndexAndErrorMessage) -> Self {
         Self {
             batch_index: c.batch_index,
             batch_index_error_message: c.batch_index_error_message,
@@ -102,7 +105,7 @@ mod tests {
     use bytes::Bytes;
 
     use super::*;
-    use crate::{UnknownTaggedFields, records::RecordsPayload};
+    use crate::{UnknownTaggedFields, primitives::uuid::Uuid, records::RecordsPayload};
 
     #[test]
     fn legacy_produce_request_conversion_preserves_mapped_fields() {
@@ -117,13 +120,13 @@ mod tests {
         let converted = ProduceRequest::from(legacy);
 
         let expected = ProduceRequest {
-            transactional_id: Some("txn-a".to_string()),
+            transactional_id: Some("txn-a".to_owned()),
             acks: 1,
             timeout_ms: 72,
-            topic_data: vec![crate::owned::produce_request::TopicProduceData {
-                name: "produce-topic".to_string(),
-                topic_id: crate::primitives::uuid::Uuid::ZERO,
-                partition_data: vec![crate::owned::produce_request::PartitionProduceData {
+            topic_data: vec![produce_request::TopicProduceData {
+                name: "produce-topic".to_owned(),
+                topic_id: Uuid::ZERO,
+                partition_data: vec![produce_request::PartitionProduceData {
                     index: 73,
                     records: Some(RecordsPayload::Legacy(Bytes::from_static(&[4, 5, 6]))),
                     unknown_tagged_fields: UnknownTaggedFields(vec![]),
@@ -153,7 +156,7 @@ mod tests {
 
         let expected = kafka_3_6_2::owned::produce_response::ProduceResponse {
             responses: vec![kafka_3_6_2::owned::produce_response::TopicProduceResponse {
-                name: "produce-response-topic".to_string(),
+                name: "produce-response-topic".to_owned(),
                 partition_responses: vec![
                     kafka_3_6_2::owned::produce_response::PartitionProduceResponse {
                         index: 82,
@@ -164,11 +167,11 @@ mod tests {
                         record_errors: vec![
                             kafka_3_6_2::owned::produce_response::BatchIndexAndErrorMessage {
                                 batch_index: 87,
-                                batch_index_error_message: Some("batch-error".to_string()),
+                                batch_index_error_message: Some("batch-error".to_owned()),
                                 unknown_tagged_fields: UnknownTaggedFields(vec![]),
                             },
                         ],
-                        error_message: Some("produce-error".to_string()),
+                        error_message: Some("produce-error".to_owned()),
                         unknown_tagged_fields: UnknownTaggedFields(vec![]),
                     },
                 ],

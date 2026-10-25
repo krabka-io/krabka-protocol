@@ -3,16 +3,20 @@
 //!
 //! The test verifies that the bytes pass through unmodified, and that the relay
 //! records the frames with the correct classification.
+#![cfg(test)]
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
 };
 
+use krabka_ids::{ApiKey, ApiVersion};
 use krabka_kafka_tap::{Recorder, frame::CapturedFrame, spawn};
 
 fn framed(body: &[u8]) -> Vec<u8> {
-    let mut v = (body.len() as i32).to_be_bytes().to_vec();
+    let mut v = i32::try_from(body.len()).unwrap().to_be_bytes().to_vec();
     v.extend_from_slice(body);
     v
 }
@@ -21,11 +25,11 @@ fn framed(body: &[u8]) -> Vec<u8> {
 fn relays_and_records() {
     let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
     let up_addr = upstream.local_addr().unwrap();
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         let (mut s, _) = upstream.accept().unwrap();
         let mut len = [0u8; 4];
         s.read_exact(&mut len).unwrap();
-        let n = i32::from_be_bytes(len) as usize;
+        let n = usize::try_from(i32::from_be_bytes(len)).unwrap();
         let mut body = vec![0u8; n];
         s.read_exact(&mut body).unwrap();
         let mut resp_body = 42i32.to_be_bytes().to_vec();
@@ -35,7 +39,7 @@ fn relays_and_records() {
 
     let recorder = Arc::new(Mutex::new(Vec::<CapturedFrame>::new()));
     let rec_for_tap: Recorder = {
-        let r = recorder.clone();
+        let r = Arc::clone(&recorder);
         Arc::new(move |f: CapturedFrame| r.lock().unwrap().push(f))
     };
     let tap_addr = spawn("127.0.0.1:0", &up_addr.to_string(), rec_for_tap).unwrap();
@@ -50,12 +54,12 @@ fn relays_and_records() {
     c.write_all(&framed(&req_body)).unwrap();
     let mut len = [0u8; 4];
     c.read_exact(&mut len).unwrap();
-    let n = i32::from_be_bytes(len) as usize;
+    let n = usize::try_from(i32::from_be_bytes(len)).unwrap();
     let mut resp = vec![0u8; n];
     c.read_exact(&mut resp).unwrap();
     assert2::assert!(resp == vec![0, 0, 0, 42, 0x99]);
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let frames = recorder.lock().unwrap().clone();
         let req = frames
@@ -64,14 +68,14 @@ fn relays_and_records() {
         let resp = frames
             .iter()
             .any(|f| !f.is_request && f.api_key == 3 && f.version == 12);
-        if (req && resp) || std::time::Instant::now() >= deadline {
+        if (req && resp) || Instant::now() >= deadline {
             break;
         }
         // real-time wait (not a progress poll): synchronous #[test] with
         // std::thread::sleep — there is no async runtime here for
         // yield_now().await, and the polled frames are produced by a background
         // OS thread + the relay's own threads that need real time to run.
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(10));
     }
     let frames = recorder.lock().unwrap().clone();
     assert2::assert!(
@@ -84,4 +88,30 @@ fn relays_and_records() {
             .iter()
             .any(|f| !f.is_request && f.api_key == 3 && f.version == 12)
     );
+}
+
+#[test]
+fn a_captured_frame_spools_as_one_json_line() {
+    for (frame, want) in [
+        (
+            CapturedFrame {
+                api_key: ApiKey(18),
+                version: ApiVersion(3),
+                is_request: true,
+                body: vec![0x00, 0x0a, 0xff],
+            },
+            "{\"api_key\":18,\"version\":3,\"is_request\":true,\"body_hex\":\"000aff\"}\n",
+        ),
+        (
+            CapturedFrame {
+                api_key: ApiKey(0),
+                version: ApiVersion(0),
+                is_request: false,
+                body: Vec::new(),
+            },
+            "{\"api_key\":0,\"version\":0,\"is_request\":false,\"body_hex\":\"\"}\n",
+        ),
+    ] {
+        assert2::assert!(frame.spool_line() == want);
+    }
 }

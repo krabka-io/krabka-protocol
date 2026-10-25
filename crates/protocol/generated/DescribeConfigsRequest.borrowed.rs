@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_configs_request,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -28,12 +33,9 @@ pub struct DescribeConfigsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeConfigsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_configs_request::DescribeConfigsRequest {
-        crate::owned::describe_configs_request::DescribeConfigsRequest {
+    pub fn to_owned(&self) -> describe_configs_request::DescribeConfigsRequest {
+        describe_configs_request::DescribeConfigsRequest {
             resources: (self.resources)
                 .iter()
                 .map(DescribeConfigsResource::to_owned)
@@ -55,11 +57,11 @@ impl Encode for DescribeConfigsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_bool(buf, self.include_synonyms);
@@ -69,7 +71,7 @@ impl Encode for DescribeConfigsRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -78,8 +80,7 @@ impl Encode for DescribeConfigsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -112,7 +113,7 @@ impl<'de> DecodeBorrow<'de> for DescribeConfigsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResource::decode_borrow(buf, version)?);
@@ -167,17 +168,14 @@ impl Default for DescribeConfigsResource<'_> {
     }
 }
 impl DescribeConfigsResource<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_configs_request::DescribeConfigsResource {
-        crate::owned::describe_configs_request::DescribeConfigsResource {
+    pub fn to_owned(&self) -> describe_configs_request::DescribeConfigsResource {
+        describe_configs_request::DescribeConfigsResource {
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             configuration_keys: (self.configuration_keys)
                 .as_ref()
-                .map(|v| v.iter().map(std::string::ToString::to_string).collect()),
+                .map(|v| v.iter().map(|&s| s.to_owned()).collect()),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -190,29 +188,29 @@ impl Encode for DescribeConfigsResource<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 0 {
             {
                 let len = (self.configuration_keys).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.configuration_keys {
                     for it in v {
                         if flex {
-                            let () = put_compact_string(buf, it);
+                            put_compact_string(buf, it)?;
                         } else {
-                            let () = put_string(buf, it);
+                            put_string(buf, it)?;
                         }
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -232,10 +230,7 @@ impl Encode for DescribeConfigsResource<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.configuration_keys).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize = opt.map_or(0, |v| {
                     v.iter()
                         .map(|it| {
@@ -273,7 +268,7 @@ impl<'de> DecodeBorrow<'de> for DescribeConfigsResource<'de> {
         }
         if version >= 0 {
             out.configuration_keys = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {

@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i32, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -51,11 +52,11 @@ impl Encode for DescribeTopicPartitionsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.response_partition_limit);
@@ -73,7 +74,7 @@ impl Encode for DescribeTopicPartitionsRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,8 +83,7 @@ impl Encode for DescribeTopicPartitionsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -113,7 +113,7 @@ impl Decode<'_> for DescribeTopicPartitionsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicRequest::decode(buf, version)?);
@@ -164,14 +164,14 @@ impl Encode for TopicRequest {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -215,7 +215,7 @@ impl TopicRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         m
     }
@@ -231,9 +231,9 @@ impl Encode for Cursor {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic_name);
+                put_compact_string(buf, &self.topic_name)?;
             } else {
-                let () = put_string(buf, &self.topic_name);
+                put_string(buf, &self.topic_name)?;
             }
         }
         if version >= 0 {
@@ -241,7 +241,7 @@ impl Encode for Cursor {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -291,7 +291,7 @@ impl Cursor {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_name = "x".to_string();
+            m.topic_name = "x".to_owned();
         }
         if version >= 0 {
             m.partition_index = 1i32;
@@ -305,12 +305,12 @@ impl Cursor {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     obj.insert(
-        "responsePartitionLimit".to_string(),
+        "responsePartitionLimit".to_owned(),
         ::serde_json::json!(2_000),
     );
-    obj.insert("cursor".to_string(), ::serde_json::Value::Null);
+    obj.insert("cursor".to_owned(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeTopicPartitionsRequest {

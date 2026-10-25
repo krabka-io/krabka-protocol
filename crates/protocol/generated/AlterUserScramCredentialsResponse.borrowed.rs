@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_user_scram_credentials_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,15 +35,11 @@ pub struct AlterUserScramCredentialsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterUserScramCredentialsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::alter_user_scram_credentials_response::AlterUserScramCredentialsResponse
-    {
-        crate::owned::alter_user_scram_credentials_response::AlterUserScramCredentialsResponse {
+    ) -> alter_user_scram_credentials_response::AlterUserScramCredentialsResponse {
+        alter_user_scram_credentials_response::AlterUserScramCredentialsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             results: (self.results)
                 .iter()
@@ -65,15 +63,15 @@ impl Encode for AlterUserScramCredentialsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.results).len(), flex);
+                put_array_len(buf, (self.results).len(), flex)?;
                 for it in &self.results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,8 +83,7 @@ impl Encode for AlterUserScramCredentialsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.results).len(), flex);
+                let prefix = array_len_prefix_len((self.results).len(), flex);
                 let body: usize = (self.results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -116,7 +113,7 @@ impl<'de> DecodeBorrow<'de> for AlterUserScramCredentialsResponse<'de> {
         }
         if version >= 0 {
             out.results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterUserScramCredentialsResult::decode_borrow(
@@ -164,17 +161,14 @@ impl Default for AlterUserScramCredentialsResult<'_> {
     }
 }
 impl AlterUserScramCredentialsResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::alter_user_scram_credentials_response::AlterUserScramCredentialsResult {
-        crate::owned::alter_user_scram_credentials_response::AlterUserScramCredentialsResult {
-            user: (self.user).to_string(),
+    ) -> alter_user_scram_credentials_response::AlterUserScramCredentialsResult {
+        alter_user_scram_credentials_response::AlterUserScramCredentialsResult {
+            user: (self.user).to_owned(),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -184,9 +178,9 @@ impl Encode for AlterUserScramCredentialsResult<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.user);
+                put_compact_string(buf, self.user)?;
             } else {
-                let () = put_string(buf, self.user);
+                put_string(buf, self.user)?;
             }
         }
         if version >= 0 {
@@ -194,14 +188,14 @@ impl Encode for AlterUserScramCredentialsResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

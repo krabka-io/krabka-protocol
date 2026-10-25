@@ -3,9 +3,12 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-        put_string, string_len,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        string_bytes::{
+            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
+            put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -20,22 +23,22 @@ impl Encode for TopologyDescriptionSubtopology {
         let flex = version >= 0;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.subtopology_id);
+                put_compact_string(buf, &self.subtopology_id)?;
             } else {
-                let () = put_string(buf, &self.subtopology_id);
+                put_string(buf, &self.subtopology_id)?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.nodes).len(), flex);
+                put_array_len(buf, (self.nodes).len(), flex)?;
                 for it in &self.nodes {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -51,8 +54,7 @@ impl Encode for TopologyDescriptionSubtopology {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.nodes).len(), flex);
+                let prefix = array_len_prefix_len((self.nodes).len(), flex);
                 let body: usize = (self.nodes).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -77,7 +79,7 @@ impl Decode<'_> for TopologyDescriptionSubtopology {
         }
         if version >= 1 {
             out.nodes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(
@@ -101,7 +103,7 @@ impl TopologyDescriptionSubtopology {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 1 {
-            m.subtopology_id = "x".to_string();
+            m.subtopology_id = "x".to_owned();
         }
         if version >= 1 {
             m.nodes =

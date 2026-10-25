@@ -70,6 +70,6 @@ impl ControlRecordTypeSchema {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("type".to_string(), ::serde_json::json!(0));
+    obj.insert("type".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

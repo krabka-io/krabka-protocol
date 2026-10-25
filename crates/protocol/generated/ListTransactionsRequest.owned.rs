@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -55,41 +56,37 @@ impl Encode for ListTransactionsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.state_filters).len(), flex);
+                put_array_len(buf, (self.state_filters).len(), flex)?;
                 for it in &self.state_filters {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.producer_id_filters).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.producer_id_filters).len(), flex)?;
                 for it in &self.producer_id_filters {
                     put_i64(buf, *it);
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i64(buf, self.duration_filter);
         }
         if version >= 2 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.transactional_id_pattern.as_deref());
+                put_compact_nullable_string(buf, self.transactional_id_pattern.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.transactional_id_pattern.as_deref());
+                put_nullable_string(buf, self.transactional_id_pattern.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -98,10 +95,7 @@ impl Encode for ListTransactionsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.state_filters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.state_filters).len(), flex);
                 let body: usize = (self.state_filters)
                     .iter()
                     .map(|it| {
@@ -117,10 +111,7 @@ impl Encode for ListTransactionsRequest {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.producer_id_filters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.producer_id_filters).len(), flex);
                 let body: usize = (self.producer_id_filters).iter().map(|_| 8).sum();
                 prefix + body
             };
@@ -154,7 +145,7 @@ impl Decode<'_> for ListTransactionsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.state_filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -168,7 +159,7 @@ impl Decode<'_> for ListTransactionsRequest {
         }
         if version >= 0 {
             out.producer_id_filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i64(buf)?);
@@ -198,7 +189,7 @@ impl ListTransactionsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.state_filters = vec!["x".to_string()];
+            m.state_filters = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.producer_id_filters = vec![1i64];
@@ -207,7 +198,7 @@ impl ListTransactionsRequest {
             m.duration_filter = 1i64;
         }
         if version >= 2 {
-            m.transactional_id_pattern = Some("x".to_string());
+            m.transactional_id_pattern = Some("x".to_owned());
         }
         m
     }
@@ -219,19 +210,19 @@ impl ListTransactionsRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "stateFilters".to_string(),
+        "stateFilters".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     obj.insert(
-        "producerIdFilters".to_string(),
+        "producerIdFilters".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     if version >= 1 {
-        obj.insert("durationFilter".to_string(), ::serde_json::json!(-1));
+        obj.insert("durationFilter".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 2 {
         obj.insert(
-            "transactionalIdPattern".to_string(),
+            "transactionalIdPattern".to_owned(),
             ::serde_json::Value::Null,
         );
     }

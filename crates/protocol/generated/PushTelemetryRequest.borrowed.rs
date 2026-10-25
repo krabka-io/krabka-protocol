@@ -3,10 +3,12 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::push_telemetry_request,
     primitives::{
         fixed::{get_bool, get_i8, get_i32, put_bool, put_i8, put_i32},
-        string_bytes::{put_bytes, put_compact_bytes},
+        string_bytes::{bytes_len, compact_bytes_len, put_bytes, put_compact_bytes},
         string_bytes_borrowed::{get_bytes_borrowed, get_compact_bytes_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -22,7 +24,7 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PushTelemetryRequest<'a> {
-    pub client_instance_id: crate::primitives::uuid::Uuid,
+    pub client_instance_id: Uuid,
     pub subscription_id: i32,
     pub terminating: bool,
     pub compression_type: i8,
@@ -30,12 +32,9 @@ pub struct PushTelemetryRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PushTelemetryRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::push_telemetry_request::PushTelemetryRequest {
-        crate::owned::push_telemetry_request::PushTelemetryRequest {
+    pub fn to_owned(&self) -> push_telemetry_request::PushTelemetryRequest {
+        push_telemetry_request::PushTelemetryRequest {
             client_instance_id: (self.client_instance_id),
             subscription_id: (self.subscription_id),
             terminating: (self.terminating),
@@ -55,7 +54,7 @@ impl Encode for PushTelemetryRequest<'_> {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.client_instance_id);
+            put_uuid(buf, self.client_instance_id);
         }
         if version >= 0 {
             put_i32(buf, self.subscription_id);
@@ -68,14 +67,14 @@ impl Encode for PushTelemetryRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.metrics);
+                put_compact_bytes(buf, self.metrics)?;
             } else {
-                let () = put_bytes(buf, self.metrics);
+                put_bytes(buf, self.metrics)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -96,11 +95,9 @@ impl Encode for PushTelemetryRequest<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.metrics).len() + 1).unwrap(),
-                ) + (self.metrics).len()
+                compact_bytes_len(self.metrics)
             } else {
-                4 + (self.metrics).len()
+                bytes_len(self.metrics)
             };
         }
         if flex {
@@ -121,7 +118,7 @@ impl<'de> DecodeBorrow<'de> for PushTelemetryRequest<'de> {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.client_instance_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.client_instance_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.subscription_id = get_i32(buf)?;
@@ -151,7 +148,7 @@ impl PushTelemetryRequest<'_> {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.client_instance_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.client_instance_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.subscription_id = 1i32;

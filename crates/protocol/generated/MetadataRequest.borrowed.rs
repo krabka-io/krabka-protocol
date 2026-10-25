@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::metadata_request,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, put_bool},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +19,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -47,12 +53,9 @@ impl Default for MetadataRequest<'_> {
     }
 }
 impl MetadataRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_request::MetadataRequest {
-        crate::owned::metadata_request::MetadataRequest {
+    pub fn to_owned(&self) -> metadata_request::MetadataRequest {
+        metadata_request::MetadataRequest {
             topics: (self.topics)
                 .as_ref()
                 .map(|v| v.iter().map(MetadataRequestTopic::to_owned).collect()),
@@ -76,7 +79,7 @@ impl Encode for MetadataRequest<'_> {
             if version >= 1 {
                 {
                     let len = (self.topics).as_ref().map(Vec::len);
-                    crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                    put_nullable_array_len(buf, len, flex)?;
                     if let Some(v) = &self.topics {
                         for it in v {
                             it.encode(buf, version)?;
@@ -86,7 +89,7 @@ impl Encode for MetadataRequest<'_> {
             } else {
                 {
                     let v = (self.topics).as_deref().unwrap_or(&[]);
-                    crate::primitives::array::put_array_len(buf, v.len(), flex);
+                    put_array_len(buf, v.len(), flex)?;
                     for it in v {
                         it.encode(buf, version)?;
                     }
@@ -104,7 +107,7 @@ impl Encode for MetadataRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -115,10 +118,7 @@ impl Encode for MetadataRequest<'_> {
             n += if version >= 1 {
                 {
                     let opt: Option<&Vec<_>> = (self.topics).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize =
                         opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                     prefix + body
@@ -126,7 +126,7 @@ impl Encode for MetadataRequest<'_> {
             } else {
                 {
                     let v = (self.topics).as_deref().unwrap_or(&[]);
-                    let prefix = crate::primitives::array::array_len_prefix_len(v.len(), flex);
+                    let prefix = array_len_prefix_len(v.len(), flex);
                     let body: usize = v.iter().map(|it| it.encoded_len(version)).sum();
                     prefix + body
                 }
@@ -161,7 +161,7 @@ impl<'de> DecodeBorrow<'de> for MetadataRequest<'de> {
         if version >= 0 {
             out.topics = if version >= 1 {
                 {
-                    let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                    let opt = get_nullable_array_len(buf, flex)?;
                     match opt {
                         None => None,
                         Some(n) => {
@@ -175,7 +175,7 @@ impl<'de> DecodeBorrow<'de> for MetadataRequest<'de> {
                 }
             } else {
                 Some({
-                    let n = crate::primitives::array::get_array_len(buf, flex)?;
+                    let n = get_array_len(buf, flex)?;
                     let mut v = Vec::with_capacity(n);
                     for _ in 0..n {
                         v.push(MetadataRequestTopic::decode_borrow(buf, version)?);
@@ -221,28 +221,25 @@ impl MetadataRequest<'_> {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataRequestTopic<'a> {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub name: Option<&'a str>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for MetadataRequestTopic<'_> {
     fn default() -> Self {
         Self {
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             name: Some(""),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
 }
 impl MetadataRequestTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_request::MetadataRequestTopic {
-        crate::owned::metadata_request::MetadataRequestTopic {
+    pub fn to_owned(&self) -> metadata_request::MetadataRequestTopic {
+        metadata_request::MetadataRequestTopic {
             topic_id: (self.topic_id),
-            name: (self.name).map(std::string::ToString::to_string),
+            name: (self.name).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -251,26 +248,26 @@ impl Encode for MetadataRequestTopic<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 9;
         if version >= 10 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             if version >= 10 {
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.name);
+                    put_compact_nullable_string(buf, self.name)?;
                 } else {
-                    let () = put_nullable_string(buf, self.name);
+                    put_nullable_string(buf, self.name)?;
                 }
             } else {
                 if flex {
-                    let () = put_compact_string(buf, (self.name).unwrap_or(""));
+                    put_compact_string(buf, (self.name).unwrap_or(""))?;
                 } else {
-                    let () = put_string(buf, (self.name).unwrap_or(""));
+                    put_string(buf, (self.name).unwrap_or(""))?;
                 }
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -307,7 +304,7 @@ impl<'de> DecodeBorrow<'de> for MetadataRequestTopic<'de> {
         let flex = version >= 9;
         let mut out = Self::default();
         if version >= 10 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.name = if version >= 10 {
@@ -336,7 +333,7 @@ impl MetadataRequestTopic<'_> {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 10 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.name = Some("x");

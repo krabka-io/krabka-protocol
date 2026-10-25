@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::consumer_group_describe_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,14 +35,9 @@ pub struct ConsumerGroupDescribeResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ConsumerGroupDescribeResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::consumer_group_describe_response::ConsumerGroupDescribeResponse {
-        crate::owned::consumer_group_describe_response::ConsumerGroupDescribeResponse {
+    pub fn to_owned(&self) -> consumer_group_describe_response::ConsumerGroupDescribeResponse {
+        consumer_group_describe_response::ConsumerGroupDescribeResponse {
             throttle_time_ms: (self.throttle_time_ms),
             groups: (self.groups).iter().map(DescribedGroup::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -61,15 +58,15 @@ impl Encode for ConsumerGroupDescribeResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -81,8 +78,7 @@ impl Encode for ConsumerGroupDescribeResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -109,7 +105,7 @@ impl<'de> DecodeBorrow<'de> for ConsumerGroupDescribeResponse<'de> {
         }
         if version >= 0 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribedGroup::decode_borrow(buf, version)?);
@@ -167,19 +163,16 @@ impl Default for DescribedGroup<'_> {
     }
 }
 impl<'a> DescribedGroup<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::consumer_group_describe_response::DescribedGroup {
-        crate::owned::consumer_group_describe_response::DescribedGroup {
+    pub fn to_owned(&self) -> consumer_group_describe_response::DescribedGroup {
+        consumer_group_describe_response::DescribedGroup {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
-            group_id: (self.group_id).to_string(),
-            group_state: (self.group_state).to_string(),
+            error_message: (self.error_message).map(str::to_owned),
+            group_id: (self.group_id).to_owned(),
+            group_state: (self.group_state).to_owned(),
             group_epoch: (self.group_epoch),
             assignment_epoch: (self.assignment_epoch),
-            assignor_name: (self.assignor_name).to_string(),
+            assignor_name: (self.assignor_name).to_owned(),
             members: (self.members).iter().map(Member::to_owned).collect(),
             authorized_operations: (self.authorized_operations),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -190,32 +183,50 @@ impl<'a> DescribedGroup<'a> {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_3<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_state);
+                put_compact_string(buf, self.group_state)?;
             } else {
-                let () = put_string(buf, self.group_state);
+                put_string(buf, self.group_state)?;
             }
         }
+        Ok(())
     }
     fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -227,14 +238,20 @@ impl<'a> DescribedGroup<'a> {
             put_i32(buf, self.assignment_epoch);
         }
     }
-    fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_6<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.assignor_name);
+                put_compact_string(buf, self.assignor_name)?;
             } else {
-                let () = put_string(buf, self.assignor_name);
+                put_string(buf, self.assignor_name)?;
             }
         }
+        Ok(())
     }
     fn encode_field_7<B: BufMut>(
         &self,
@@ -244,11 +261,11 @@ impl<'a> DescribedGroup<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -257,11 +274,17 @@ impl<'a> DescribedGroup<'a> {
             put_i32(buf, self.authorized_operations);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -364,7 +387,7 @@ impl<'a> DescribedGroup<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Member::decode_borrow(buf, version)?);
@@ -401,15 +424,15 @@ impl Encode for DescribedGroup<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
-        self.encode_field_3(buf, version, flex);
+        self.encode_field_1(buf, version, flex)?;
+        self.encode_field_2(buf, version, flex)?;
+        self.encode_field_3(buf, version, flex)?;
         self.encode_field_4(buf, version, flex);
         self.encode_field_5(buf, version, flex);
-        self.encode_field_6(buf, version, flex);
+        self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex)?;
         self.encode_field_8(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -454,8 +477,7 @@ impl Encode for DescribedGroup<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -560,106 +582,140 @@ impl<'a> Default for Member<'a> {
     }
 }
 impl<'a> Member<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::consumer_group_describe_response::Member {
-        crate::owned::consumer_group_describe_response::Member {
-            member_id: (self.member_id).to_string(),
-            instance_id: (self.instance_id).map(std::string::ToString::to_string),
-            rack_id: (self.rack_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> consumer_group_describe_response::Member {
+        consumer_group_describe_response::Member {
+            member_id: (self.member_id).to_owned(),
+            instance_id: (self.instance_id).map(str::to_owned),
+            rack_id: (self.rack_id).map(str::to_owned),
             member_epoch: (self.member_epoch),
-            client_id: (self.client_id).to_string(),
-            client_host: (self.client_host).to_string(),
+            client_id: (self.client_id).to_owned(),
+            client_host: (self.client_host).to_owned(),
             subscribed_topic_names: (self.subscribed_topic_names)
                 .iter()
-                .map(std::string::ToString::to_string)
+                .map(|&s| s.to_owned())
                 .collect(),
-            subscribed_topic_regex: (self.subscribed_topic_regex)
-                .map(std::string::ToString::to_string),
+            subscribed_topic_regex: (self.subscribed_topic_regex).map(str::to_owned),
             assignment: (self.assignment).to_owned(),
             target_assignment: (self.target_assignment).to_owned(),
             member_type: (self.member_type),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
-    fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_0<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.instance_id);
+                put_compact_nullable_string(buf, self.instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.instance_id);
+                put_nullable_string(buf, self.instance_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack_id);
+                put_compact_nullable_string(buf, self.rack_id)?;
             } else {
-                let () = put_nullable_string(buf, self.rack_id);
+                put_nullable_string(buf, self.rack_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.member_epoch);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.client_id);
+                put_compact_string(buf, self.client_id)?;
             } else {
-                let () = put_string(buf, self.client_id);
+                put_string(buf, self.client_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_5<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.client_host);
+                put_compact_string(buf, self.client_host)?;
             } else {
-                let () = put_string(buf, self.client_host);
+                put_string(buf, self.client_host)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_6<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.subscribed_topic_names).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.subscribed_topic_names).len(), flex)?;
                 for it in &self.subscribed_topic_names {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
-        }
-    }
-    fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
-        if version >= 0 {
-            if flex {
-                let () = put_compact_nullable_string(buf, self.subscribed_topic_regex);
-            } else {
-                let () = put_nullable_string(buf, self.subscribed_topic_regex);
             }
         }
+        Ok(())
+    }
+    fn encode_field_7<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
+        if version >= 0 {
+            if flex {
+                put_compact_nullable_string(buf, self.subscribed_topic_regex)?;
+            } else {
+                put_nullable_string(buf, self.subscribed_topic_regex)?;
+            }
+        }
+        Ok(())
     }
     fn encode_field_8<B: BufMut>(
         &self,
@@ -688,11 +744,17 @@ impl<'a> Member<'a> {
             put_i8(buf, self.member_type);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -788,7 +850,7 @@ impl<'a> Member<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.subscribed_topic_names = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -865,18 +927,18 @@ impl<'a> Member<'a> {
 impl Encode for Member<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
-        self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
+        self.encode_field_0(buf, version, flex)?;
+        self.encode_field_1(buf, version, flex)?;
+        self.encode_field_2(buf, version, flex)?;
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
-        self.encode_field_5(buf, version, flex);
-        self.encode_field_6(buf, version, flex);
-        self.encode_field_7(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
+        self.encode_field_5(buf, version, flex)?;
+        self.encode_field_6(buf, version, flex)?;
+        self.encode_field_7(buf, version, flex)?;
         self.encode_field_8(buf, version, flex)?;
         self.encode_field_9(buf, version, flex)?;
         self.encode_field_10(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -922,10 +984,7 @@ impl Encode for Member<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.subscribed_topic_names).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.subscribed_topic_names).len(), flex);
                 let body: usize = (self.subscribed_topic_names)
                     .iter()
                     .map(|it| {

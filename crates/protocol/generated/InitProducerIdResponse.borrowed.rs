@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::init_producer_id_response,
     primitives::fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -39,12 +40,9 @@ impl Default for InitProducerIdResponse {
     }
 }
 impl InitProducerIdResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::init_producer_id_response::InitProducerIdResponse {
-        crate::owned::init_producer_id_response::InitProducerIdResponse {
+    pub fn to_owned(&self) -> init_producer_id_response::InitProducerIdResponse {
+        init_producer_id_response::InitProducerIdResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             producer_id: (self.producer_id),
@@ -84,7 +82,7 @@ impl Encode for InitProducerIdResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

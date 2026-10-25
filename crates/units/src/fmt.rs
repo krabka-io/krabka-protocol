@@ -109,13 +109,9 @@ fn write_units(
         .iter()
         .copied()
         .find(|&(scale, _)| count.abs() >= scale && scaled % scale == 0);
-    match picked {
-        Some((scale, unit)) => {
-            write_thousandths(f, scaled / scale)?;
-            write!(f, "{unit}{suffix}")
-        }
-        None => write_thousandths(f, scaled).and_then(|()| write!(f, "{base}{suffix}")),
-    }
+    let (thousandths, unit) = picked.map_or((scaled, base), |(scale, unit)| (scaled / scale, unit));
+    write_thousandths(f, thousandths)?;
+    write!(f, "{unit}{suffix}")
 }
 
 /// Writes `thousandths` / 1000. This drops a zero fraction and trailing zeros.

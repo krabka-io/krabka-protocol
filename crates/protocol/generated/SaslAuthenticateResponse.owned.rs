@@ -57,16 +57,16 @@ impl Encode for SaslAuthenticateResponse {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.auth_bytes);
+                put_compact_bytes(buf, &self.auth_bytes)?;
             } else {
-                let () = put_bytes(buf, &self.auth_bytes);
+                put_bytes(buf, &self.auth_bytes)?;
             }
         }
         if version >= 1 {
@@ -74,7 +74,7 @@ impl Encode for SaslAuthenticateResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -153,7 +153,7 @@ impl SaslAuthenticateResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.auth_bytes = ::bytes::Bytes::from_static(b"x");
@@ -170,17 +170,17 @@ impl SaslAuthenticateResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "errorMessage".to_string(),
+        "errorMessage".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "authBytes".to_string(),
+        "authBytes".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     if version >= 1 {
-        obj.insert("sessionLifetimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("sessionLifetimeMs".to_owned(), ::serde_json::json!(0));
     }
     ::serde_json::Value::Object(obj)
 }

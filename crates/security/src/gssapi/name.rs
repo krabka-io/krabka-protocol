@@ -11,6 +11,8 @@
 
 use std::fmt;
 
+use tracing::field;
+
 use crate::java_regex::{JavaPattern, JavaReplacementError};
 
 /// What a rule does to the case of its result.
@@ -110,10 +112,10 @@ impl Rule {
     ///
     /// [`NameError::Parse`] when the spec does not match the grammar and
     /// [`NameError::Pattern`] when a regular expression does not compile.
-    pub fn parse(spec: &str) -> Result<Rule, NameError> {
+    pub fn parse(spec: &str) -> Result<Self, NameError> {
         let spec = spec.trim();
         if spec == "DEFAULT" {
-            return Ok(Rule::Default);
+            return Ok(Self::Default);
         }
         let invalid = || NameError::Parse(spec.to_owned());
         let pattern = |source: &str| {
@@ -125,8 +127,9 @@ impl Rule {
         let rest = spec.strip_prefix("RULE:[").ok_or_else(invalid)?;
         let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
         // `Integer.parseInt` of the `\d*` group rejects an empty count.
-        let num_components: usize = rest[..digits].parse().map_err(|_| invalid())?;
-        let rest = rest[digits..].strip_prefix(':').ok_or_else(invalid)?;
+        let (count, rest) = rest.split_at_checked(digits).ok_or_else(invalid)?;
+        let num_components: usize = count.parse().map_err(|_| invalid())?;
+        let rest = rest.strip_prefix(':').ok_or_else(invalid)?;
         let (format, mut rest) = rest.split_once(']').ok_or_else(invalid)?;
 
         let mut match_re = None;
@@ -142,10 +145,9 @@ impl Rule {
             && let Some((from, after)) = after.split_once('/')
             && let Some((to, after)) = after.split_once('/')
         {
-            let (global, after) = match after.strip_prefix('g') {
-                Some(after) => (true, after),
-                None => (false, after),
-            };
+            let (global, after) = after
+                .strip_prefix('g')
+                .map_or((false, after), |after| (true, after));
             subst = Some(Subst {
                 from: pattern(from)?,
                 to: to.to_owned(),
@@ -162,7 +164,7 @@ impl Rule {
             _ => return Err(invalid()),
         };
 
-        Ok(Rule::Translate(Box::new(Translate {
+        Ok(Self::Translate(Box::new(Translate {
             num_components,
             format: format.to_owned(),
             match_re,
@@ -177,11 +179,14 @@ impl Rule {
     /// `params` is `[realm, component, ...]`.
     fn apply(&self, params: &[&str], default_realm: &str) -> Result<Option<String>, NameError> {
         let (result, case) = match self {
-            Rule::Default => (
-                (params[0] == default_realm).then(|| params[1].to_owned()),
+            Self::Default => (
+                match params {
+                    [realm, first, ..] => (*realm == default_realm).then(|| (*first).to_owned()),
+                    _ => None,
+                },
                 Case::Preserve,
             ),
-            Rule::Translate(translate) => {
+            Self::Translate(translate) => {
                 let Translate {
                     num_components,
                     format,
@@ -234,8 +239,8 @@ impl Rule {
 impl fmt::Display for Rule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Rule::Default => f.write_str("DEFAULT"),
-            Rule::Translate(translate) => {
+            Self::Default => f.write_str("DEFAULT"),
+            Self::Translate(translate) => {
                 let Translate {
                     num_components,
                     format,
@@ -268,11 +273,12 @@ impl fmt::Display for Rule {
 fn replace_parameters(format: &str, params: &[&str]) -> Result<String, NameError> {
     let mut out = String::new();
     let mut rest = format;
-    while let Some(dollar) = rest.find('$') {
-        out.push_str(&rest[..dollar]);
-        let after = &rest[dollar + 1..];
+    while let Some((before, after)) = rest.split_once('$') {
+        out.push_str(before);
         let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        let number = &after[..digits];
+        let (number, tail) = after.split_at_checked(digits).ok_or_else(|| {
+            NameError::BadFormat(format!("bad format in username mapping in {after}"))
+        })?;
         let index: usize = number.parse().map_err(|_| {
             NameError::BadFormat(format!("bad format in username mapping in {number}"))
         })?;
@@ -283,7 +289,7 @@ fn replace_parameters(format: &str, params: &[&str]) -> Result<String, NameError
             ))
         })?;
         out.push_str(param);
-        rest = &after[digits..];
+        rest = tail;
     }
     out.push_str(rest);
     Ok(out)
@@ -365,7 +371,7 @@ impl fmt::Display for KerberosName {
 #[tracing::instrument(
     level = "debug",
     skip_all,
-    fields(mechanism = "GSSAPI", mapped = tracing::field::Empty),
+    fields(mechanism = "GSSAPI", mapped = field::Empty),
     err
 )]
 pub fn short_name(
@@ -552,7 +558,7 @@ mod tests {
         for (specs, default_realm, principal, expected) in cases {
             check!(
                 map(specs, default_realm, principal).as_deref()
-                    == expected.map_err(ToString::to_string).as_deref(),
+                    == expected.map_err(str::to_owned).as_deref(),
                 "{principal} under {specs:?}"
             );
         }

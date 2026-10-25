@@ -13,7 +13,7 @@
 //! the bytes it sent, as RFC 5802 reads, authenticates only when the two
 //! agree, as against Kafka.
 
-use std::collections::{HashMap, hash_map::Entry};
+use std::{collections::HashMap, iter, str::from_utf8};
 
 use base64::{
     Engine, alphabet,
@@ -70,7 +70,7 @@ impl ScramClientFirst {
     /// GS2 header other than `n,,` or `n,a=<authzid>,`, or does not follow
     /// Kafka's client-first grammar.
     pub fn parse(bytes: &[u8]) -> Result<Self, AuthError> {
-        let message = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
+        let message = from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
         let after_flag = message
             .strip_prefix("n,")
             .ok_or(AuthError::MalformedMessage)?;
@@ -89,9 +89,13 @@ impl ScramClientFirst {
 
         let mut attributes = bare.split(',').peekable();
         // Kafka accepts, and ignores, a reserved `m=` attribute here.
-        if attributes.peek().is_some_and(|a| a.starts_with("m=")) {
-            let reserved = attributes.next().unwrap_or_default();
-            if !is_value(&reserved[2..]) {
+        if let Some(reserved) = attributes
+            .peek()
+            .copied()
+            .and_then(|a| a.strip_prefix("m="))
+        {
+            attributes.next();
+            if !is_value(reserved) {
                 return Err(AuthError::MalformedMessage);
             }
         }
@@ -105,17 +109,17 @@ impl ScramClientFirst {
             .and_then(|a| a.strip_prefix("r="))
             .filter(|n| is_printable(n))
             .ok_or(AuthError::MalformedMessage)?
-            .to_string();
+            .to_owned();
         let extensions = attributes
             .map(|attribute| {
                 attribute
                     .split_once('=')
                     .filter(|(key, value)| is_extension(key, value))
-                    .map(|(key, value)| (key.to_string(), value.to_string()))
+                    .map(|(key, value)| (key.to_owned(), value.to_owned()))
                     .ok_or(AuthError::MalformedMessage)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let bare = std::iter::once(format!("n={saslname},r={nonce}"))
+        let bare = iter::once(format!("n={saslname},r={nonce}"))
             .chain(
                 distinct_extensions(&extensions)
                     .into_iter()
@@ -162,18 +166,16 @@ impl ScramClientFirst {
 /// The client-first message arrives before authentication, so a key's slot
 /// is found through a hash index rather than a scan of the keys seen so far.
 fn distinct_extensions(extensions: &[(String, String)]) -> Vec<(&str, &str)> {
-    let mut distinct: Vec<(&str, &str)> = Vec::with_capacity(extensions.len());
-    let mut slots: HashMap<&str, usize> = HashMap::with_capacity(extensions.len());
+    let mut last: HashMap<&str, &str> = HashMap::with_capacity(extensions.len());
     for (key, value) in extensions {
-        match slots.entry(key) {
-            Entry::Occupied(slot) => distinct[*slot.get()].1 = value,
-            Entry::Vacant(slot) => {
-                slot.insert(distinct.len());
-                distinct.push((key, value));
-            }
-        }
+        last.insert(key, value);
     }
-    distinct
+    // Taking a key's value out of `last` at its first occurrence emits each
+    // key once, in first-sent order.
+    extensions
+        .iter()
+        .filter_map(|(key, _)| last.remove(key.as_str()).map(|value| (key.as_str(), value)))
+        .collect()
 }
 
 /// A SCRAM client-final message, split as Kafka's
@@ -209,7 +211,7 @@ impl<'a> ScramClientFinal<'a> {
     /// [`AuthError::MalformedMessage`] when the message is not UTF-8 or does
     /// not match Kafka's client-final grammar as a whole.
     pub(super) fn parse(bytes: &'a [u8]) -> Result<Self, AuthError> {
-        let message = std::str::from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
+        let message = from_utf8(bytes).map_err(|_| AuthError::MalformedMessage)?;
         // No base64 character is a `,`, so the proof is what follows the
         // last `,p=`. A later attribute leaves a `,` in it and fails below.
         let (before_proof, proof) = message
@@ -252,13 +254,10 @@ impl<'a> ScramClientFinal<'a> {
 /// Kafka's `BASE64` grammar: groups of four base64 characters, the last of
 /// which may end in `=` or `==`. It matches the empty string.
 fn is_base64(value: &str) -> bool {
-    let (body, remainder) = if let Some(body) = value.strip_suffix("==") {
-        (body, 2)
-    } else if let Some(body) = value.strip_suffix('=') {
-        (body, 3)
-    } else {
-        (value, 0)
-    };
+    let (body, remainder) = value.strip_suffix("==").map_or_else(
+        || value.strip_suffix('=').map_or((value, 0), |body| (body, 3)),
+        |body| (body, 2),
+    );
     body.len() % 4 == remainder
         && body
             .bytes()
@@ -283,15 +282,17 @@ pub fn decode_saslname(saslname: &str) -> Result<String, AuthError> {
     }
     let mut decoded = String::with_capacity(saslname.len());
     let mut rest = saslname;
-    while let Some(at) = rest.find('=') {
-        decoded.push_str(&rest[..at]);
-        let escape = rest.get(at..at + 3).ok_or(AuthError::MalformedMessage)?;
+    while let Some((before, after)) = rest.split_once('=') {
+        decoded.push_str(before);
+        let (escape, tail) = after
+            .split_at_checked(2)
+            .ok_or(AuthError::MalformedMessage)?;
         decoded.push(match escape {
-            "=2C" => ',',
-            "=3D" => '=',
+            "2C" => ',',
+            "3D" => '=',
             _ => return Err(AuthError::MalformedMessage),
         });
-        rest = &rest[at + 3..];
+        rest = tail;
     }
     decoded.push_str(rest);
     Ok(decoded)
@@ -604,7 +605,7 @@ mod tests {
         ] {
             check!(
                 (encode_saslname(name), decode_saslname(encoded))
-                    == (encoded.to_string(), Ok(name.to_string()))
+                    == (encoded.to_owned(), Ok(name.to_owned()))
             );
         }
     }

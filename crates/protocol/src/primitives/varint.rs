@@ -6,19 +6,11 @@ const MAX_VARINT_BYTES: usize = 5; // 32-bit
 const MAX_VARLONG_BYTES: usize = 10; // 64-bit
 
 pub fn put_uvarint<B: BufMut>(buf: &mut B, mut v: u32) {
-    if v < 0x80 {
-        buf.put_u8(v.to_le_bytes()[0]);
-        return;
-    }
-    let mut encoded = [0_u8; MAX_VARINT_BYTES];
-    let mut len = 0;
     while (v & !0x7F) != 0 {
-        encoded[len] = (v & 0x7F).to_le_bytes()[0] | 0x80;
+        buf.put_u8((v & 0x7F).to_le_bytes()[0] | 0x80);
         v >>= 7;
-        len += 1;
     }
-    encoded[len] = v.to_le_bytes()[0];
-    buf.put_slice(&encoded[..=len]);
+    buf.put_u8(v.to_le_bytes()[0]);
 }
 
 /// # Errors
@@ -52,6 +44,29 @@ pub fn uvarint_len(v: u32) -> usize {
     bits.div_ceil(7)
 }
 
+/// The compact (`len + 1`) unsigned-varint prefix value for a length.
+///
+/// # Errors
+/// Returns [`ProtocolError::LengthOverflow`], naming `what`, when `len + 1`
+/// does not fit in a `u32`.
+pub(crate) fn compact_length(len: usize, what: &'static str) -> Result<u32, ProtocolError> {
+    len.checked_add(1)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or(ProtocolError::LengthOverflow { what, len })
+}
+
+/// Unsigned-varint length of a `usize` value, such as a `len + 1` prefix.
+///
+/// Equals `uvarint_len` for every value that fits in a `u32`.
+#[must_use]
+pub(crate) fn usize_uvarint_len(v: usize) -> usize {
+    if v < 0x80 {
+        return 1;
+    }
+    let bits = usize::from((usize::BITS - v.leading_zeros()).to_le_bytes()[0]);
+    bits.div_ceil(7)
+}
+
 pub fn put_varint<B: BufMut>(buf: &mut B, v: i32) {
     let zz = ((v << 1) ^ (v >> 31)).cast_unsigned();
     put_uvarint(buf, zz);
@@ -72,19 +87,11 @@ pub fn varint_len(v: i32) -> usize {
 }
 
 pub fn put_uvarlong<B: BufMut>(buf: &mut B, mut v: u64) {
-    if v < 0x80 {
-        buf.put_u8(v.to_le_bytes()[0]);
-        return;
-    }
-    let mut encoded = [0_u8; MAX_VARLONG_BYTES];
-    let mut len = 0;
     while (v & !0x7F) != 0 {
-        encoded[len] = (v & 0x7F).to_le_bytes()[0] | 0x80;
+        buf.put_u8((v & 0x7F).to_le_bytes()[0] | 0x80);
         v >>= 7;
-        len += 1;
     }
-    encoded[len] = v.to_le_bytes()[0];
-    buf.put_slice(&encoded[..=len]);
+    buf.put_u8(v.to_le_bytes()[0]);
 }
 
 /// # Errors

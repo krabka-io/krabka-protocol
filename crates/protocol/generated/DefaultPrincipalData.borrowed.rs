@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::default_principal_data,
     primitives::{
         fixed::{get_bool, put_bool},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -26,14 +27,11 @@ pub struct DefaultPrincipalData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DefaultPrincipalData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::default_principal_data::DefaultPrincipalData {
-        crate::owned::default_principal_data::DefaultPrincipalData {
-            type_: (self.type_).to_string(),
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> default_principal_data::DefaultPrincipalData {
+        default_principal_data::DefaultPrincipalData {
+            type_: (self.type_).to_owned(),
+            name: (self.name).to_owned(),
             token_authenticated: (self.token_authenticated),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -49,16 +47,16 @@ impl Encode for DefaultPrincipalData<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.type_);
+                put_compact_string(buf, self.type_)?;
             } else {
-                let () = put_string(buf, self.type_);
+                put_string(buf, self.type_)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -66,7 +64,7 @@ impl Encode for DefaultPrincipalData<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

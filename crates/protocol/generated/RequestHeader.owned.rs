@@ -62,15 +62,15 @@ impl Encode for RequestHeader {
             {
                 let flex = false;
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.client_id.as_deref());
+                    put_compact_nullable_string(buf, self.client_id.as_deref())?;
                 } else {
-                    let () = put_nullable_string(buf, self.client_id.as_deref());
+                    put_nullable_string(buf, self.client_id.as_deref())?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -152,7 +152,7 @@ impl RequestHeader {
             m.correlation_id = 1i32;
         }
         if version >= 1 {
-            m.client_id = Some("x".to_string());
+            m.client_id = Some("x".to_owned());
         }
         m
     }
@@ -163,12 +163,12 @@ impl RequestHeader {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("requestApiKey".to_string(), ::serde_json::json!(0));
-    obj.insert("requestApiVersion".to_string(), ::serde_json::json!(0));
-    obj.insert("correlationId".to_string(), ::serde_json::json!(0));
+    obj.insert("requestApiKey".to_owned(), ::serde_json::json!(0));
+    obj.insert("requestApiVersion".to_owned(), ::serde_json::json!(0));
+    obj.insert("correlationId".to_owned(), ::serde_json::json!(0));
     if version >= 1 {
         obj.insert(
-            "clientId".to_string(),
+            "clientId".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }

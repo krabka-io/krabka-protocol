@@ -37,8 +37,10 @@
 //! # Ok(())
 //! # }
 //! ```
+pub mod driver;
 pub mod emit;
 pub mod fmt;
+pub mod hoist;
 pub mod ir;
 pub mod name_conv;
 pub mod out;

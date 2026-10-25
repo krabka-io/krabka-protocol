@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::get_replica_log_info_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, nullable_string_len, put_compact_nullable_string,
@@ -12,6 +14,7 @@ use crate::{
         string_bytes_borrowed::{
             get_compact_nullable_string_borrowed, get_nullable_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -31,14 +34,9 @@ pub struct GetReplicaLogInfoResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl GetReplicaLogInfoResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::get_replica_log_info_response::GetReplicaLogInfoResponse {
-        crate::owned::get_replica_log_info_response::GetReplicaLogInfoResponse {
+    pub fn to_owned(&self) -> get_replica_log_info_response::GetReplicaLogInfoResponse {
+        get_replica_log_info_response::GetReplicaLogInfoResponse {
             broker_epoch: (self.broker_epoch),
             topic_partition_log_info_list: (self.topic_partition_log_info_list)
                 .iter()
@@ -62,19 +60,15 @@ impl Encode for GetReplicaLogInfoResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.topic_partition_log_info_list).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.topic_partition_log_info_list).len(), flex)?;
                 for it in &self.topic_partition_log_info_list {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,10 +80,7 @@ impl Encode for GetReplicaLogInfoResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_partition_log_info_list).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_partition_log_info_list).len(), flex);
                 let body: usize = (self.topic_partition_log_info_list)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -119,7 +110,7 @@ impl<'de> DecodeBorrow<'de> for GetReplicaLogInfoResponse<'de> {
         }
         if version >= 0 {
             out.topic_partition_log_info_list = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicPartitionLogInfo::decode_borrow(buf, version)?);
@@ -149,17 +140,14 @@ impl GetReplicaLogInfoResponse<'_> {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicPartitionLogInfo<'a> {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partition_log_info: Vec<PartitionLogInfo<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicPartitionLogInfo<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::get_replica_log_info_response::TopicPartitionLogInfo {
-        crate::owned::get_replica_log_info_response::TopicPartitionLogInfo {
+    pub fn to_owned(&self) -> get_replica_log_info_response::TopicPartitionLogInfo {
+        get_replica_log_info_response::TopicPartitionLogInfo {
             topic_id: (self.topic_id),
             partition_log_info: (self.partition_log_info)
                 .iter()
@@ -173,19 +161,19 @@ impl Encode for TopicPartitionLogInfo<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_log_info).len(), flex);
+                put_array_len(buf, (self.partition_log_info).len(), flex)?;
                 for it in &self.partition_log_info {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -197,10 +185,7 @@ impl Encode for TopicPartitionLogInfo<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_log_info).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_log_info).len(), flex);
                 let body: usize = (self.partition_log_info)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -220,11 +205,11 @@ impl<'de> DecodeBorrow<'de> for TopicPartitionLogInfo<'de> {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition_log_info = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionLogInfo::decode_borrow(buf, version)?);
@@ -244,7 +229,7 @@ impl TopicPartitionLogInfo<'_> {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition_log_info = vec![PartitionLogInfo::populated(version)];
@@ -263,18 +248,15 @@ pub struct PartitionLogInfo<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionLogInfo<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::get_replica_log_info_response::PartitionLogInfo {
-        crate::owned::get_replica_log_info_response::PartitionLogInfo {
+    pub fn to_owned(&self) -> get_replica_log_info_response::PartitionLogInfo {
+        get_replica_log_info_response::PartitionLogInfo {
             partition: (self.partition),
             last_written_leader_epoch: (self.last_written_leader_epoch),
             current_leader_epoch: (self.current_leader_epoch),
             log_end_offset: (self.log_end_offset),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -299,14 +281,14 @@ impl Encode for PartitionLogInfo<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

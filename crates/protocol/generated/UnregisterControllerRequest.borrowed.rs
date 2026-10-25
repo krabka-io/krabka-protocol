@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::unregister_controller_request,
     primitives::fixed::{get_i32, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -22,14 +23,9 @@ pub struct UnregisterControllerRequest {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl UnregisterControllerRequest {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::unregister_controller_request::UnregisterControllerRequest {
-        crate::owned::unregister_controller_request::UnregisterControllerRequest {
+    pub fn to_owned(&self) -> unregister_controller_request::UnregisterControllerRequest {
+        unregister_controller_request::UnregisterControllerRequest {
             controller_id: (self.controller_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -49,7 +45,7 @@ impl Encode for UnregisterControllerRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

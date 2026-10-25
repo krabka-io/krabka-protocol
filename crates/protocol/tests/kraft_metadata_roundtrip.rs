@@ -5,7 +5,7 @@
 //! decodes them through the generated record types and the `KraftMetadataRecord`
 //! envelope, re-encodes them, and asserts that the bytes are unchanged.
 
-use std::path::Path;
+use std::{env, fs, path::Path};
 
 use bytes::BytesMut;
 use krabka_protocol::records::{RecordBatch, metadata::record::KraftMetadataRecord};
@@ -15,19 +15,20 @@ use krabka_protocol::records::{RecordBatch, metadata::record::KraftMetadataRecor
 /// This function asserts that each batch re-encodes byte-identically. It also
 /// asserts that every non-control record value round-trips through
 /// `KraftMetadataRecord`.
-fn assert_log_roundtrips(log: &[u8]) {
-    let mut pos = 0usize;
-    while pos < log.len() {
-        let mut cur: &[u8] = &log[pos..];
-        let before = cur.len();
-        let batch = RecordBatch::decode(&mut cur).expect("batch decodes");
-        let consumed = before - cur.len();
-        let batch_bytes = &log[pos..pos + consumed];
+fn assert_log_roundtrips(log: &[u8]) -> datatest_stable::Result<()> {
+    let mut rest = log;
+    while !rest.is_empty() {
+        let mut cur: &[u8] = rest;
+        let batch = RecordBatch::decode_batch(&mut cur)?;
+        let consumed = rest.len() - cur.len();
+        let batch_bytes = rest
+            .get(..consumed)
+            .ok_or("batch decode consumed more bytes than the log holds")?;
 
         // The whole batch must re-encode byte-identically (validates the record
         // batch layer + that record values were read verbatim).
         let mut re = BytesMut::new();
-        batch.encode(&mut re).expect("batch re-encodes");
+        batch.encode_batch(&mut re)?;
         assert2::assert!(re.as_ref() == batch_bytes);
 
         // Control batches (LeaderChange / Snapshot*) are not value-enveloped;
@@ -35,24 +36,20 @@ fn assert_log_roundtrips(log: &[u8]) {
         if !batch.attributes.is_control_batch() {
             for rec in &batch.records {
                 if let Some(value) = &rec.value {
-                    let (decoded, version) = KraftMetadataRecord::decode_value(value)
-                        .expect("metadata record value decodes");
-                    let reencoded = decoded
-                        .encode_value(version)
-                        .expect("metadata record value re-encodes");
+                    let (decoded, version) = KraftMetadataRecord::decode_value(value)?;
+                    let reencoded = decoded.encode_value(version)?;
                     assert2::assert!(reencoded.as_ref() == value.as_ref());
                 }
             }
         }
-        pos += consumed;
+        rest = cur;
     }
-    assert2::assert!(pos == log.len());
+    Ok(())
 }
 
 fn metadata_log_roundtrips(path: &Path) -> datatest_stable::Result<()> {
-    let bytes = std::fs::read(path)?;
-    assert_log_roundtrips(&bytes);
-    Ok(())
+    let bytes = fs::read(path)?;
+    assert_log_roundtrips(&bytes)
 }
 
 /// Resolve a crate-relative fixture directory.
@@ -64,9 +61,9 @@ fn metadata_log_roundtrips(path: &Path) -> datatest_stable::Result<()> {
 /// that tree. Absent those variables this is the Cargo path unchanged.
 fn fixture_root(relative: &str) -> String {
     let (Ok(srcdir), Ok(workspace), Ok(package)) = (
-        std::env::var("TEST_SRCDIR"),
-        std::env::var("TEST_WORKSPACE"),
-        std::env::var("FIXTURE_ROOT"),
+        env::var("TEST_SRCDIR"),
+        env::var("TEST_WORKSPACE"),
+        env::var("FIXTURE_ROOT"),
     ) else {
         return relative.to_owned();
     };

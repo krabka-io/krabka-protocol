@@ -192,7 +192,9 @@ fn forget_length(lengths: &mut BTreeMap<usize, usize>, len: usize) {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
+    use std::slice;
+
+    use proptest::{collection, option, prelude::*};
 
     use super::*;
     use crate::acl::{AclOperation, PermissionType};
@@ -280,7 +282,7 @@ mod tests {
     #[test]
     fn wildcard_lookup_yields_each_wildcard_entry_once() {
         let wildcard = entry(ResourceType::Topic, PatternType::Literal, WILDCARD_RESOURCE);
-        let index = index_of(std::slice::from_ref(&wildcard));
+        let index = index_of(slice::from_ref(&wildcard));
         for name in [WILDCARD_RESOURCE, "orders"] {
             assert2::assert!(
                 index
@@ -353,9 +355,9 @@ mod tests {
         /// the entries the linear reference scan matches.
         #[test]
         fn matching_agrees_with_the_linear_scan(
-            inserted in proptest::collection::vec(arb_entry(), 0..24),
-            removed in proptest::option::of(arb_entry()),
-            names in proptest::collection::vec("[ab*é]{0,5}", 1..8),
+            inserted in collection::vec(arb_entry(), 0..24),
+            removed in option::of(arb_entry()),
+            names in collection::vec("[ab*é]{0,5}", 1..8),
         ) {
             let mut index = index_of(&inserted);
             let mut expected: Vec<AclEntry> = Vec::new();

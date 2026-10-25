@@ -4,7 +4,10 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i16, get_i32, put_i16, put_i32},
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i16, get_i32, put_i16, put_i32},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -39,23 +42,23 @@ impl Encode for LeaderChangeMessage {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.voters).len(), flex);
+                put_array_len(buf, (self.voters).len(), flex)?;
                 for it in &self.voters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.granting_voters).len(), flex);
+                put_array_len(buf, (self.granting_voters).len(), flex)?;
                 for it in &self.granting_voters {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -70,18 +73,14 @@ impl Encode for LeaderChangeMessage {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.voters).len(), flex);
+                let prefix = array_len_prefix_len((self.voters).len(), flex);
                 let body: usize = (self.voters).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.granting_voters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.granting_voters).len(), flex);
                 let body: usize = (self.granting_voters)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +112,7 @@ impl Decode<'_> for LeaderChangeMessage {
         }
         if version >= 0 {
             out.voters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::leader_change_message::voter::Voter::decode(
@@ -125,7 +124,7 @@ impl Decode<'_> for LeaderChangeMessage {
         }
         if version >= 0 {
             out.granting_voters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::leader_change_message::voter::Voter::decode(
@@ -168,11 +167,11 @@ impl LeaderChangeMessage {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("version".to_string(), ::serde_json::json!(0));
-    obj.insert("leaderId".to_string(), ::serde_json::json!(0));
-    obj.insert("voters".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("version".to_owned(), ::serde_json::json!(0));
+    obj.insert("leaderId".to_owned(), ::serde_json::json!(0));
+    obj.insert("voters".to_owned(), ::serde_json::Value::Array(vec![]));
     obj.insert(
-        "grantingVoters".to_string(),
+        "grantingVoters".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     ::serde_json::Value::Object(obj)

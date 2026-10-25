@@ -3,11 +3,12 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sasl_authenticate_response,
     primitives::{
         fixed::{get_i16, get_i64, put_i16, put_i64},
         string_bytes::{
-            compact_nullable_string_len, nullable_string_len, put_bytes, put_compact_bytes,
-            put_compact_nullable_string, put_nullable_string,
+            bytes_len, compact_bytes_len, compact_nullable_string_len, nullable_string_len,
+            put_bytes, put_compact_bytes, put_compact_nullable_string, put_nullable_string,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_nullable_string_borrowed,
@@ -45,14 +46,11 @@ impl Default for SaslAuthenticateResponse<'_> {
     }
 }
 impl SaslAuthenticateResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sasl_authenticate_response::SaslAuthenticateResponse {
-        crate::owned::sasl_authenticate_response::SaslAuthenticateResponse {
+    pub fn to_owned(&self) -> sasl_authenticate_response::SaslAuthenticateResponse {
+        sasl_authenticate_response::SaslAuthenticateResponse {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             auth_bytes: Bytes::copy_from_slice(self.auth_bytes),
             session_lifetime_ms: (self.session_lifetime_ms),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -73,16 +71,16 @@ impl Encode for SaslAuthenticateResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.auth_bytes);
+                put_compact_bytes(buf, self.auth_bytes)?;
             } else {
-                let () = put_bytes(buf, self.auth_bytes);
+                put_bytes(buf, self.auth_bytes)?;
             }
         }
         if version >= 1 {
@@ -90,7 +88,7 @@ impl Encode for SaslAuthenticateResponse<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -109,11 +107,9 @@ impl Encode for SaslAuthenticateResponse<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.auth_bytes).len() + 1).unwrap(),
-                ) + (self.auth_bytes).len()
+                compact_bytes_len(self.auth_bytes)
             } else {
-                4 + (self.auth_bytes).len()
+                bytes_len(self.auth_bytes)
             };
         }
         if version >= 1 {

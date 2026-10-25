@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::end_txn_marker,
     primitives::fixed::{get_i32, put_i32},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -19,12 +20,9 @@ pub struct EndTxnMarker {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EndTxnMarker {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_txn_marker::EndTxnMarker {
-        crate::owned::end_txn_marker::EndTxnMarker {
+    pub fn to_owned(&self) -> end_txn_marker::EndTxnMarker {
+        end_txn_marker::EndTxnMarker {
             coordinator_epoch: (self.coordinator_epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }

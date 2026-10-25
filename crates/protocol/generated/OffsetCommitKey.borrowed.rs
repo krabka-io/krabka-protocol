@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::offset_commit_key,
     primitives::{
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -25,14 +26,11 @@ pub struct OffsetCommitKey<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetCommitKey<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_commit_key::OffsetCommitKey {
-        crate::owned::offset_commit_key::OffsetCommitKey {
-            group: (self.group).to_string(),
-            topic: (self.topic).to_string(),
+    pub fn to_owned(&self) -> offset_commit_key::OffsetCommitKey {
+        offset_commit_key::OffsetCommitKey {
+            group: (self.group).to_owned(),
+            topic: (self.topic).to_owned(),
             partition: (self.partition),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -48,16 +46,16 @@ impl Encode for OffsetCommitKey<'_> {
         let flex = is_flexible(version);
         if version == 0 {
             if flex {
-                let () = put_compact_string(buf, self.group);
+                put_compact_string(buf, self.group)?;
             } else {
-                let () = put_string(buf, self.group);
+                put_string(buf, self.group)?;
             }
         }
         if version == 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic);
+                put_compact_string(buf, self.topic)?;
             } else {
-                let () = put_string(buf, self.topic);
+                put_string(buf, self.topic)?;
             }
         }
         if version == 0 {

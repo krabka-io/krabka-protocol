@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -17,13 +19,10 @@ pub struct AddPartitionsToTxnTopicResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AddPartitionsToTxnTopicResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult{
-        crate::owned::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult {
+        add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult {
+            name: (self.name).to_owned(),
             results_by_partition: (self.results_by_partition).iter().map(super::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -34,26 +33,22 @@ impl Encode for AddPartitionsToTxnTopicResult<'_> {
         let flex = version >= 3;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.results_by_partition).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.results_by_partition).len(), flex)?;
                 for it in &self.results_by_partition {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -69,10 +64,7 @@ impl Encode for AddPartitionsToTxnTopicResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.results_by_partition).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.results_by_partition).len(), flex);
                 let body: usize = (self.results_by_partition)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -100,7 +92,7 @@ impl<'de> DecodeBorrow<'de> for AddPartitionsToTxnTopicResult<'de> {
         }
         if version >= 0 {
             out.results_by_partition = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult::decode_borrow(buf, version)?);

@@ -8,7 +8,9 @@
 //! - `MetadataImage::matching_acls`, called once per `authorize()`.
 //! - `MetadataRecord` serialize and deserialize with wincode.
 
-use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use std::{collections::BTreeMap, env};
+
+use criterion::{BatchSize, Criterion, abs_file, black_box, criterion_main};
 use krabka_metadata::{
     AclEntry, AclOperation, BrokerEndpoint, BrokerRegistrationRecord, DeleteTopicRecord,
     LeaderEpoch, LeaderRecoveryState, MetadataImage, MetadataRecord, NodeId, PartitionElrRecord,
@@ -18,7 +20,7 @@ use krabka_metadata::{
 use krabka_security::ListenerProtocol;
 use serde_wincode::SerdeCompat;
 use uuid::Uuid;
-use wincode::{Deserialize as _, Serialize as _};
+use wincode::{Deserialize as _, Serialize as _, WriteResult};
 
 // ---------------------------------------------------------------------------
 // Fixture builders
@@ -26,7 +28,7 @@ use wincode::{Deserialize as _, Serialize as _};
 
 fn topic_record(name: &str, parts: i32) -> MetadataRecord {
     MetadataRecord::V1Topic(TopicRecord {
-        name: name.to_string(),
+        name: name.to_owned(),
         topic_id: Uuid::nil(),
         partitions: parts,
         replication_factor: 3,
@@ -35,7 +37,7 @@ fn topic_record(name: &str, parts: i32) -> MetadataRecord {
 
 fn partition_record(topic: &str, p: i32) -> MetadataRecord {
     MetadataRecord::V1Partition(PartitionRecord {
-        topic: topic.to_string(),
+        topic: topic.to_owned(),
         partition: p,
         leader: NodeId(1),
         replicas: vec![NodeId(1), NodeId(2), NodeId(3)],
@@ -55,32 +57,32 @@ fn broker_record(node_id: u64) -> MetadataRecord {
         incarnation_id: Uuid::nil(),
         host: format!("broker-{node_id}.example.com"),
         port: 9092,
-        rack: Some("us-east-1a".to_string()),
+        rack: Some("us-east-1a".to_owned()),
         log_dirs: vec![],
         fenced: false,
         in_controlled_shutdown: false,
         cordoned_log_dirs: None,
         endpoints: vec![BrokerEndpoint {
-            name: "PLAINTEXT".to_string(),
+            name: "PLAINTEXT".to_owned(),
             host: format!("broker-{node_id}"),
             port: 9092,
             protocol: ListenerProtocol::Plaintext,
         }],
-        features: std::collections::BTreeMap::new(),
+        features: BTreeMap::new(),
     })
 }
 
 fn acl_entry(name: &str, prefixed: bool) -> AclEntry {
     AclEntry {
         resource_type: ResourceType::Topic,
-        resource_name: name.to_string(),
+        resource_name: name.to_owned(),
         pattern_type: if prefixed {
             PatternType::Prefixed
         } else {
             PatternType::Literal
         },
-        principal: "User:alice".to_string(),
-        host: "*".to_string(),
+        principal: "User:alice".to_owned(),
+        host: "*".to_owned(),
         operation: AclOperation::Read,
         permission_type: PermissionType::Allow,
     }
@@ -267,34 +269,48 @@ fn bench_matching_acls(c: &mut Criterion) {
 // Serialization (wincode via serde-wincode).
 // ---------------------------------------------------------------------------
 
-fn bench_record_serde(c: &mut Criterion) {
-    let mut group = c.benchmark_group("metadata_record/serde");
+/// Encodes the three serde fixture records, in topic, partition, broker order.
+fn encode_fixtures(records: [&MetadataRecord; 3]) -> WriteResult<[Vec<u8>; 3]> {
+    let [topic, partition, broker] = records;
+    Ok([
+        <SerdeCompat<MetadataRecord>>::serialize(topic)?,
+        <SerdeCompat<MetadataRecord>>::serialize(partition)?,
+        <SerdeCompat<MetadataRecord>>::serialize(broker)?,
+    ])
+}
 
+fn bench_record_serde(c: &mut Criterion) {
     let topic = topic_record("benchmarks", 32);
     let partition = partition_record("benchmarks", 5);
     let broker = broker_record(7);
 
-    let topic_bytes = <SerdeCompat<MetadataRecord>>::serialize(&topic).unwrap();
-    let partition_bytes = <SerdeCompat<MetadataRecord>>::serialize(&partition).unwrap();
-    let broker_bytes = <SerdeCompat<MetadataRecord>>::serialize(&broker).unwrap();
+    let [topic_bytes, partition_bytes, broker_bytes] =
+        match encode_fixtures([&topic, &partition, &broker]) {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                eprintln!("metadata_record/serde: encoding a fixture record failed: {error}");
+                return;
+            }
+        };
 
+    let mut group = c.benchmark_group("metadata_record/serde");
     group.bench_function("serialize_topic", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&topic)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&topic)));
     });
     group.bench_function("serialize_partition", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&partition)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&partition)));
     });
     group.bench_function("serialize_broker", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&broker)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::serialize(black_box(&broker)));
     });
     group.bench_function("deserialize_topic", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&topic_bytes)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&topic_bytes)));
     });
     group.bench_function("deserialize_partition", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&partition_bytes)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&partition_bytes)));
     });
     group.bench_function("deserialize_broker", |b| {
-        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&broker_bytes)).unwrap());
+        b.iter(|| <SerdeCompat<MetadataRecord>>::deserialize(black_box(&broker_bytes)));
     });
 
     group.finish();
@@ -349,12 +365,37 @@ fn bench_delete_topic_auxiliary_state(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_apply,
-    bench_delete_topic_auxiliary_state,
-    bench_partitions_by_topic,
-    bench_matching_acls,
-    bench_record_serde,
-);
+/// A benchmark target, under the name `criterion_group!` would give it.
+type Target = (&'static str, fn(&mut Criterion));
+
+/// Every benchmark target, in run order.
+const TARGETS: [Target; 5] = [
+    ("bench_apply", bench_apply),
+    (
+        "bench_delete_topic_auxiliary_state",
+        bench_delete_topic_auxiliary_state,
+    ),
+    ("bench_partitions_by_topic", bench_partitions_by_topic),
+    ("bench_matching_acls", bench_matching_acls),
+    ("bench_record_serde", bench_record_serde),
+];
+
+/// Runs every target in [`TARGETS`].
+fn run_targets(criterion: &mut Criterion) {
+    for (name, target) in TARGETS {
+        if env::var("CODSPEED_ENV").is_ok() {
+            criterion.set_current_file(abs_file!());
+            criterion.set_macro_group(format!("benches::{name}"));
+        }
+        target(criterion);
+    }
+}
+
+/// The benchmark group, written out by hand where `criterion_group!` would
+/// generate it, so that the `Criterion` it configures drops as soon as the
+/// targets have run.
+fn benches() {
+    run_targets(&mut Criterion::default().configure_from_args());
+}
+
 criterion_main!(benches);

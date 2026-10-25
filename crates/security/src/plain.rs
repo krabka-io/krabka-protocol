@@ -31,7 +31,7 @@ pub fn verify_plain<S: BuildHasher>(
     };
     if expected.as_bytes().ct_eq(password).unwrap_u8() == 1 {
         Ok(Principal {
-            name: user.to_string(),
+            name: user.to_owned(),
             auth_method: AuthMethod::SaslPlain,
             groups: vec![],
         })

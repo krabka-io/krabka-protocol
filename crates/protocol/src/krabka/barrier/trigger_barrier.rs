@@ -6,11 +6,13 @@
 //!
 //! The coordinator consumes the epoch even when an injection misses a partition,
 //! and it never reuses an epoch. The response then reports
-//! [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) and names
+//! [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) and names
 //! the partitions that got no marker.
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::{barrier::CUT_STATUS_PARTIAL, test_support::sample_tagged_fields};
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::{
@@ -64,9 +66,9 @@ pub struct TriggerBarrierRequest {
 impl Encode for TriggerBarrierRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        put_compact_string(buf, &self.group);
+        put_compact_string(buf, &self.group)?;
         put_i32(buf, self.timeout_ms);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -114,7 +116,7 @@ pub struct TriggerBarrierResponse {
     pub epoch: i64,
     /// [`CUT_STATUS_COMPLETE`](crate::krabka::barrier::CUT_STATUS_COMPLETE)
     /// when every partition took a marker, and
-    /// [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) when
+    /// [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) when
     /// at least one partition did not.
     pub status: i8,
     /// Cut offsets, grouped by topic.
@@ -131,12 +133,12 @@ impl Encode for TriggerBarrierResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         put_i64(buf, self.epoch);
         put_i8(buf, self.status);
         encode_array(buf, &self.topics, version)?;
         encode_array(buf, &self.missing, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -173,9 +175,9 @@ impl TriggerBarrierRequest {
     /// Builds a request with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            group: "orders".to_string(),
+            group: "orders".to_owned(),
             timeout_ms: 30_000,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -188,12 +190,12 @@ impl TriggerBarrierResponse {
         Self {
             throttle_time_ms: 3,
             error_code: 0,
-            error_message: Some("one partition had no leader".to_string()),
+            error_message: Some("one partition had no leader".to_owned()),
             epoch: 41,
-            status: crate::krabka::barrier::CUT_STATUS_PARTIAL,
+            status: CUT_STATUS_PARTIAL,
             topics: super::test_support::sample_cut_topics(),
             missing: super::test_support::sample_missing_partitions(),
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
