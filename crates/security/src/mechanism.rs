@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::AuthError;
+
 #[derive(
     Debug,
     Clone,
@@ -26,6 +28,10 @@ pub enum SaslMechanism {
     /// SASL/GSSAPI (Kerberos, RFC 4752). The GSS provider drives context
     /// establishment and the RFC 4752 security-layer negotiation from the
     /// broker's configured service keytab.
+    ///
+    /// The variant exists in every build, because metadata records persist it.
+    /// The provider needs the `gssapi` Cargo feature; see
+    /// [`SaslMechanism::is_available`].
     #[strum(serialize = "GSSAPI")]
     Gssapi,
 }
@@ -48,6 +54,48 @@ impl SaslMechanism {
     #[must_use]
     pub fn is_scram(self) -> bool {
         matches!(self, Self::ScramSha256 | Self::ScramSha512)
+    }
+
+    /// Every mechanism, in declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::Plain,
+        Self::ScramSha256,
+        Self::ScramSha512,
+        Self::OAuthBearer,
+        Self::Gssapi,
+    ];
+
+    /// `true` when this build can run the mechanism.
+    ///
+    /// GSSAPI needs the `gssapi` Cargo feature on a native target. Every other
+    /// mechanism is always available.
+    #[must_use]
+    pub const fn is_available(self) -> bool {
+        match self {
+            Self::Gssapi => cfg!(all(feature = "gssapi", not(target_family = "wasm"))),
+            Self::Plain | Self::ScramSha256 | Self::ScramSha512 | Self::OAuthBearer => true,
+        }
+    }
+
+    /// The mechanisms this build can run, in declaration order.
+    pub fn available() -> impl Iterator<Item = Self> {
+        Self::ALL.into_iter().filter(|m| m.is_available())
+    }
+
+    /// Returns `self` when this build can run the mechanism.
+    ///
+    /// # Errors
+    ///
+    /// [`AuthError::UnsupportedMechanism`] when [`SaslMechanism::is_available`]
+    /// is `false`. A broker answers that with Kafka's
+    /// `UNSUPPORTED_SASL_MECHANISM` (error code 33), as it does for a mechanism
+    /// the listener has not enabled.
+    pub const fn require_available(self) -> Result<Self, AuthError> {
+        if self.is_available() {
+            Ok(self)
+        } else {
+            Err(AuthError::UnsupportedMechanism)
+        }
     }
 }
 
@@ -112,6 +160,36 @@ mod tests {
                 SaslMechanism::from_str("GSSAPI").unwrap(),
                 SaslMechanism::Gssapi.wire_name(),
             ) == (SaslMechanism::Gssapi, "GSSAPI")
+        );
+    }
+
+    #[test]
+    fn availability_follows_the_gssapi_feature() {
+        let gssapi = cfg!(all(feature = "gssapi", not(target_family = "wasm")));
+        let mut want = vec![
+            SaslMechanism::Plain,
+            SaslMechanism::ScramSha256,
+            SaslMechanism::ScramSha512,
+            SaslMechanism::OAuthBearer,
+        ];
+        if gssapi {
+            want.push(SaslMechanism::Gssapi);
+        }
+        assert2::assert!(SaslMechanism::available().collect::<Vec<_>>() == want);
+    }
+
+    #[test]
+    fn require_available_rejects_gssapi_without_the_feature() {
+        let want = if cfg!(all(feature = "gssapi", not(target_family = "wasm"))) {
+            Ok(SaslMechanism::Gssapi)
+        } else {
+            Err(AuthError::UnsupportedMechanism)
+        };
+        assert2::assert!(
+            (
+                SaslMechanism::Gssapi.require_available(),
+                SaslMechanism::Plain.require_available(),
+            ) == (want, Ok(SaslMechanism::Plain))
         );
     }
 

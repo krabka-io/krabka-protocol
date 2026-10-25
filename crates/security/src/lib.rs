@@ -34,10 +34,30 @@
 //! );
 //! assert_eq!(credential.iterations, 4096);
 //! ```
+//!
+//! ## Cargo features
+//!
+//! - `gssapi` (off by default): SASL/GSSAPI (Kerberos), the `gssapi` module.
+//!   It is native-only, and has no effect on `wasm32` targets.
+//!
+//! `gssapi` stays out of `default` on purpose. The Kerberos stack it pulls in,
+//! `krabka-sspi`, depends on `rsa` 0.10, which carries RUSTSEC-2023-0071 (the
+//! Marvin timing side channel) and has no patched release. A build without the
+//! feature compiles no `rsa` at all. A build with it is still not exposed,
+//! because Krabka's GSSAPI path uses only AES keytab keys and never
+//! runs an RSA private-key operation; `docs/rustsec-2023-0071.md` in the
+//! repository gives the reachability analysis.
+//!
+//! Without the feature, [`SaslMechanism::Gssapi`] still parses and still names
+//! the mechanism in persisted metadata, but [`SaslMechanism::is_available`]
+//! returns `false` for it and [`SaslMechanism::require_available`] returns
+//! [`AuthError::UnsupportedMechanism`]. A broker maps that to Kafka's
+//! `UNSUPPORTED_SASL_MECHANISM` (error code 33) in the `SaslHandshake` response,
+//! and a client reports it before it opens a connection.
 
 pub mod ca;
 pub mod delegation_token;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(feature = "gssapi", not(target_family = "wasm")))]
 pub mod gssapi;
 pub mod java_regex;
 mod jwks;

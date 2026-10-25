@@ -22,6 +22,10 @@
 //! test then asserts the recovered source principal and round-trips a wrapped
 //! RFC 4752 security-layer message. This drives the released sspi
 //! keytab-client-auth path end-to-end against a real KDC.
+//!
+//! The providers exist only with the `gssapi` feature, so the suite compiles to
+//! nothing without it.
+#![cfg(all(feature = "gssapi", not(target_family = "wasm")))]
 
 use krabka_security::gssapi::{
     AcceptStep, DEFAULT_GSSAPI_MAX_TIME_SKEW, GssAcceptor, GssInitiator, InitStep,

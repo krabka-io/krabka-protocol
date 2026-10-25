@@ -33,7 +33,8 @@ primitives with their own transport and runtime.
 - mTLS principal extraction from X.509 subject distinguished names.
 - Cluster and client CA generation plus broker/user certificate issuance.
 - Delegation-token HMAC helpers and redacted secret wrappers.
-- Kerberos/GSSAPI trait surfaces, keytab parsing, and provider scaffolding.
+- Kerberos/GSSAPI trait surfaces, keytab parsing, and provider scaffolding,
+  behind the `gssapi` feature.
 
 ## Kafka Security Scope
 
@@ -44,6 +45,32 @@ extraction follows Kafka's default subject-DN principal style.
 
 GSSAPI support is a de-risking surface. Review it before you use it in
 production.
+
+## Cargo features
+
+| Feature | Default | What it adds |
+| :--- | :--- | :--- |
+| `gssapi` | off | SASL/GSSAPI (Kerberos): the `gssapi` module, its keytab parser and the sspi-backed acceptor and initiator. Native targets only. |
+
+`gssapi` is off by default because its Kerberos stack, `krabka-sspi`, depends
+on `rsa` 0.10. That crate carries
+[RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071), the
+Marvin timing attack, and has no patched release. Without the feature, a build
+compiles no `rsa` code. With it, Krabka's GSSAPI code uses only AES keytab
+keys and never runs an RSA private-key operation;
+[`docs/rustsec-2023-0071.md`](https://github.com/krabka-io/krabka-protocol/blob/main/docs/rustsec-2023-0071.md)
+has the analysis.
+
+Turn it on only in a crate that serves or initiates GSSAPI:
+
+```toml
+krabka-security = { version = "0.7", features = ["gssapi"] }
+```
+
+Without it, `SaslMechanism::Gssapi` still parses, but
+`SaslMechanism::is_available` returns `false` for it, and
+`SaslMechanism::require_available` returns `AuthError::UnsupportedMechanism`.
+A broker answers that with Kafka's `UNSUPPORTED_SASL_MECHANISM`.
 
 ## Install
 

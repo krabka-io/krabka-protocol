@@ -165,6 +165,69 @@ jobs:
         run: >-
           cargo test --no-fail-fast -p krabka-protocol -p krabka-compression --test 'differential*' --test oracle_smoke -- --ignored
 
+  # RUSTSEC-2023-0071: `rsa` has no fix for the Marvin timing attack, so it must
+  # stay behind `krabka-security`'s opt-in `gssapi` feature. The first step fails
+  # if a default build gains `rsa` again. The second fails if, with `gssapi`,
+  # `rsa` gains a parent other than `krabka-sspi` and `picky`, which
+  # docs/rustsec-2023-0071.md has not reviewed. Both read the resolved graph,
+  # not the manifests.
+  #
+  # The `ci` job builds and lints default features only, so the `gssapi` code
+  # gets its clippy and unit-test run here.
+  rsa:
+    name: rsa reachability · gssapi
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - name: Keep temporary files off the size-limited /tmp tmpfs
+        run: echo "TMPDIR=${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gssapi
+
+      - name: no rsa with default features
+        run: |
+          set -euo pipefail
+          packages="$(cargo tree --workspace --locked -e normal --target all --prefix none --format '{p}')"
+          if grep -E '^rsa v' <<<"${packages}"; then
+            echo "::error::rsa is in the default dependency graph; keep it behind krabka-security's gssapi feature (docs/rustsec-2023-0071.md)"
+            cargo tree --workspace --locked -e normal --target all -i rsa
+            exit 1
+          fi
+
+      - name: with gssapi, rsa only under krabka-sspi and picky
+        run: |
+          set -euo pipefail
+          parents="$(cargo tree --workspace --locked -e normal --target all \
+            --features krabka-security/gssapi -i rsa --depth 1 --prefix none --format '{p}' \
+            | awk 'NR > 1 { print $1 }' | sort -u | paste -sd ' ')"
+          if [ "${parents}" != "krabka-sspi picky" ]; then
+            echo "::error::rsa parents with gssapi are '${parents}', expected 'krabka-sspi picky'; review docs/rustsec-2023-0071.md"
+            exit 1
+          fi
+
+      - name: clippy with gssapi
+        run: cargo clippy --locked -p krabka-security --all-targets --features gssapi -- -D warnings
+
+      - name: test with gssapi
+        run: cargo test --locked -p krabka-security --features gssapi
+
+  # RustSec advisories over the whole graph, every feature on (`deny.toml`'s
+  # `[graph]`). The ignores there each carry the reason they are safe.
+  advisories:
+    name: cargo deny advisories
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny --locked check advisories
+
   # LCOV over the first-party crates. Separate from `ci` because instrumented
   # binaries are a different build, so sharing that job's cache would only
   # evict it.
