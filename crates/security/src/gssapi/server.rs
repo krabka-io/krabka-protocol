@@ -1,3 +1,5 @@
+use std::fmt;
+
 use krabka_units::ByteSize;
 
 use super::{
@@ -38,24 +40,24 @@ struct AwaitingChoice {
     acceptor: Box<dyn GssAcceptor>,
 }
 
-impl std::fmt::Debug for AcceptingContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for AcceptingContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AcceptingContext")
             .field("max_recv", &self.max_recv)
             .finish_non_exhaustive()
     }
 }
 
-impl std::fmt::Debug for OfferingLayer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for OfferingLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OfferingLayer")
             .field("max_recv", &self.max_recv)
             .finish_non_exhaustive()
     }
 }
 
-impl std::fmt::Debug for AwaitingChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for AwaitingChoice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AwaitingChoice").finish_non_exhaustive()
     }
 }
@@ -144,8 +146,8 @@ pub enum GssapiServerExchange {
 // `acceptor` is a trait object with no `Debug` bound; print the observable
 // negotiation phase + fields instead so `SaslExchange`/`ConnectionAuth` can
 // derive `Debug`.
-impl std::fmt::Debug for GssapiServerExchange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for GssapiServerExchange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AcceptingContext(inner) => f
                 .debug_tuple("GssapiServerExchange::AcceptingContext")

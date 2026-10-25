@@ -4,7 +4,10 @@
 //! acceptor uses the service key to decrypt incoming AP-REQs. The initiator
 //! uses the client principal's long-term key, supplied through
 //! [`sspi::KeytabIdentity`], to drive the AS/TGS exchange with no password.
-use std::sync::Mutex;
+use std::{
+    env, fmt, fs,
+    sync::{Mutex, PoisonError},
+};
 
 use krabka_units::{Time, convert::TimeExt as _};
 use sspi::{
@@ -27,16 +30,16 @@ use super::{
 const DEFAULT_KDC_URL: &str = "tcp://localhost:88";
 
 fn kdc_url_from_env() -> String {
-    std::env::var("SSPI_KDC_URL").unwrap_or_else(|_| DEFAULT_KDC_URL.to_string())
+    env::var("SSPI_KDC_URL").unwrap_or_else(|_| DEFAULT_KDC_URL.to_owned())
 }
 
 /// Map an sspi context error to [`GssError::Context`].
-fn ctx_err(e: impl std::fmt::Display) -> GssError {
+fn ctx_err(e: impl fmt::Display) -> GssError {
     GssError::Context(e.to_string())
 }
 
 /// Map an sspi wrap/unwrap error to [`GssError::Wrap`].
-fn wrap_err(e: impl std::fmt::Display) -> GssError {
+fn wrap_err(e: impl fmt::Display) -> GssError {
     GssError::Wrap(e.to_string())
 }
 
@@ -119,7 +122,7 @@ impl SspiAcceptor {
         service_name: &str,
         max_time_skew: Time,
     ) -> Result<Self, GssError> {
-        let bytes = std::fs::read(keytab_path)
+        let bytes = fs::read(keytab_path)
             .map_err(|e| GssError::Keytab(format!("reading {keytab_path}: {e}")))?;
         // A keytab may hold keys for several host SPNs of this service (e.g.
         // `kafka/localhost` and `kafka/host.docker.internal`). Load them all so
@@ -151,7 +154,7 @@ impl SspiAcceptor {
         }
 
         let server = Kerberos::new_server_from_config(
-            KerberosConfig::new(&kdc_url_from_env(), "krabka-broker".to_string()),
+            KerberosConfig::new(&kdc_url_from_env(), "krabka-broker".to_owned()),
             server_properties,
         )
         .map_err(ctx_err)?;
@@ -164,7 +167,10 @@ impl SspiAcceptor {
 
 impl GssAcceptor for SspiAcceptor {
     fn accept(&mut self, client_token: &[u8]) -> Result<AcceptStep, GssError> {
-        let server = self.server.get_mut().expect("acceptor mutex poisoned");
+        let server = self
+            .server
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner);
 
         let mut input = vec![SecurityBuffer::new(
             client_token.to_vec(),
@@ -186,7 +192,10 @@ impl GssAcceptor for SspiAcceptor {
             .resolve_to_result()
             .map_err(ctx_err)?;
 
-        let out_token = output[0].buffer.clone();
+        let out_token = output
+            .first()
+            .map(|buffer| buffer.buffer.clone())
+            .ok_or_else(|| GssError::Context("sspi returned no output token buffer".to_owned()))?;
         if is_established(result.status) {
             Ok(AcceptStep::Established(
                 (!out_token.is_empty()).then_some(out_token),
@@ -197,21 +206,23 @@ impl GssAcceptor for SspiAcceptor {
     }
 
     fn wrap(&self, plaintext: &[u8], _confidential: bool) -> Result<Vec<u8>, GssError> {
-        let mut server = self.server.lock().expect("acceptor mutex poisoned");
+        let mut server = self.server.lock().unwrap_or_else(PoisonError::into_inner);
         gss_wrap(&mut server, plaintext)
     }
 
     fn unwrap(&self, token: &[u8]) -> Result<Vec<u8>, GssError> {
-        let mut server = self.server.lock().expect("acceptor mutex poisoned");
+        let mut server = self.server.lock().unwrap_or_else(PoisonError::into_inner);
         gss_unwrap(&mut server, token)
     }
 
     fn src_principal(&self) -> Result<String, GssError> {
-        let mut server = self.server.lock().expect("acceptor mutex poisoned");
-        let names = server
+        let names = self
+            .server
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .query_context_names()
             .map_err(|_| GssError::NoSrcPrincipal)?;
-        Ok(names.username.inner().to_string())
+        Ok(names.username.inner().to_owned())
     }
 }
 
@@ -268,14 +279,14 @@ impl SspiInitiator {
             .next()
             .unwrap_or_else(|| principal.account_name());
 
-        let bytes = std::fs::read(keytab_path)
+        let bytes = fs::read(keytab_path)
             .map_err(|e| GssError::Keytab(format!("reading {keytab_path}: {e}")))?;
         let entry = load_service_key(&bytes, first_component, ENCTYPE_AES256_CTS_HMAC_SHA1_96)
             .map_err(|e| GssError::Keytab(e.to_string()))?;
 
         let mut client = Kerberos::new_client_from_config(KerberosConfig::new(
             kdc_url,
-            "krabka-broker".to_string(),
+            "krabka-broker".to_owned(),
         ))
         .map_err(ctx_err)?;
 
@@ -296,18 +307,21 @@ impl SspiInitiator {
         Ok(Self {
             client: Mutex::new(client),
             cred_handle: Mutex::new(cred_handle),
-            target_spn: target_spn.to_string(),
+            target_spn: target_spn.to_owned(),
         })
     }
 }
 
 impl GssInitiator for SspiInitiator {
     fn step(&mut self, server_token: Option<&[u8]>) -> Result<InitStep, GssError> {
-        let client = self.client.get_mut().expect("initiator mutex poisoned");
+        let client = self
+            .client
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner);
         let cred_handle = self
             .cred_handle
             .get_mut()
-            .expect("initiator mutex poisoned");
+            .unwrap_or_else(PoisonError::into_inner);
 
         let mut input = vec![SecurityBuffer::new(
             server_token.map(<[u8]>::to_vec).unwrap_or_default(),
@@ -329,7 +343,10 @@ impl GssInitiator for SspiInitiator {
             .resolve_with_default_network_client()
             .map_err(ctx_err)?;
 
-        let out_token = output[0].buffer.clone();
+        let out_token = output
+            .first()
+            .map(|buffer| buffer.buffer.clone())
+            .ok_or_else(|| GssError::Context("sspi returned no output token buffer".to_owned()))?;
         if is_established(result.status) {
             Ok(InitStep::Established(
                 (!out_token.is_empty()).then_some(out_token),
@@ -340,12 +357,12 @@ impl GssInitiator for SspiInitiator {
     }
 
     fn wrap(&self, plaintext: &[u8], _confidential: bool) -> Result<Vec<u8>, GssError> {
-        let mut client = self.client.lock().expect("initiator mutex poisoned");
+        let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
         gss_wrap(&mut client, plaintext)
     }
 
     fn unwrap(&self, token: &[u8]) -> Result<Vec<u8>, GssError> {
-        let mut client = self.client.lock().expect("initiator mutex poisoned");
+        let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
         gss_unwrap(&mut client, token)
     }
 }
@@ -366,7 +383,7 @@ mod tests {
     /// anyway.
     #[test]
     fn kdc_url_falls_back_to_the_default() {
-        if std::env::var("SSPI_KDC_URL").is_ok() {
+        if env::var("SSPI_KDC_URL").is_ok() {
             return;
         }
         check!(kdc_url_from_env() == DEFAULT_KDC_URL);

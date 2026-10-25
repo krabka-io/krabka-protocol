@@ -28,6 +28,8 @@
 #![cfg(all(feature = "gssapi", not(target_family = "wasm")))]
 #![cfg(test)]
 
+use std::env;
+
 use krabka_security::gssapi::{
     AcceptStep, DEFAULT_GSSAPI_MAX_TIME_SKEW, GssAcceptor, GssInitiator, InitStep,
     provider::{SspiAcceptor, SspiInitiator},
@@ -48,9 +50,9 @@ const CLIENT_KEYTAB_PATH: &str = "tests/fixtures/kdc/alice.keytab";
 /// with `FIXTURE_ROOT` naming the package inside that tree.
 fn fixture(relative: &str) -> String {
     let (Ok(srcdir), Ok(workspace), Ok(package)) = (
-        std::env::var("TEST_SRCDIR"),
-        std::env::var("TEST_WORKSPACE"),
-        std::env::var("FIXTURE_ROOT"),
+        env::var("TEST_SRCDIR"),
+        env::var("TEST_WORKSPACE"),
+        env::var("FIXTURE_ROOT"),
     ) else {
         return relative.to_owned();
     };
@@ -69,7 +71,7 @@ fn full_gssapi_handshake_and_wrap_roundtrip() {
     // Skip even under `--include-ignored` (the jvm-differential coverage job
     // runs ignored tests) unless a KDC is actually reachable. `SSPI_KDC_URL`
     // being exported is the signal that the docker compose fixture is up.
-    let Ok(kdc_url) = std::env::var("SSPI_KDC_URL") else {
+    let Ok(kdc_url) = env::var("SSPI_KDC_URL") else {
         eprintln!(
             "Skipping full_gssapi_handshake_and_wrap_roundtrip: set SSPI_KDC_URL \
              (and KRB5_CONFIG) and bring up the MIT KDC fixture under \

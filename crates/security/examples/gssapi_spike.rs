@@ -27,7 +27,7 @@
 
 // This is a throwaway spike binary, not production code; silence the workspace's
 // pedantic lints rather than gold-plating an example that gets deleted.
-use std::error::Error;
+use std::{env, error::Error, fs, process, time::Duration};
 
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
@@ -40,18 +40,17 @@ const REALM: &str = "CRABKA.TEST";
 const SERVICE_SPN: &str = "kafka/localhost"; // realm is supplied via the client principal
 const CLIENT_PRINCIPAL: &str = "alice@CRABKA.TEST";
 const CLIENT_PASSWORD: &str = "alicepw";
-const MAX_TIME_SKEW: std::time::Duration = std::time::Duration::from_mins(5);
+const MAX_TIME_SKEW: Duration = Duration::from_mins(5);
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let kdc_url =
-        std::env::var("SSPI_KDC_URL").unwrap_or_else(|_| "tcp://localhost:88".to_string());
-    let keytab_path = std::env::var("GSSAPI_SPIKE_KEYTAB")
-        .unwrap_or_else(|_| "crates/security/tests/fixtures/kdc/kafka.keytab".to_string());
+    let kdc_url = env::var("SSPI_KDC_URL").unwrap_or_else(|_| "tcp://localhost:88".to_owned());
+    let keytab_path = env::var("GSSAPI_SPIKE_KEYTAB")
+        .unwrap_or_else(|_| "crates/security/tests/fixtures/kdc/kafka.keytab".to_owned());
 
     // sspi's client realm lookup reads $KRB5_CONFIG (the workspace forbids
     // `unsafe`, so we cannot set it from here — the run command exports it):
     //   KRB5_CONFIG=crates/security/tests/fixtures/kdc/krb5.conf cargo run ...
-    if std::env::var("KRB5_CONFIG").is_err() {
+    if env::var("KRB5_CONFIG").is_err() {
         eprintln!(
             "WARN: KRB5_CONFIG not set; realm resolution may fail. Run with:\n  \
              KRB5_CONFIG=crates/security/tests/fixtures/kdc/krb5.conf cargo run -p krabka-security --example gssapi_spike"
@@ -66,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // sspi does NOT ingest a keytab file. ServerProperties wants the raw
     // ticket-decryption key bytes (Secret<Vec<u8>>). So we parse the MIT keytab
     // ourselves and extract the highest-kvno aes256 key for the service.
-    let entry = parse_keytab(&std::fs::read(&keytab_path)?)?;
+    let entry = parse_keytab(&fs::read(&keytab_path)?)?;
     println!(
         "\n[1] keytab parsed: principal={}@{} enctype={} kvno={} key_len={}",
         entry.components.join("/"),
@@ -83,16 +82,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // ---- Build server credentials (Kerberos acceptor) ----------------------
-    let mut server = build_server(&kdc_url, entry.key.clone())?;
+    let mut server = build_server(&kdc_url, entry.key)?;
 
     // ---- Operation 2: client initiate (produce AP-REQ) --------------------
-    let mut client = Kerberos::new_client_from_config(KerberosConfig::new(
-        &kdc_url,
-        "krabka-spike".to_string(),
-    ))?;
+    let mut client =
+        Kerberos::new_client_from_config(KerberosConfig::new(&kdc_url, "krabka-spike".to_owned()))?;
     let identity = AuthIdentity {
         username: Username::parse(CLIENT_PRINCIPAL)?,
-        password: CLIENT_PASSWORD.to_string().into(),
+        password: CLIENT_PASSWORD.to_owned().into(),
     };
     let creds: Credentials = identity.into();
     let mut client_cred_handle = client
@@ -139,11 +136,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                  docs/superpowers/specs/2026-05-28-gssapi-sspi-findings.md and re-run; all 4 ops then pass.\n    \
                  -> Decision: GO, conditional on that patch (server-accept + keytab + wrap/unwrap all verified)."
             );
-            std::process::exit(2);
+            process::exit(2);
         }
         Err(e) => return Err(e.into()),
     };
-    let ap_req = output[0].buffer.clone();
+    let ap_req = output
+        .first()
+        .ok_or("client produced no output buffer")?
+        .buffer
+        .clone();
     println!(
         "\n[2] client initialize_security_context: status={:?}, AP-REQ token = {} bytes",
         init_result.status,
@@ -167,10 +168,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let accept_result = server
         .accept_security_context_impl(accept_builder)?
         .resolve_to_result()?;
+    let server_token = server_output
+        .first()
+        .ok_or("server produced no output buffer")?
+        .buffer
+        .clone();
     println!(
         "\n[3] server accept_security_context: status={:?}, AP-REP token = {} bytes",
         accept_result.status,
-        server_output[0].buffer.len()
+        server_token.len()
     );
 
     // ---- Operation 3b: recover the authenticated source principal ----------
@@ -189,11 +195,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Finish mutual-auth: feed the AP-REP back to the client so the client
     // context reaches Final and the session key is installed on both sides.
-    if !server_output[0].buffer.is_empty() {
-        let mut input2 = vec![SecurityBuffer::new(
-            server_output[0].buffer.clone(),
-            BufferType::Token,
-        )];
+    if !server_token.is_empty() {
+        let mut input2 = vec![SecurityBuffer::new(server_token, BufferType::Token)];
         let mut output2 = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
         let mut b2 = client
             .initialize_security_context()
@@ -261,7 +264,7 @@ fn build_server(kdc_url: &str, service_key: Vec<u8>) -> Result<Kerberos, Box<dyn
         Some(Secret::new(service_key)), // raw ticket-decryption key bytes
     )?;
     let config = KerberosServerConfig {
-        kerberos_config: KerberosConfig::new(kdc_url, "krabka-broker".to_string()),
+        kerberos_config: KerberosConfig::new(kdc_url, "krabka-broker".to_owned()),
         server_properties,
     };
     Ok(Kerberos::new_server_from_config(
@@ -285,65 +288,44 @@ struct KeytabEntry {
 }
 
 fn parse_keytab(bytes: &[u8]) -> Result<KeytabEntry, Box<dyn Error>> {
-    let mut p = 0usize;
-    let rd_u8 = |b: &[u8], p: &mut usize| -> u8 {
-        let v = b[*p];
-        *p += 1;
-        v
-    };
-    let rd_u16 = |b: &[u8], p: &mut usize| -> u16 {
-        let v = u16::from_be_bytes([b[*p], b[*p + 1]]);
-        *p += 2;
-        v
-    };
-    let read_signed_len = |b: &[u8], p: &mut usize| -> i32 {
-        let v = i32::from_be_bytes([b[*p], b[*p + 1], b[*p + 2], b[*p + 3]]);
-        *p += 4;
-        v
-    };
-    let rd_u32 = |b: &[u8], p: &mut usize| -> u32 {
-        let v = u32::from_be_bytes([b[*p], b[*p + 1], b[*p + 2], b[*p + 3]]);
-        *p += 4;
-        v
-    };
+    let mut cursor = Cursor { bytes, pos: 0 };
 
     // File header: 2-byte magic. 0x0502 = krb5 keytab v2.
-    let magic = rd_u16(bytes, &mut p);
+    let magic = u16::from_be_bytes(cursor.array()?);
     if magic != 0x0502 {
         return Err(format!("unexpected keytab magic 0x{magic:04x}, expected 0x0502").into());
     }
 
     // First entry only (spike). entry_size is the length of the entry payload
     // (NOT including the 4-byte size field itself; a negative size marks a hole).
-    let entry_size = read_signed_len(bytes, &mut p);
+    let entry_size = i32::from_be_bytes(cursor.array()?);
     if entry_size <= 0 {
         return Err("first keytab record is a hole".into());
     }
-    let entry_end = p + usize::try_from(entry_size)?;
+    let entry_end = cursor.pos + usize::try_from(entry_size)?;
 
     // count-prefixed principal components (count does NOT include the realm).
-    let num_components = rd_u16(bytes, &mut p);
-    let realm = read_counted_str(bytes, &mut p, rd_u16);
-    let mut components = Vec::with_capacity(num_components as usize);
+    let num_components = u16::from_be_bytes(cursor.array()?);
+    let realm = cursor.counted_str()?;
+    let mut components = Vec::with_capacity(usize::from(num_components));
     for _ in 0..num_components {
-        components.push(read_counted_str(bytes, &mut p, rd_u16));
+        components.push(cursor.counted_str()?);
     }
-    let _name_type = rd_u32(bytes, &mut p); // NT_PRINCIPAL etc.
-    let _timestamp = rd_u32(bytes, &mut p);
-    let kvno8 = u32::from(rd_u8(bytes, &mut p));
+    let _name_type = u32::from_be_bytes(cursor.array()?); // NT_PRINCIPAL etc.
+    let _timestamp = u32::from_be_bytes(cursor.array()?);
+    let [kvno8] = cursor.array()?;
 
     // keyblock: 16-bit enctype + 16-bit key length + key bytes.
-    let enctype = rd_u16(bytes, &mut p);
-    let key_len = rd_u16(bytes, &mut p) as usize;
-    let key = bytes[p..p + key_len].to_vec();
-    p += key_len;
+    let enctype = u16::from_be_bytes(cursor.array()?);
+    let key_len = usize::from(u16::from_be_bytes(cursor.array()?));
+    let key = cursor.take(key_len)?.to_vec();
 
     // Optional trailing 32-bit kvno (present when it exceeds 255 / for newer
     // ktutil). If there are >= 4 bytes left in the entry, read it; else use u8.
-    let kvno = if entry_end.saturating_sub(p) >= 4 {
-        rd_u32(bytes, &mut p)
+    let kvno = if entry_end.saturating_sub(cursor.pos) >= 4 {
+        u32::from_be_bytes(cursor.array()?)
     } else {
-        kvno8
+        u32::from(kvno8)
     };
 
     Ok(KeytabEntry {
@@ -355,13 +337,32 @@ fn parse_keytab(bytes: &[u8]) -> Result<KeytabEntry, Box<dyn Error>> {
     })
 }
 
-fn read_counted_str(
-    bytes: &[u8],
-    p: &mut usize,
-    rd_u16: impl Fn(&[u8], &mut usize) -> u16,
-) -> String {
-    let len = rd_u16(bytes, p) as usize;
-    let s = String::from_utf8_lossy(&bytes[*p..*p + len]).into_owned();
-    *p += len;
-    s
+/// A read position in a keytab that errors on a short read.
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    /// The next `n` bytes.
+    fn take(&mut self, n: usize) -> Result<&'a [u8], Box<dyn Error>> {
+        let slice = self
+            .pos
+            .checked_add(n)
+            .and_then(|end| self.bytes.get(self.pos..end))
+            .ok_or_else(|| format!("keytab truncated at offset {}", self.pos))?;
+        self.pos += n;
+        Ok(slice)
+    }
+
+    /// The next `N` bytes, as an array.
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], Box<dyn Error>> {
+        Ok(<[u8; N]>::try_from(self.take(N)?)?)
+    }
+
+    /// A `u16`-length-prefixed string, decoded lossily.
+    fn counted_str(&mut self) -> Result<String, Box<dyn Error>> {
+        let len = usize::from(u16::from_be_bytes(self.array()?));
+        Ok(String::from_utf8_lossy(self.take(len)?).into_owned())
+    }
 }
