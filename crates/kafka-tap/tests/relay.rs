@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use krabka_ids::{ApiKey, ApiVersion};
 use krabka_kafka_tap::{Recorder, frame::CapturedFrame, spawn};
 
 fn framed(body: &[u8]) -> Vec<u8> {
@@ -87,4 +88,30 @@ fn relays_and_records() {
             .iter()
             .any(|f| !f.is_request && f.api_key == 3 && f.version == 12)
     );
+}
+
+#[test]
+fn a_captured_frame_spools_as_one_json_line() {
+    for (frame, want) in [
+        (
+            CapturedFrame {
+                api_key: ApiKey(18),
+                version: ApiVersion(3),
+                is_request: true,
+                body: vec![0x00, 0x0a, 0xff],
+            },
+            "{\"api_key\":18,\"version\":3,\"is_request\":true,\"body_hex\":\"000aff\"}\n",
+        ),
+        (
+            CapturedFrame {
+                api_key: ApiKey(0),
+                version: ApiVersion(0),
+                is_request: false,
+                body: Vec::new(),
+            },
+            "{\"api_key\":0,\"version\":0,\"is_request\":false,\"body_hex\":\"\"}\n",
+        ),
+    ] {
+        assert2::assert!(frame.spool_line() == want);
+    }
 }

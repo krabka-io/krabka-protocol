@@ -166,10 +166,8 @@ mod tests {
             if server.read_exact(&mut len).is_err() {
                 return;
             }
-            let Ok(size) = usize::try_from(i32::from_be_bytes(len)) else {
-                return;
-            };
-            let mut body = vec![0u8; size];
+            // The client in these tests only sends non-negative lengths.
+            let mut body = vec![0u8; usize::try_from(i32::from_be_bytes(len)).unwrap()];
             if server.read_exact(&mut body).is_err() {
                 return;
             }
@@ -259,10 +257,7 @@ mod tests {
                     return;
                 }
                 let n = i32::from_be_bytes(len);
-                let Ok(size) = usize::try_from(n) else {
-                    return;
-                };
-                let mut body = vec![0u8; size];
+                let mut body = vec![0u8; usize::try_from(n).unwrap()];
                 if server.read_exact(&mut body).is_err() {
                     return;
                 }
@@ -301,7 +296,7 @@ mod tests {
             server,
             true,
             &Mutex::new(Pending::default()),
-            &|_| {},
+            &drop::<CapturedFrame>,
         );
         assert2::check!(result.is_ok());
     }

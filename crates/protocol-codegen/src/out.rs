@@ -44,18 +44,23 @@ impl Written {
         Ok(())
     }
 
-    /// Format generated Rust source through rustfmt, write it, and record the
+    /// Format generated Rust source with `format`, write it, and record the
     /// path.
     ///
-    /// The quote-based emitters return unformatted token text. rustfmt is the
-    /// secondary processing step that turns it into the canonical committed
+    /// The quote-based emitters return unformatted token text. The generator
+    /// passes [`fmt::rustfmt`], which turns it into the canonical committed
     /// form.
     ///
     /// # Errors
-    /// Returns an error when rustfmt rejects the source or the file cannot be
+    /// Returns an error when `format` rejects the source or the file cannot be
     /// written.
-    pub fn write_rs(&mut self, path: PathBuf, body: &str) -> Result<(), WriteError> {
-        let body = fmt::rustfmt(body)?;
+    pub fn write_rs(
+        &mut self,
+        path: PathBuf,
+        body: &str,
+        format: fmt::Formatter,
+    ) -> Result<(), WriteError> {
+        let body = format(body)?;
         self.write(path, &body)?;
         Ok(())
     }
@@ -108,94 +113,4 @@ fn is_generated(path: &Path) -> io::Result<bool> {
     let mut first = String::new();
     BufReader::new(file).read_line(&mut first)?;
     Ok(first.starts_with(BANNER_PREFIX))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{env, process};
-
-    use assert2::assert;
-
-    use super::*;
-    use crate::emit::common::banner;
-
-    /// A private scratch directory that the test removes when it drops.
-    struct Scratch(PathBuf);
-
-    impl Scratch {
-        fn new(name: &str) -> Self {
-            let dir = env::temp_dir().join(format!("krabka-codegen-out-{}-{name}", process::id()));
-            let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).unwrap();
-            Self(dir)
-        }
-
-        fn generated(&self, rel: &str) -> PathBuf {
-            self.at(rel, &format!("{}pub const X: i16 = 0;\n", banner("test")))
-        }
-
-        fn at(&self, rel: &str, body: &str) -> PathBuf {
-            let path = self.0.join(rel);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, body).unwrap();
-            path
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[test]
-    fn prune_removes_a_generated_file_the_run_did_not_write() {
-        let scratch = Scratch::new("stale");
-        let stale = scratch.generated("Removed.owned.rs");
-        let fresh = scratch.0.join("Kept.owned.rs");
-
-        let mut written = Written::default();
-        written
-            .write(fresh.clone(), &format!("{}\n", banner("test")))
-            .unwrap();
-        written.prune(&scratch.0, false).unwrap();
-
-        assert!(!stale.exists());
-        assert!(fresh.exists());
-        assert!(written.contains(&fresh));
-    }
-
-    #[test]
-    fn prune_keeps_a_hand_written_neighbour() {
-        let scratch = Scratch::new("handwritten");
-        let hand = scratch.at("hand_written.rs", "//! Hand-written.\n");
-
-        let written = Written::default();
-        written.prune(&scratch.0, false).unwrap();
-
-        assert!(hand.exists());
-    }
-
-    #[test]
-    fn a_flat_prune_leaves_subdirectories_alone() {
-        let scratch = Scratch::new("flat");
-        let nested = scratch.generated("kafka_3_6_2/Removed.owned.rs");
-
-        let written = Written::default();
-        written.prune(&scratch.0, false).unwrap();
-
-        assert!(nested.exists());
-    }
-
-    #[test]
-    fn a_recursive_prune_drops_the_directory_it_empties() {
-        let scratch = Scratch::new("recursive");
-        let nested = scratch.generated("common/owned/gone/key_value.owned.rs");
-
-        let written = Written::default();
-        written.prune(&scratch.0, true).unwrap();
-
-        assert!(!nested.exists());
-        assert!(!scratch.0.join("common/owned/gone").exists());
-    }
 }

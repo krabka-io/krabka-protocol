@@ -1,7 +1,7 @@
 //! Kafka wire framing, and request and response correlation. This module has
 //! no schema knowledge.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use krabka_ids::{ApiKey, ApiVersion};
 
@@ -60,6 +60,22 @@ pub struct CapturedFrame {
     /// Full frame body, that is the header and the message, without the
     /// 4-byte length prefix.
     pub body: Vec<u8>,
+}
+
+impl CapturedFrame {
+    /// The frame as one newline-terminated JSON record of the standalone
+    /// tap's spool, with the body in lowercase hex.
+    #[must_use]
+    pub fn spool_line(&self) -> String {
+        let mut hex = String::with_capacity(self.body.len() * 2);
+        for b in &self.body {
+            let _ = write!(hex, "{b:02x}");
+        }
+        format!(
+            "{{\"api_key\":{},\"version\":{},\"is_request\":{},\"body_hex\":\"{}\"}}\n",
+            self.api_key, self.version, self.is_request, hex
+        )
+    }
 }
 
 #[cfg(test)]

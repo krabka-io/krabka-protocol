@@ -37,6 +37,7 @@
 //! # Ok(())
 //! # }
 //! ```
+pub mod driver;
 pub mod emit;
 pub mod fmt;
 pub mod hoist;

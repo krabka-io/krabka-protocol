@@ -41,6 +41,11 @@ pub enum FmtError {
     NoStdin,
 }
 
+/// A pass that turns generated source into the text the generator writes:
+/// [`rustfmt`] for the committed tree, or one built on [`prettyprint`] where
+/// no rustfmt binary is available.
+pub type Formatter = fn(&str) -> Result<String, FmtError>;
+
 /// Hoist long paths into imports, pretty-print `src` with prettyplease,
 /// refine it through `rustfmt` at edition 2024, and return the formatted
 /// output.
@@ -52,10 +57,18 @@ pub enum FmtError {
 /// # Errors
 /// Returns an error when the schema model is invalid or generated Rust cannot be formatted or written.
 pub fn rustfmt(src: &str) -> Result<String, FmtError> {
+    run_rustfmt(&prettyprint(src))
+}
+
+/// The first pass of [`rustfmt`]: hoist long paths into imports and
+/// pretty-print `src` with prettyplease, keeping its leading banner.
+///
+/// prettyplease normalizes spacing and breaks lines rustfmt would otherwise
+/// give up on. If the body does not parse (a real codegen bug), this function
+/// returns `src` unchanged, so the rustfmt pass surfaces the precise error.
+#[must_use]
+pub fn prettyprint(src: &str) -> String {
     let (banner, body) = split_banner(src);
-    // prettyplease normalizes spacing and breaks lines rustfmt would otherwise
-    // give up on. If the body does not parse (a real codegen bug), fall back to
-    // the raw body so the rustfmt pass surfaces the precise error.
     let body = syn::parse_file(body).map_or_else(
         |_| body.to_owned(),
         |mut file| {
@@ -63,7 +76,7 @@ pub fn rustfmt(src: &str) -> Result<String, FmtError> {
             prettyplease::unparse(&file)
         },
     );
-    run_rustfmt(&format!("{banner}{body}"))
+    format!("{banner}{body}")
 }
 
 /// Split the leading banner block off from the code body. The banner is the

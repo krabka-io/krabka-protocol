@@ -3,7 +3,6 @@
 //! The tap writes one JSON record per frame to the spool file.
 use std::{
     env,
-    fmt::Write as _,
     fs::File,
     io::{self, Write},
     process,
@@ -21,14 +20,7 @@ fn main() -> io::Result<()> {
     };
     let file = Arc::new(Mutex::new(File::create(spool)?));
     let rec: Recorder = Arc::new(move |f: CapturedFrame| {
-        let mut hex = String::with_capacity(f.body.len() * 2);
-        for b in &f.body {
-            let _ = write!(hex, "{b:02x}");
-        }
-        let line = format!(
-            "{{\"api_key\":{},\"version\":{},\"is_request\":{},\"body_hex\":\"{}\"}}\n",
-            f.api_key, f.version, f.is_request, hex
-        );
+        let line = f.spool_line();
         let written = file
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
