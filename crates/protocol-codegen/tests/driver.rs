@@ -47,10 +47,7 @@ const REMOVED: &str = r#"{
 }"#;
 
 /// The formatter for these runs: the pretty-printing pass, without rustfmt.
-#[expect(clippy::unnecessary_wraps, reason = "a `Formatter` returns a `Result`")]
-fn pretty(src: &str) -> Result<String, fmt::FmtError> {
-    Ok(fmt::prettyprint(src))
-}
+const PRETTY: fmt::Formatter = |src| Ok(fmt::prettyprint(src));
 
 /// A schema directory in `scratch`, at `crates/protocol/schemas`.
 fn schemas(scratch: &Scratch) -> PathBuf {
@@ -99,7 +96,7 @@ fn a_run_writes_the_generated_tree_and_its_wrappers() {
         "//! Hand-written.\n",
     );
 
-    let count = driver::run(&schemas, &out, None, pretty).unwrap();
+    let count = driver::run(&schemas, &out, None, PRETTY).unwrap();
 
     check!(
         files(&protocol.join("generated"))
@@ -156,7 +153,7 @@ fn a_namespaced_run_writes_below_its_namespace() {
     let protocol = scratch.path().join("crates/protocol");
     let out = protocol.join("generated/kafka_3_6_2");
 
-    driver::run(&schemas, &out, Some("kafka_3_6_2"), pretty).unwrap();
+    driver::run(&schemas, &out, Some("kafka_3_6_2"), PRETTY).unwrap();
 
     let generated = files(&out);
     check!(generated.contains(&"WidgetRequest.owned.rs".to_owned()));
@@ -181,7 +178,7 @@ fn a_schema_directory_without_a_sha_is_rejected() {
     fs::write(schemas.join("VERSION"), "kafka: test\n").unwrap();
     let out = scratch.path().join("crates/protocol/generated");
 
-    let result = driver::run(&schemas, &out, None, pretty);
+    let result = driver::run(&schemas, &out, None, PRETTY);
 
     assert!(let Err(RunError::MissingSha) = result);
     check!(!out.exists());
