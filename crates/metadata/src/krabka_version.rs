@@ -16,6 +16,14 @@
 //!   change, and it never will: a 1.0.0 node advertises support for it, so a
 //!   later release cannot give it a meaning that 1.0.0 nodes do not know. The
 //!   first krabka-only format change takes level 2.
+//! - **Level 2** turns on diskless WAL object reservations
+//!   ([`DISKLESS_OBJECT_RESERVATION_LEVEL`]). A broker records a reservation
+//!   for a WAL object in `__diskless_wal_index` before it uploads the object,
+//!   and clears it once the object's index records are applied, so no broker
+//!   reclaims an object whose index publication is still in flight. The
+//!   reservation reuses the 1.x delete-floor record encoding, so every 1.x
+//!   reader can still replay it. Below level 2 a broker writes no
+//!   reservations. Level 2 changes no private RPC version.
 //!
 //! # Why the maximum is 1, not 0
 //!
@@ -79,8 +87,13 @@ pub const KRABKA_VERSION_FEATURE: &str = "krabka.version";
 pub const KRABKA_VERSION_MIN: i16 = 0;
 
 /// Maximum supported level, and the latest production level. Level 1 means
-/// the same formats as level 0. See the module docs for why it is 1.
-pub const KRABKA_VERSION_MAX: i16 = 1;
+/// the same formats as level 0. See the module docs for the meaning of each
+/// level.
+pub const KRABKA_VERSION_MAX: i16 = 2;
+
+/// The first level at which a broker writes diskless WAL object reservations
+/// before it uploads an object. See the module docs.
+pub const DISKLESS_OBJECT_RESERVATION_LEVEL: i16 = 2;
 
 /// The finalized `krabka.version` level of a metadata image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -172,8 +185,9 @@ impl PrivateRpc {
         if krabka_version < KRABKA_VERSION_MIN || krabka_version > KRABKA_VERSION_MAX {
             return None;
         }
-        // Levels 0 and 1 are both the 1.0.0 formats, so every RPC is v0. A
-        // level that raises an RPC's version adds an arm here.
+        // Levels 0 and 1 are both the 1.0.0 formats, and level 2 changes no
+        // RPC, so every RPC is v0. A level that raises an RPC's version adds
+        // an arm here.
         Some(match self {
             Self::SubmitChange | Self::MetadataFetch | Self::DelegationTokenMutation => 0,
         })
@@ -184,7 +198,7 @@ impl PrivateRpc {
 /// node may send when the finalized `krabka.version` is `krabka_version`.
 ///
 /// Returns `None` for an api key that is not a private controller RPC, and for
-/// a level this build does not support. At levels 0 and 1 every RPC is v0.
+/// a level this build does not support. At levels 0 to 2 every RPC is v0.
 #[must_use]
 pub const fn private_rpc_version(api_key: i16, krabka_version: i16) -> Option<i16> {
     match PrivateRpc::from_api_key(api_key) {
@@ -217,8 +231,9 @@ mod tests {
             (
                 KRABKA_VERSION_FEATURE,
                 KRABKA_VERSION_MIN,
-                KRABKA_VERSION_MAX
-            ) == ("krabka.version", 0, 1)
+                KRABKA_VERSION_MAX,
+                DISKLESS_OBJECT_RESERVATION_LEVEL,
+            ) == ("krabka.version", 0, 2, 2)
         );
     }
 
@@ -257,16 +272,37 @@ mod tests {
     fn private_rpc_version_table() {
         for rpc in PrivateRpc::ALL {
             // (api key, [(krabka.version, highest request version)])
-            let (api_key, rows): (i16, [(i16, Option<i16>); 4]) = match rpc {
-                PrivateRpc::SubmitChange => {
-                    (1003, [(-1, None), (0, Some(0)), (1, Some(0)), (2, None)])
-                }
-                PrivateRpc::MetadataFetch => {
-                    (1004, [(-1, None), (0, Some(0)), (1, Some(0)), (2, None)])
-                }
-                PrivateRpc::DelegationTokenMutation => {
-                    (1005, [(-1, None), (0, Some(0)), (1, Some(0)), (2, None)])
-                }
+            let (api_key, rows): (i16, [(i16, Option<i16>); 5]) = match rpc {
+                PrivateRpc::SubmitChange => (
+                    1003,
+                    [
+                        (-1, None),
+                        (0, Some(0)),
+                        (1, Some(0)),
+                        (2, Some(0)),
+                        (3, None),
+                    ],
+                ),
+                PrivateRpc::MetadataFetch => (
+                    1004,
+                    [
+                        (-1, None),
+                        (0, Some(0)),
+                        (1, Some(0)),
+                        (2, Some(0)),
+                        (3, None),
+                    ],
+                ),
+                PrivateRpc::DelegationTokenMutation => (
+                    1005,
+                    [
+                        (-1, None),
+                        (0, Some(0)),
+                        (1, Some(0)),
+                        (2, Some(0)),
+                        (3, None),
+                    ],
+                ),
             };
             check!(rpc.api_key() == api_key);
             check!(PrivateRpc::from_api_key(api_key) == Some(rpc));

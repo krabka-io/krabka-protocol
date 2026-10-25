@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Group partition offset, ELR and recovery state by topic so topic deletion touches only its own auxiliary state (#77).
+- `krabka.version` level 2 (`krabka_version::DISKLESS_OBJECT_RESERVATION_LEVEL`) turns on diskless WAL object reservations, and the supported range becomes `[0, 2]`. Level 2 changes no private RPC version (krabka-io/krabka-broker#1763).
 
 ## [0.7.0] — 2026-10-20
 
