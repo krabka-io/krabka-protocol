@@ -3,22 +3,23 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i32, put_i32},
+    owned::common::leader_change_message::voter,
+    primitives::{
+        fixed::{get_i32, put_i32},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Voter {
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Voter {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::leader_change_message::voter::Voter {
-        crate::owned::common::leader_change_message::voter::Voter {
+    pub fn to_owned(&self) -> voter::Voter {
+        voter::Voter {
             voter_id: (self.voter_id),
             voter_directory_id: (self.voter_directory_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -32,11 +33,11 @@ impl Encode for Voter {
             put_i32(buf, self.voter_id);
         }
         if version >= 1 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,7 +65,7 @@ impl<'de> DecodeBorrow<'de> for Voter {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 1 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -81,7 +82,7 @@ impl Voter {
             m.voter_id = 1i32;
         }
         if version >= 1 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         m
     }

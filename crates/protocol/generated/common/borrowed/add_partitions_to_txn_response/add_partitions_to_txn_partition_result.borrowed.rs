@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::add_partitions_to_txn_response::add_partitions_to_txn_partition_result,
     primitives::fixed::{get_i16, get_i32, put_i16, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -13,12 +14,11 @@ pub struct AddPartitionsToTxnPartitionResult {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AddPartitionsToTxnPartitionResult {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::add_partitions_to_txn_response::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult{
-        crate::owned::common::add_partitions_to_txn_response::add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult {
+    pub fn to_owned(
+        &self,
+    ) -> add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult {
+        add_partitions_to_txn_partition_result::AddPartitionsToTxnPartitionResult {
             partition_index: (self.partition_index),
             partition_error_code: (self.partition_error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -36,7 +36,7 @@ impl Encode for AddPartitionsToTxnPartitionResult {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delete_share_group_offsets_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -26,15 +28,10 @@ pub struct DeleteShareGroupOffsetsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteShareGroupOffsetsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::delete_share_group_offsets_request::DeleteShareGroupOffsetsRequest {
-        crate::owned::delete_share_group_offsets_request::DeleteShareGroupOffsetsRequest {
-            group_id: (self.group_id).to_string(),
+    pub fn to_owned(&self) -> delete_share_group_offsets_request::DeleteShareGroupOffsetsRequest {
+        delete_share_group_offsets_request::DeleteShareGroupOffsetsRequest {
+            group_id: (self.group_id).to_owned(),
             topics: (self.topics)
                 .iter()
                 .map(DeleteShareGroupOffsetsRequestTopic::to_owned)
@@ -54,22 +51,22 @@ impl Encode for DeleteShareGroupOffsetsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,8 +82,7 @@ impl Encode for DeleteShareGroupOffsetsRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -117,7 +113,7 @@ impl<'de> DecodeBorrow<'de> for DeleteShareGroupOffsetsRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteShareGroupOffsetsRequestTopic::decode_borrow(
@@ -153,15 +149,12 @@ pub struct DeleteShareGroupOffsetsRequestTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteShareGroupOffsetsRequestTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::delete_share_group_offsets_request::DeleteShareGroupOffsetsRequestTopic {
-        crate::owned::delete_share_group_offsets_request::DeleteShareGroupOffsetsRequestTopic {
-            topic_name: (self.topic_name).to_string(),
+    ) -> delete_share_group_offsets_request::DeleteShareGroupOffsetsRequestTopic {
+        delete_share_group_offsets_request::DeleteShareGroupOffsetsRequestTopic {
+            topic_name: (self.topic_name).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -171,14 +164,14 @@ impl Encode for DeleteShareGroupOffsetsRequestTopic<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

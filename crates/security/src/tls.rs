@@ -1,6 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{io, path::PathBuf, sync::Arc};
 
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer},
+    server::WebPkiClientVerifier,
+};
 use thiserror::Error;
 
 /// Whether the server requests and verifies a client certificate during
@@ -46,7 +49,7 @@ pub struct TlsConfig {
 #[derive(Debug, Error)]
 pub enum TlsError {
     #[error("io: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error("rustls: {0}")]
     Rustls(#[from] rustls::Error),
     #[error("PEM: {0}")]
@@ -123,8 +126,7 @@ impl TlsConfig {
                 for cert in load_certs(ca_path)? {
                     roots.add(cert)?;
                 }
-                let verifier_builder =
-                    rustls::server::WebPkiClientVerifier::builder(Arc::new(roots));
+                let verifier_builder = WebPkiClientVerifier::builder(Arc::new(roots));
                 let verifier = match self.client_auth {
                     ClientAuthMode::Optional => verifier_builder.allow_unauthenticated().build(),
                     ClientAuthMode::Required => verifier_builder.build(),
@@ -203,9 +205,9 @@ impl TlsConfig {
 fn load_certs(path: &PathBuf) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     use rustls::pki_types::pem::PemObject;
     let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(path)
-        .map_err(|e| TlsError::Io(std::io::Error::other(e.to_string())))?
+        .map_err(|e| TlsError::Io(io::Error::other(e.to_string())))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| TlsError::Io(std::io::Error::other(e.to_string())))?;
+        .map_err(|e| TlsError::Io(io::Error::other(e.to_string())))?;
     if certs.is_empty() {
         return Err(TlsError::NoCerts(path.clone()));
     }
@@ -219,17 +221,20 @@ fn load_private_key(path: &PathBuf) -> Result<PrivateKeyDer<'static>, TlsError> 
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write};
+    use std::{fs::File, io::Write, path::Path};
+
+    use rustls::crypto::ring::default_provider;
 
     use super::*;
+    use crate::ca::{generate_clients_ca, issue_user_cert};
 
     fn install_provider() {
         // rustls requires an explicit CryptoProvider when no default feature is
         // compiled in.  We use ring, which is already in the workspace.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = default_provider().install_default();
     }
 
-    fn write_self_signed(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+    fn write_self_signed(dir: &Path) -> (PathBuf, PathBuf) {
         // Reuse a deterministic dev cert; for the unit test we just need
         // valid PEM. We embed pre-generated PEMs as constants.
         // (Generated with: openssl req -x509 -newkey ed25519 -nodes -days 36500 \
@@ -249,7 +254,7 @@ mod tests {
         (cert_path, key_path)
     }
 
-    fn write_client_ca(dir: &std::path::Path) -> PathBuf {
+    fn write_client_ca(dir: &Path) -> PathBuf {
         // Self-signed dev client CA. Generated with:
         //   openssl ecparam -name prime256v1 -genkey -noout -out ca.key
         //   openssl req -x509 -new -key ca.key -days 36500 \
@@ -341,8 +346,8 @@ mod tests {
     fn client_config_with_identity_builds() {
         install_provider();
         let dir = tempfile::tempdir().unwrap();
-        let ca = crate::ca::generate_clients_ca("p4-ca", 365).expect("ca");
-        let leaf = crate::ca::issue_user_cert(&ca.cert_pem, &ca.key_pem, "gw", 365).expect("leaf");
+        let ca = generate_clients_ca("p4-ca", 365).expect("ca");
+        let leaf = issue_user_cert(&ca.cert_pem, &ca.key_pem, "gw", 365).expect("leaf");
         let cert_path = dir.path().join("c.pem");
         let key_path = dir.path().join("k.pem");
         let ca_path = dir.path().join("ca.pem");

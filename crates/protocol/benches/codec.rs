@@ -8,11 +8,13 @@
 //! hot path, so the code under test dominates codspeed's instruction-count
 //! signal.
 
+use std::{f64::consts::PI, process};
+
 use bytes::{Bytes, BytesMut};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkGroup, Criterion, black_box, criterion_main, measurement::WallTime};
 use krabka_compression::CompressionType;
 use krabka_protocol::{
-    Decode, Encode,
+    Decode, Encode, ProtocolError,
     owned::{
         api_versions_request::ApiVersionsRequest,
         api_versions_response::{ApiVersion, ApiVersionsResponse},
@@ -40,8 +42,8 @@ use krabka_protocol::{
 
 fn make_api_versions_request() -> ApiVersionsRequest {
     ApiVersionsRequest {
-        client_software_name: "krabka".to_string(),
-        client_software_version: "0.1.0".to_string(),
+        client_software_name: "krabka".to_owned(),
+        client_software_version: "0.1.0".to_owned(),
         unknown_tagged_fields: UnknownTaggedFields::default(),
         ..Default::default()
     }
@@ -65,10 +67,26 @@ fn make_api_versions_response() -> ApiVersionsResponse {
     }
 }
 
-fn encode_to_bytes<T: Encode>(msg: &T, version: i16) -> Vec<u8> {
+fn encode_to_bytes<T: Encode>(msg: &T, version: i16) -> Result<Vec<u8>, ProtocolError> {
     let mut buf = BytesMut::with_capacity(msg.encoded_len(version));
-    msg.encode(&mut buf, version).unwrap();
-    buf.to_vec()
+    msg.encode(&mut buf, version)?;
+    Ok(buf.to_vec())
+}
+
+/// Runs `benches` in a new benchmark group named `name`.
+///
+/// The bench run ends with an error when the group's setup fails.
+fn with_group(
+    c: &mut Criterion,
+    name: &str,
+    benches: impl FnOnce(&mut BenchmarkGroup<'_, WallTime>) -> Result<(), ProtocolError>,
+) {
+    let mut group = c.benchmark_group(name);
+    if let Err(e) = benches(&mut group) {
+        eprintln!("{name}: setup failed: {e}");
+        process::exit(1);
+    }
+    group.finish();
 }
 
 fn make_record(offset_delta: i32, payload: usize) -> Record {
@@ -122,14 +140,14 @@ fn make_large_record_batch(payload: usize, codec: CompressionType, ramp: bool) -
     }
 }
 
-fn make_produce_request(num_topics: usize, partitions_per_topic: usize) -> ProduceRequest {
+fn make_produce_request(num_topics: usize, partitions_per_topic: i32) -> ProduceRequest {
     let topic_data = (0..num_topics)
         .map(|t| TopicProduceData {
             name: format!("topic-{t:04}"),
             topic_id: Uuid([0u8; 16]),
             partition_data: (0..partitions_per_topic)
                 .map(|p| PartitionProduceData {
-                    index: i32::try_from(p).expect("partition index must fit in i32"),
+                    index: p,
                     records: Some(make_record_batch(8, 64).into()),
                     unknown_tagged_fields: UnknownTaggedFields::default(),
                 })
@@ -156,7 +174,7 @@ fn make_single_large_produce_request(
         acks: 1,
         timeout_ms: 10_000,
         topic_data: vec![TopicProduceData {
-            name: "bench-topic".to_string(),
+            name: "bench-topic".to_owned(),
             topic_id: Uuid([0u8; 16]),
             partition_data: vec![PartitionProduceData {
                 index: 0,
@@ -169,14 +187,14 @@ fn make_single_large_produce_request(
     }
 }
 
-fn make_fetch_request(num_topics: usize, partitions_per_topic: usize) -> FetchRequest {
+fn make_fetch_request(num_topics: usize, partitions_per_topic: i32) -> FetchRequest {
     let topics = (0..num_topics)
         .map(|t| FetchTopic {
             topic: format!("topic-{t:04}"),
             topic_id: Uuid([0u8; 16]),
             partitions: (0..partitions_per_topic)
                 .map(|p| FetchPartition {
-                    partition: i32::try_from(p).expect("partition index must fit in i32"),
+                    partition: p,
                     current_leader_epoch: -1,
                     fetch_offset: 0,
                     last_fetched_epoch: -1,
@@ -203,13 +221,13 @@ fn make_fetch_request(num_topics: usize, partitions_per_topic: usize) -> FetchRe
     }
 }
 
-fn make_metadata_response(num_brokers: usize, num_topics: usize, parts: usize) -> MetadataResponse {
+fn make_metadata_response(num_brokers: i32, num_topics: usize, parts: i32) -> MetadataResponse {
     let brokers = (0..num_brokers)
         .map(|i| MetadataResponseBroker {
-            node_id: i32::try_from(i).expect("broker index must fit in i32"),
+            node_id: i,
             host: format!("broker-{i}.example.com"),
             port: 9092,
-            rack: Some("us-east-1a".to_string()),
+            rack: Some("us-east-1a".to_owned()),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         })
         .collect();
@@ -222,7 +240,7 @@ fn make_metadata_response(num_brokers: usize, num_topics: usize, parts: usize) -
             partitions: (0..parts)
                 .map(|p| MetadataResponsePartition {
                     error_code: 0,
-                    partition_index: i32::try_from(p).expect("partition index must fit in i32"),
+                    partition_index: p,
                     leader_id: 0,
                     leader_epoch: 0,
                     replica_nodes: vec![0, 1, 2],
@@ -238,7 +256,7 @@ fn make_metadata_response(num_brokers: usize, num_topics: usize, parts: usize) -
     MetadataResponse {
         throttle_time_ms: 0,
         brokers,
-        cluster_id: Some("test-cluster".to_string()),
+        cluster_id: Some("test-cluster".to_owned()),
         controller_id: 0,
         topics,
         cluster_authorized_operations: 0,
@@ -274,7 +292,7 @@ fn bench_varint(c: &mut Criterion) {
         let data: &[u8] = &[0x7F];
         b.iter(|| {
             let mut cur = black_box(data);
-            varint::get_uvarint(&mut cur).unwrap()
+            varint::get_uvarint(&mut cur)
         });
     });
 
@@ -282,7 +300,7 @@ fn bench_varint(c: &mut Criterion) {
         let data: &[u8] = &[0xFF, 0xFF, 0xFF, 0xFF, 0x0F];
         b.iter(|| {
             let mut cur = black_box(data);
-            varint::get_uvarint(&mut cur).unwrap()
+            varint::get_uvarint(&mut cur)
         });
     });
 
@@ -300,7 +318,7 @@ fn bench_varint(c: &mut Criterion) {
         let data = bm.freeze();
         b.iter(|| {
             let mut cur: &[u8] = black_box(&data);
-            varint::get_varint(&mut cur).unwrap()
+            varint::get_varint(&mut cur)
         });
     });
 
@@ -318,7 +336,7 @@ fn bench_varint(c: &mut Criterion) {
         let data = bm.freeze();
         b.iter(|| {
             let mut cur: &[u8] = black_box(&data);
-            varint::get_varlong(&mut cur).unwrap()
+            varint::get_varlong(&mut cur)
         });
     });
 
@@ -336,7 +354,7 @@ fn bench_varint(c: &mut Criterion) {
         let data = bm.freeze();
         b.iter(|| {
             let mut cur: &[u8] = black_box(&data);
-            varint::get_uvarlong(&mut cur).unwrap()
+            varint::get_uvarlong(&mut cur)
         });
     });
 
@@ -372,7 +390,7 @@ fn bench_fixed(c: &mut Criterion) {
         let data: &[u8] = &[0x12, 0x34, 0x56, 0x78];
         b.iter(|| {
             let mut cur = black_box(data);
-            fixed::get_i32(&mut cur).unwrap()
+            fixed::get_i32(&mut cur)
         });
     });
 
@@ -388,7 +406,7 @@ fn bench_fixed(c: &mut Criterion) {
         let data: &[u8] = &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         b.iter(|| {
             let mut cur = black_box(data);
-            fixed::get_i64(&mut cur).unwrap()
+            fixed::get_i64(&mut cur)
         });
     });
 
@@ -404,7 +422,7 @@ fn bench_fixed(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(8);
         b.iter(|| {
             buf.clear();
-            fixed::put_f64(&mut buf, black_box(std::f64::consts::PI));
+            fixed::put_f64(&mut buf, black_box(PI));
         });
     });
 
@@ -416,8 +434,10 @@ fn bench_fixed(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_string_bytes(c: &mut Criterion) {
-    let mut group = c.benchmark_group("string_bytes");
+    with_group(c, "string_bytes", try_bench_string_bytes);
+}
 
+fn try_bench_string_bytes(group: &mut BenchmarkGroup<'_, WallTime>) -> Result<(), ProtocolError> {
     let short = "kafka";
     let long = "a".repeat(1024);
     let payload_short = vec![0xCDu8; 16];
@@ -427,48 +447,48 @@ fn bench_string_bytes(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(short.len() + 2);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_string(&mut buf, black_box(short));
+            string_bytes::put_string(&mut buf, black_box(short))
         });
     });
     group.bench_function("put_compact_string_short", |b| {
         let mut buf = BytesMut::with_capacity(short.len() + 1);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_compact_string(&mut buf, black_box(short));
+            string_bytes::put_compact_string(&mut buf, black_box(short))
         });
     });
     group.bench_function("put_string_long_1KiB", |b| {
         let mut buf = BytesMut::with_capacity(long.len() + 2);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_string(&mut buf, black_box(long.as_str()));
+            string_bytes::put_string(&mut buf, black_box(long.as_str()))
         });
     });
     group.bench_function("put_compact_string_long_1KiB", |b| {
         let mut buf = BytesMut::with_capacity(long.len() + 4);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_compact_string(&mut buf, black_box(long.as_str()));
+            string_bytes::put_compact_string(&mut buf, black_box(long.as_str()))
         });
     });
 
     let mut bm = BytesMut::new();
-    string_bytes::put_string(&mut bm, short);
+    string_bytes::put_string(&mut bm, short)?;
     let encoded_short = bm.clone().freeze();
     group.bench_function("get_string_owned_short", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&encoded_short);
-            string_bytes::get_string_owned(&mut cur).unwrap()
+            string_bytes::get_string_owned(&mut cur)
         });
     });
 
     let mut bm = BytesMut::new();
-    string_bytes::put_compact_string(&mut bm, &long);
+    string_bytes::put_compact_string(&mut bm, &long)?;
     let compact_long_bytes = bm.freeze();
     group.bench_function("get_compact_string_owned_long_1KiB", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&compact_long_bytes);
-            string_bytes::get_compact_string_owned(&mut cur).unwrap()
+            string_bytes::get_compact_string_owned(&mut cur)
         });
     });
 
@@ -476,24 +496,24 @@ fn bench_string_bytes(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(payload_short.len() + 4);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_bytes(&mut buf, black_box(&payload_short));
+            string_bytes::put_bytes(&mut buf, black_box(&payload_short))
         });
     });
     group.bench_function("put_compact_bytes_long_4KiB", |b| {
         let mut buf = BytesMut::with_capacity(payload_long.len() + 4);
         b.iter(|| {
             buf.clear();
-            string_bytes::put_compact_bytes(&mut buf, black_box(&payload_long));
+            string_bytes::put_compact_bytes(&mut buf, black_box(&payload_long))
         });
     });
 
     let mut bm = BytesMut::new();
-    string_bytes::put_compact_bytes(&mut bm, &payload_long);
+    string_bytes::put_compact_bytes(&mut bm, &payload_long)?;
     let payload_encoded = bm.freeze();
     group.bench_function("get_compact_bytes_owned_4KiB", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&payload_encoded);
-            string_bytes::get_compact_bytes_owned(&mut cur).unwrap()
+            string_bytes::get_compact_bytes_owned(&mut cur)
         });
     });
 
@@ -504,7 +524,7 @@ fn bench_string_bytes(c: &mut Criterion) {
         b.iter(|| string_bytes::compact_string_len(black_box(long.as_str())));
     });
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -512,13 +532,15 @@ fn bench_string_bytes(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_array(c: &mut Criterion) {
-    let mut group = c.benchmark_group("array");
+    with_group(c, "array", try_bench_array);
+}
 
+fn try_bench_array(group: &mut BenchmarkGroup<'_, WallTime>) -> Result<(), ProtocolError> {
     group.bench_function("put_array_len_flexible_small", |b| {
         let mut buf = BytesMut::with_capacity(4);
         b.iter(|| {
             buf.clear();
-            array::put_array_len(&mut buf, black_box(10), true);
+            array::put_array_len(&mut buf, black_box(10), true)
         });
     });
 
@@ -526,7 +548,7 @@ fn bench_array(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(4);
         b.iter(|| {
             buf.clear();
-            array::put_array_len(&mut buf, black_box(10), false);
+            array::put_array_len(&mut buf, black_box(10), false)
         });
     });
 
@@ -534,21 +556,21 @@ fn bench_array(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(4);
         b.iter(|| {
             buf.clear();
-            array::put_nullable_array_len(&mut buf, black_box(None), true);
+            array::put_nullable_array_len(&mut buf, black_box(None), true)
         });
     });
 
+    let mut bm = BytesMut::new();
+    array::put_array_len(&mut bm, 1000, true)?;
+    // `get_array_len` rejects a length larger than the remaining buffer
+    // (pre-allocation DoS bound), so pad with 1000 element bytes; the
+    // benchmark still only measures parsing the length prefix.
+    bm.resize(bm.len() + 1000, 0);
+    let data = bm.freeze();
     group.bench_function("get_array_len_flexible", |b| {
-        let mut bm = BytesMut::new();
-        array::put_array_len(&mut bm, 1000, true);
-        // `get_array_len` rejects a length larger than the remaining buffer
-        // (pre-allocation DoS bound), so pad with 1000 element bytes; the
-        // benchmark still only measures parsing the length prefix.
-        bm.resize(bm.len() + 1000, 0);
-        let data = bm.freeze();
         b.iter(|| {
             let mut cur: &[u8] = black_box(&data);
-            array::get_array_len(&mut cur, true).unwrap()
+            array::get_array_len(&mut cur, true)
         });
     });
 
@@ -556,7 +578,7 @@ fn bench_array(c: &mut Criterion) {
         b.iter(|| array::array_len_prefix_len(black_box(10_000), true));
     });
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -579,7 +601,7 @@ fn bench_uuid(c: &mut Criterion) {
     group.bench_function("get_uuid", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&bytes);
-            get_uuid(&mut cur).unwrap()
+            get_uuid(&mut cur)
         });
     });
 
@@ -592,7 +614,6 @@ fn bench_uuid(c: &mut Criterion) {
 
 fn bench_tagged_fields(c: &mut Criterion) {
     let mut group = c.benchmark_group("tagged_fields");
-
     let empty = UnknownTaggedFields::default();
     let some_unknown = UnknownTaggedFields(vec![
         UnknownTaggedField {
@@ -610,7 +631,7 @@ fn bench_tagged_fields(c: &mut Criterion) {
         b.iter(|| {
             buf.clear();
             let w = WriteTaggedFields::new();
-            w.write(&mut buf, black_box(&empty));
+            w.write(&mut buf, black_box(&empty))
         });
     });
 
@@ -619,7 +640,7 @@ fn bench_tagged_fields(c: &mut Criterion) {
         b.iter(|| {
             buf.clear();
             let w = WriteTaggedFields::new();
-            w.write(&mut buf, black_box(&some_unknown));
+            w.write(&mut buf, black_box(&some_unknown))
         });
     });
 
@@ -640,24 +661,29 @@ fn bench_tagged_fields(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_api_versions_request(c: &mut Criterion) {
-    let mut group = c.benchmark_group("api_versions_request");
+    with_group(c, "api_versions_request", try_bench_api_versions_request);
+}
+
+fn try_bench_api_versions_request(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+) -> Result<(), ProtocolError> {
     let version: i16 = 3;
 
     let req = make_api_versions_request();
-    let encoded = encode_to_bytes(&req, version);
+    let encoded = encode_to_bytes(&req, version)?;
 
     group.bench_function("encode_v3", |b| {
         let mut buf = BytesMut::with_capacity(encoded.len());
         b.iter(|| {
             buf.clear();
-            black_box(&req).encode(&mut buf, version).unwrap();
+            black_box(&req).encode(&mut buf, version)
         });
     });
 
     group.bench_function("decode_v3", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&encoded);
-            ApiVersionsRequest::decode(&mut cur, version).unwrap()
+            ApiVersionsRequest::decode(&mut cur, version)
         });
     });
 
@@ -665,7 +691,7 @@ fn bench_api_versions_request(c: &mut Criterion) {
         b.iter(|| black_box(&req).encoded_len(version));
     });
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -673,24 +699,29 @@ fn bench_api_versions_request(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_api_versions_response(c: &mut Criterion) {
-    let mut group = c.benchmark_group("api_versions_response");
+    with_group(c, "api_versions_response", try_bench_api_versions_response);
+}
+
+fn try_bench_api_versions_response(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+) -> Result<(), ProtocolError> {
     let version: i16 = 3;
 
     let resp = make_api_versions_response();
-    let encoded = encode_to_bytes(&resp, version);
+    let encoded = encode_to_bytes(&resp, version)?;
 
     group.bench_function("encode_v3", |b| {
         let mut buf = BytesMut::with_capacity(encoded.len());
         b.iter(|| {
             buf.clear();
-            black_box(&resp).encode(&mut buf, version).unwrap();
+            black_box(&resp).encode(&mut buf, version)
         });
     });
 
     group.bench_function("decode_v3", |b| {
         b.iter(|| {
             let mut cur: &[u8] = black_box(&encoded);
-            ApiVersionsResponse::decode(&mut cur, version).unwrap()
+            ApiVersionsResponse::decode(&mut cur, version)
         });
     });
 
@@ -698,15 +729,15 @@ fn bench_api_versions_response(c: &mut Criterion) {
         let mut buf = BytesMut::with_capacity(resp.encoded_len(0));
         b.iter(|| {
             buf.clear();
-            black_box(&resp).encode(&mut buf, 0).unwrap();
+            black_box(&resp).encode(&mut buf, 0)
         });
     });
 
+    let v0_encoded = encode_to_bytes(&resp, 0)?;
     group.bench_function("decode_v0", |b| {
-        let v0_encoded = encode_to_bytes(&resp, 0);
         b.iter(|| {
             let mut cur: &[u8] = black_box(&v0_encoded);
-            ApiVersionsResponse::decode(&mut cur, 0).unwrap()
+            ApiVersionsResponse::decode(&mut cur, 0)
         });
     });
 
@@ -714,7 +745,7 @@ fn bench_api_versions_response(c: &mut Criterion) {
         b.iter(|| black_box(&resp).encoded_len(version));
     });
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -722,29 +753,34 @@ fn bench_api_versions_response(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_produce_request(c: &mut Criterion) {
-    let mut group = c.benchmark_group("produce_request");
+    with_group(c, "produce_request", try_bench_produce_request);
+}
+
+fn try_bench_produce_request(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+) -> Result<(), ProtocolError> {
     let version: i16 = 12;
 
     for (label, topics, parts) in [
-        ("1topic_1partition", 1usize, 1usize),
+        ("1topic_1partition", 1usize, 1i32),
         ("1topic_8partitions", 1, 8),
         ("8topics_8partitions", 8, 8),
     ] {
         let req = make_produce_request(topics, parts);
-        let encoded = encode_to_bytes(&req, version);
+        let encoded = encode_to_bytes(&req, version)?;
 
         group.bench_function(format!("encode_v12_{label}"), |b| {
             let mut buf = BytesMut::with_capacity(encoded.len() + 64);
             b.iter(|| {
                 buf.clear();
-                black_box(&req).encode(&mut buf, version).unwrap();
+                black_box(&req).encode(&mut buf, version)
             });
         });
 
         group.bench_function(format!("decode_v12_{label}"), |b| {
             b.iter(|| {
                 let mut cur: &[u8] = black_box(&encoded);
-                ProduceRequest::decode(&mut cur, version).unwrap()
+                ProduceRequest::decode(&mut cur, version)
             });
         });
 
@@ -753,11 +789,16 @@ fn bench_produce_request(c: &mut Criterion) {
         });
     }
 
-    group.finish();
+    Ok(())
 }
 
 fn bench_produce_framing_large(c: &mut Criterion) {
-    let mut group = c.benchmark_group("produce_request_large");
+    with_group(c, "produce_request_large", try_bench_produce_framing_large);
+}
+
+fn try_bench_produce_framing_large(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+) -> Result<(), ProtocolError> {
     let version: i16 = 12;
 
     for (label, payload, codec, ramp) in [
@@ -770,25 +811,25 @@ fn bench_produce_framing_large(c: &mut Criterion) {
         ("1rec_512KiB_none", 512 * 1024, CompressionType::None, false),
     ] {
         let req = make_single_large_produce_request(payload, codec, ramp);
-        let encoded = encode_to_bytes(&req, version);
+        let encoded = encode_to_bytes(&req, version)?;
         let body = Bytes::from(encoded.clone());
 
         group.bench_function(format!("decode_owned_v12_{label}"), |b| {
             b.iter(|| {
                 let mut cur: &[u8] = black_box(&encoded);
-                ProduceRequest::decode(&mut cur, version).unwrap()
+                ProduceRequest::decode(&mut cur, version)
             });
         });
 
         group.bench_function(format!("produce_framing_v12_{label}"), |b| {
             b.iter(|| {
-                let framing = produce_framing(black_box(body.clone()), version).unwrap();
-                black_box(framing.topics.len())
+                produce_framing(black_box(body.clone()), version)
+                    .map(|framing| framing.topics.len())
             });
         });
     }
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -796,29 +837,32 @@ fn bench_produce_framing_large(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_fetch_request(c: &mut Criterion) {
-    let mut group = c.benchmark_group("fetch_request");
+    with_group(c, "fetch_request", try_bench_fetch_request);
+}
+
+fn try_bench_fetch_request(group: &mut BenchmarkGroup<'_, WallTime>) -> Result<(), ProtocolError> {
     let version: i16 = 17;
 
     for (label, topics, parts) in [
-        ("1topic_1partition", 1usize, 1usize),
+        ("1topic_1partition", 1usize, 1i32),
         ("1topic_64partitions", 1, 64),
         ("16topics_64partitions", 16, 64),
     ] {
         let req = make_fetch_request(topics, parts);
-        let encoded = encode_to_bytes(&req, version);
+        let encoded = encode_to_bytes(&req, version)?;
 
         group.bench_function(format!("encode_v17_{label}"), |b| {
             let mut buf = BytesMut::with_capacity(encoded.len() + 64);
             b.iter(|| {
                 buf.clear();
-                black_box(&req).encode(&mut buf, version).unwrap();
+                black_box(&req).encode(&mut buf, version)
             });
         });
 
         group.bench_function(format!("decode_v17_{label}"), |b| {
             b.iter(|| {
                 let mut cur: &[u8] = black_box(&encoded);
-                FetchRequest::decode(&mut cur, version).unwrap()
+                FetchRequest::decode(&mut cur, version)
             });
         });
 
@@ -827,7 +871,7 @@ fn bench_fetch_request(c: &mut Criterion) {
         });
     }
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -835,29 +879,34 @@ fn bench_fetch_request(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 
 fn bench_metadata_response(c: &mut Criterion) {
-    let mut group = c.benchmark_group("metadata_response");
+    with_group(c, "metadata_response", try_bench_metadata_response);
+}
+
+fn try_bench_metadata_response(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+) -> Result<(), ProtocolError> {
     let version: i16 = 12;
 
     for (label, brokers, topics, parts) in [
-        ("3brokers_1topic", 3usize, 1usize, 3usize),
+        ("3brokers_1topic", 3i32, 1usize, 3i32),
         ("3brokers_100topics", 3, 100, 3),
         ("9brokers_500topics_8parts", 9, 500, 8),
     ] {
         let resp = make_metadata_response(brokers, topics, parts);
-        let encoded = encode_to_bytes(&resp, version);
+        let encoded = encode_to_bytes(&resp, version)?;
 
         group.bench_function(format!("encode_v12_{label}"), |b| {
             let mut buf = BytesMut::with_capacity(encoded.len() + 64);
             b.iter(|| {
                 buf.clear();
-                black_box(&resp).encode(&mut buf, version).unwrap();
+                black_box(&resp).encode(&mut buf, version)
             });
         });
 
         group.bench_function(format!("decode_v12_{label}"), |b| {
             b.iter(|| {
                 let mut cur: &[u8] = black_box(&encoded);
-                MetadataResponse::decode(&mut cur, version).unwrap()
+                MetadataResponse::decode(&mut cur, version)
             });
         });
 
@@ -866,26 +915,31 @@ fn bench_metadata_response(c: &mut Criterion) {
         });
     }
 
-    group.finish();
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
 
-criterion_group!(
-    benches,
-    bench_varint,
-    bench_fixed,
-    bench_string_bytes,
-    bench_array,
-    bench_uuid,
-    bench_tagged_fields,
-    bench_api_versions_request,
-    bench_api_versions_response,
-    bench_produce_request,
-    bench_fetch_request,
-    bench_produce_framing_large,
-    bench_metadata_response,
-);
+/// Runs every benchmark in this file.
+///
+/// Spelled out rather than through `criterion_group!`, so the `Criterion`
+/// drops as soon as the last benchmark is done.
+fn benches() {
+    let mut criterion = Criterion::default().configure_from_args();
+    bench_varint(&mut criterion);
+    bench_fixed(&mut criterion);
+    bench_string_bytes(&mut criterion);
+    bench_array(&mut criterion);
+    bench_uuid(&mut criterion);
+    bench_tagged_fields(&mut criterion);
+    bench_api_versions_request(&mut criterion);
+    bench_api_versions_response(&mut criterion);
+    bench_produce_request(&mut criterion);
+    bench_fetch_request(&mut criterion);
+    bench_produce_framing_large(&mut criterion);
+    bench_metadata_response(&mut criterion);
+    drop(criterion);
+}
 criterion_main!(benches);

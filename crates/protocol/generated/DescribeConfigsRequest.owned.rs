@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -41,11 +45,11 @@ impl Encode for DescribeConfigsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             put_bool(buf, self.include_synonyms);
@@ -55,7 +59,7 @@ impl Encode for DescribeConfigsRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +68,7 @@ impl Encode for DescribeConfigsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -98,7 +101,7 @@ impl Decode<'_> for DescribeConfigsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResource::decode(buf, version)?);
@@ -160,29 +163,29 @@ impl Encode for DescribeConfigsResource {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 0 {
             {
                 let len = (self.configuration_keys).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.configuration_keys {
                     for it in v {
                         if flex {
-                            let () = put_compact_string(buf, it);
+                            put_compact_string(buf, it)?;
                         } else {
-                            let () = put_string(buf, it);
+                            put_string(buf, it)?;
                         }
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -202,10 +205,7 @@ impl Encode for DescribeConfigsResource {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.configuration_keys).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize = opt.map_or(0, |v| {
                     v.iter()
                         .map(|it| {
@@ -243,7 +243,7 @@ impl Decode<'_> for DescribeConfigsResource {
         }
         if version >= 0 {
             out.configuration_keys = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -275,10 +275,10 @@ impl DescribeConfigsResource {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 0 {
-            m.configuration_keys = Some(vec!["x".to_string()]);
+            m.configuration_keys = Some(vec!["x".to_owned()]);
         }
         m
     }
@@ -289,16 +289,16 @@ impl DescribeConfigsResource {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("resources".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("resources".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 1 {
         obj.insert(
-            "includeSynonyms".to_string(),
+            "includeSynonyms".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }
     if version >= 3 {
         obj.insert(
-            "includeDocumentation".to_string(),
+            "includeDocumentation".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }

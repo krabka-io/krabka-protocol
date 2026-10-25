@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sasl_handshake_request,
     primitives::{
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -24,13 +25,10 @@ pub struct SaslHandshakeRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SaslHandshakeRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sasl_handshake_request::SaslHandshakeRequest {
-        crate::owned::sasl_handshake_request::SaslHandshakeRequest {
-            mechanism: (self.mechanism).to_string(),
+    pub fn to_owned(&self) -> sasl_handshake_request::SaslHandshakeRequest {
+        sasl_handshake_request::SaslHandshakeRequest {
+            mechanism: (self.mechanism).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -46,9 +44,9 @@ impl Encode for SaslHandshakeRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.mechanism);
+                put_compact_string(buf, self.mechanism)?;
             } else {
-                let () = put_string(buf, self.mechanism);
+                put_string(buf, self.mechanism)?;
             }
         }
         Ok(())

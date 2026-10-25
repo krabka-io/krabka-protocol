@@ -26,6 +26,7 @@
 //! The providers exist only with the `gssapi` feature, so the suite compiles to
 //! nothing without it.
 #![cfg(all(feature = "gssapi", not(target_family = "wasm")))]
+#![cfg(test)]
 
 use krabka_security::gssapi::{
     AcceptStep, DEFAULT_GSSAPI_MAX_TIME_SKEW, GssAcceptor, GssInitiator, InitStep,

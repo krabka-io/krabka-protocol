@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::streams_group_describe_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, put_bool},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -28,18 +30,10 @@ pub struct StreamsGroupDescribeRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl StreamsGroupDescribeRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::streams_group_describe_request::StreamsGroupDescribeRequest {
-        crate::owned::streams_group_describe_request::StreamsGroupDescribeRequest {
-            group_ids: (self.group_ids)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> streams_group_describe_request::StreamsGroupDescribeRequest {
+        streams_group_describe_request::StreamsGroupDescribeRequest {
+            group_ids: (self.group_ids).iter().map(|&s| s.to_owned()).collect(),
             include_authorized_operations: (self.include_authorized_operations),
             include_topology_description: (self.include_topology_description),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -57,15 +51,15 @@ impl Encode for StreamsGroupDescribeRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.group_ids).len(), flex);
+                put_array_len(buf, (self.group_ids).len(), flex)?;
                 for it in &self.group_ids {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.include_authorized_operations);
@@ -75,7 +69,7 @@ impl Encode for StreamsGroupDescribeRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -84,8 +78,7 @@ impl Encode for StreamsGroupDescribeRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.group_ids).len(), flex);
+                let prefix = array_len_prefix_len((self.group_ids).len(), flex);
                 let body: usize = (self.group_ids)
                     .iter()
                     .map(|it| {
@@ -124,7 +117,7 @@ impl<'de> DecodeBorrow<'de> for StreamsGroupDescribeRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.group_ids = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

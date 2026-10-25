@@ -7,7 +7,7 @@ use crate::ProtocolError;
 pub struct Uuid(pub [u8; 16]);
 
 impl Uuid {
-    pub const ZERO: Uuid = Uuid([0; 16]);
+    pub const ZERO: Self = Self([0; 16]);
 }
 
 pub fn put_uuid<B: BufMut>(buf: &mut B, u: Uuid) {

@@ -8,7 +8,7 @@
 
 #![doc(html_root_url = "https://docs.rs/krabka-voters/0.7.0")]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A broker or controller node id: the canonical [`krabka_ids::NodeId`]
 /// newtype, which is a `u64` internally and Kafka's `int32` on the wire.
@@ -74,7 +74,7 @@ impl VoterSet {
     }
 
     #[must_use]
-    pub fn ids(&self) -> std::collections::BTreeSet<NodeId> {
+    pub fn ids(&self) -> BTreeSet<NodeId> {
         self.voters.keys().copied().collect()
     }
 

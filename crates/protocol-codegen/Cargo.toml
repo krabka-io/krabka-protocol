@@ -24,7 +24,7 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-syn = { workspace = true }
+syn = { workspace = true, features = ["visit", "visit-mut"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]

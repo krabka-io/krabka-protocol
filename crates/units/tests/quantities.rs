@@ -1,5 +1,8 @@
 //! Behaviour of the quantity vocabulary: construction, wire conversion, parsing,
 //! rendering, and `serde`.
+#![cfg(test)]
+
+use core::time::Duration;
 
 use assert2::{assert, check};
 use krabka_units::{
@@ -110,10 +113,10 @@ fn truncating_millis_matches_integer_division() {
 /// clamps and does not panic.
 #[test]
 fn std_duration_round_trips() {
-    let original = core::time::Duration::from_millis(1_500);
+    let original = Duration::from_millis(1_500);
     check!(original.as_time().to_std() == original);
-    check!(secs(30).to_std() == core::time::Duration::from_secs(30));
-    check!((Time::ZERO - secs(5)).to_std() == core::time::Duration::ZERO);
+    check!(secs(30).to_std() == Duration::from_secs(30));
+    check!((Time::ZERO - secs(5)).to_std() == Duration::ZERO);
 }
 
 /// Extraction saturates at the target type's bounds instead of wrapping, and maps

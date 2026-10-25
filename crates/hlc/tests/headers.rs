@@ -1,4 +1,5 @@
 //! Carriage of a stamp on Kafka record headers.
+#![cfg(test)]
 
 use assert2::check;
 use krabka_hlc::{HLC_HEADER, Hlc, WallMicros, extract_from_headers};

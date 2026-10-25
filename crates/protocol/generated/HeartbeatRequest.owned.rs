@@ -44,9 +44,9 @@ impl Encode for HeartbeatRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if version >= 0 {
@@ -54,21 +54,21 @@ impl Encode for HeartbeatRequest {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.member_id);
+                put_compact_string(buf, &self.member_id)?;
             } else {
-                let () = put_string(buf, &self.member_id);
+                put_string(buf, &self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id.as_deref());
+                put_compact_nullable_string(buf, self.group_instance_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id.as_deref());
+                put_nullable_string(buf, self.group_instance_id.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -152,16 +152,16 @@ impl HeartbeatRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if version >= 0 {
             m.generation_id = 1i32;
         }
         if version >= 0 {
-            m.member_id = "x".to_string();
+            m.member_id = "x".to_owned();
         }
         if version >= 3 {
-            m.group_instance_id = Some("x".to_string());
+            m.group_instance_id = Some("x".to_owned());
         }
         m
     }
@@ -173,16 +173,16 @@ impl HeartbeatRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "groupId".to_string(),
+        "groupId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("generationId".to_string(), ::serde_json::json!(0));
+    obj.insert("generationId".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "memberId".to_string(),
+        "memberId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     if version >= 3 {
-        obj.insert("groupInstanceId".to_string(), ::serde_json::Value::Null);
+        obj.insert("groupInstanceId".to_owned(), ::serde_json::Value::Null);
     }
     ::serde_json::Value::Object(obj)
 }

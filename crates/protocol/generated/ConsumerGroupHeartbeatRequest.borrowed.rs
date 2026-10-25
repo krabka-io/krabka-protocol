@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::consumer_group_heartbeat_request,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +19,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -59,112 +65,148 @@ impl Default for ConsumerGroupHeartbeatRequest<'_> {
     }
 }
 impl<'a> ConsumerGroupHeartbeatRequest<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::consumer_group_heartbeat_request::ConsumerGroupHeartbeatRequest {
-        crate::owned::consumer_group_heartbeat_request::ConsumerGroupHeartbeatRequest {
-            group_id: (self.group_id).to_string(),
-            member_id: (self.member_id).to_string(),
+    pub fn to_owned(&self) -> consumer_group_heartbeat_request::ConsumerGroupHeartbeatRequest {
+        consumer_group_heartbeat_request::ConsumerGroupHeartbeatRequest {
+            group_id: (self.group_id).to_owned(),
+            member_id: (self.member_id).to_owned(),
             member_epoch: (self.member_epoch),
-            instance_id: (self.instance_id).map(std::string::ToString::to_string),
-            rack_id: (self.rack_id).map(std::string::ToString::to_string),
+            instance_id: (self.instance_id).map(str::to_owned),
+            rack_id: (self.rack_id).map(str::to_owned),
             rebalance_timeout_ms: (self.rebalance_timeout_ms),
             subscribed_topic_names: (self.subscribed_topic_names)
                 .as_ref()
-                .map(|v| v.iter().map(std::string::ToString::to_string).collect()),
-            subscribed_topic_regex: (self.subscribed_topic_regex)
-                .map(std::string::ToString::to_string),
-            server_assignor: (self.server_assignor).map(std::string::ToString::to_string),
+                .map(|v| v.iter().map(|&s| s.to_owned()).collect()),
+            subscribed_topic_regex: (self.subscribed_topic_regex).map(str::to_owned),
+            server_assignor: (self.server_assignor).map(str::to_owned),
             topic_partitions: (self.topic_partitions)
                 .as_ref()
                 .map(|v| v.iter().map(TopicPartitions::to_owned).collect()),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
-    fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_0<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.member_epoch);
         }
     }
-    fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_3<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.instance_id);
+                put_compact_nullable_string(buf, self.instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.instance_id);
+                put_nullable_string(buf, self.instance_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack_id);
+                put_compact_nullable_string(buf, self.rack_id)?;
             } else {
-                let () = put_nullable_string(buf, self.rack_id);
+                put_nullable_string(buf, self.rack_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.rebalance_timeout_ms);
         }
     }
-    fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_6<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
                 let len = (self.subscribed_topic_names).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.subscribed_topic_names {
                     for it in v {
                         if flex {
-                            let () = put_compact_string(buf, it);
+                            put_compact_string(buf, it)?;
                         } else {
-                            let () = put_string(buf, it);
+                            put_string(buf, it)?;
                         }
                     }
                 }
-            };
+            }
         }
+        Ok(())
     }
-    fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_7<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 1 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.subscribed_topic_regex);
+                put_compact_nullable_string(buf, self.subscribed_topic_regex)?;
             } else {
-                let () = put_nullable_string(buf, self.subscribed_topic_regex);
+                put_nullable_string(buf, self.subscribed_topic_regex)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.server_assignor);
+                put_compact_nullable_string(buf, self.server_assignor)?;
             } else {
-                let () = put_nullable_string(buf, self.server_assignor);
+                put_nullable_string(buf, self.server_assignor)?;
             }
         }
+        Ok(())
     }
     fn encode_field_9<B: BufMut>(
         &self,
@@ -175,21 +217,27 @@ impl<'a> ConsumerGroupHeartbeatRequest<'a> {
         if version >= 0 {
             {
                 let len = (self.topic_partitions).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.topic_partitions {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -281,7 +329,7 @@ impl<'a> ConsumerGroupHeartbeatRequest<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.subscribed_topic_names = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -338,7 +386,7 @@ impl<'a> ConsumerGroupHeartbeatRequest<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.topic_partitions = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -374,17 +422,17 @@ impl Encode for ConsumerGroupHeartbeatRequest<'_> {
             });
         }
         let flex = is_flexible(version);
-        self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
+        self.encode_field_0(buf, version, flex)?;
+        self.encode_field_1(buf, version, flex)?;
         self.encode_field_2(buf, version, flex);
-        self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_3(buf, version, flex)?;
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex);
-        self.encode_field_6(buf, version, flex);
-        self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
+        self.encode_field_6(buf, version, flex)?;
+        self.encode_field_7(buf, version, flex)?;
+        self.encode_field_8(buf, version, flex)?;
         self.encode_field_9(buf, version, flex)?;
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -427,10 +475,7 @@ impl Encode for ConsumerGroupHeartbeatRequest<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.subscribed_topic_names).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize = opt.map_or(0, |v| {
                     v.iter()
                         .map(|it| {
@@ -462,10 +507,7 @@ impl Encode for ConsumerGroupHeartbeatRequest<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.topic_partitions).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -542,17 +584,14 @@ impl ConsumerGroupHeartbeatRequest<'_> {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicPartitions {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<i32>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicPartitions {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::consumer_group_heartbeat_request::TopicPartitions {
-        crate::owned::consumer_group_heartbeat_request::TopicPartitions {
+    pub fn to_owned(&self) -> consumer_group_heartbeat_request::TopicPartitions {
+        consumer_group_heartbeat_request::TopicPartitions {
             topic_id: (self.topic_id),
             partitions: (self.partitions).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -563,19 +602,19 @@ impl Encode for TopicPartitions {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -587,8 +626,7 @@ impl Encode for TopicPartitions {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -605,11 +643,11 @@ impl<'de> DecodeBorrow<'de> for TopicPartitions {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -629,7 +667,7 @@ impl TopicPartitions {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![1i32];

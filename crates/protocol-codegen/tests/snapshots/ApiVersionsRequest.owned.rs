@@ -45,31 +45,31 @@ impl Encode for ApiVersionsRequest {
         let flex = is_flexible(version);
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.client_software_name);
+                put_compact_string(buf, &self.client_software_name)?;
             } else {
-                let () = put_string(buf, &self.client_software_name);
-            };
+                put_string(buf, &self.client_software_name)?;
+            }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.client_software_version);
+                put_compact_string(buf, &self.client_software_version)?;
             } else {
-                let () = put_string(buf, &self.client_software_version);
-            };
+                put_string(buf, &self.client_software_version)?;
+            }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id.as_deref());
+                put_compact_nullable_string(buf, self.cluster_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id.as_deref());
-            };
+                put_nullable_string(buf, self.cluster_id.as_deref())?;
+            }
         }
         if version >= 5 {
             put_i32(buf, self.node_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -130,13 +130,13 @@ impl ApiVersionsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 3 {
-            m.client_software_name = "x".to_string();
+            m.client_software_name = "x".to_owned();
         }
         if version >= 3 {
-            m.client_software_version = "x".to_string();
+            m.client_software_version = "x".to_owned();
         }
         if version >= 5 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         if version >= 5 {
             m.node_id = 1i32;
@@ -151,16 +151,16 @@ impl ApiVersionsRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 3 {
-        obj.insert("clientSoftwareName".to_string(), ::serde_json::Value::String(String::new()));
+        obj.insert("clientSoftwareName".to_owned(), ::serde_json::Value::String(String::new()));
     }
     if version >= 3 {
-        obj.insert("clientSoftwareVersion".to_string(), ::serde_json::Value::String(String::new()));
+        obj.insert("clientSoftwareVersion".to_owned(), ::serde_json::Value::String(String::new()));
     }
     if version >= 5 {
-        obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
+        obj.insert("clusterId".to_owned(), ::serde_json::Value::Null);
     }
     if version >= 5 {
-        obj.insert("nodeId".to_string(), ::serde_json::json!(-1));
+        obj.insert("nodeId".to_owned(), ::serde_json::json!(-1));
     }
     ::serde_json::Value::Object(obj)
 }

@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, put_bool},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -40,22 +41,22 @@ impl Encode for DescribeGroupsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 3 {
             put_bool(buf, self.include_authorized_operations);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +65,7 @@ impl Encode for DescribeGroupsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups)
                     .iter()
                     .map(|it| {
@@ -101,7 +101,7 @@ impl Decode<'_> for DescribeGroupsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -128,7 +128,7 @@ impl DescribeGroupsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.groups = vec!["x".to_string()];
+            m.groups = vec!["x".to_owned()];
         }
         if version >= 3 {
             m.include_authorized_operations = true;
@@ -142,10 +142,10 @@ impl DescribeGroupsRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("groups".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("groups".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 3 {
         obj.insert(
-            "includeAuthorizedOperations".to_string(),
+            "includeAuthorizedOperations".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }

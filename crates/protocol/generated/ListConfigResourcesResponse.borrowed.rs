@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::list_config_resources_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -27,14 +29,9 @@ pub struct ListConfigResourcesResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListConfigResourcesResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::list_config_resources_response::ListConfigResourcesResponse {
-        crate::owned::list_config_resources_response::ListConfigResourcesResponse {
+    pub fn to_owned(&self) -> list_config_resources_response::ListConfigResourcesResponse {
+        list_config_resources_response::ListConfigResourcesResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             config_resources: (self.config_resources)
@@ -62,15 +59,15 @@ impl Encode for ListConfigResourcesResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.config_resources).len(), flex);
+                put_array_len(buf, (self.config_resources).len(), flex)?;
                 for it in &self.config_resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,10 +82,7 @@ impl Encode for ListConfigResourcesResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.config_resources).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.config_resources).len(), flex);
                 let body: usize = (self.config_resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -121,7 +115,7 @@ impl<'de> DecodeBorrow<'de> for ListConfigResourcesResponse<'de> {
         }
         if version >= 0 {
             out.config_resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ConfigResource::decode_borrow(buf, version)?);
@@ -168,13 +162,10 @@ impl Default for ConfigResource<'_> {
     }
 }
 impl ConfigResource<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_config_resources_response::ConfigResource {
-        crate::owned::list_config_resources_response::ConfigResource {
-            resource_name: (self.resource_name).to_string(),
+    pub fn to_owned(&self) -> list_config_resources_response::ConfigResource {
+        list_config_resources_response::ConfigResource {
+            resource_name: (self.resource_name).to_owned(),
             resource_type: (self.resource_type),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -185,9 +176,9 @@ impl Encode for ConfigResource<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 1 {
@@ -195,7 +186,7 @@ impl Encode for ConfigResource<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

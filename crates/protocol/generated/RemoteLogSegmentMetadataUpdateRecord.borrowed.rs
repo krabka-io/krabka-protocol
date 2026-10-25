@@ -3,16 +3,19 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remote_log_segment_metadata_update_record,
     primitives::{
         fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
         string_bytes::{
-            compact_string_len, put_compact_nullable_bytes, put_compact_string, put_nullable_bytes,
-            put_string, string_len,
+            compact_nullable_bytes_len, compact_string_len, nullable_bytes_len,
+            put_compact_nullable_bytes, put_compact_string, put_nullable_bytes, put_string,
+            string_len,
         },
         string_bytes_borrowed::{
             get_compact_nullable_bytes_borrowed, get_compact_string_borrowed,
             get_nullable_bytes_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -34,15 +37,11 @@ pub struct RemoteLogSegmentMetadataUpdateRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoteLogSegmentMetadataUpdateRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::remote_log_segment_metadata_update_record::RemoteLogSegmentMetadataUpdateRecord
-    {
-        crate::owned::remote_log_segment_metadata_update_record::RemoteLogSegmentMetadataUpdateRecord {
+    ) -> remote_log_segment_metadata_update_record::RemoteLogSegmentMetadataUpdateRecord {
+        remote_log_segment_metadata_update_record::RemoteLogSegmentMetadataUpdateRecord {
             remote_log_segment_id: (self.remote_log_segment_id).to_owned(),
             broker_id: (self.broker_id),
             event_timestamp_ms: (self.event_timestamp_ms),
@@ -71,9 +70,9 @@ impl Encode for RemoteLogSegmentMetadataUpdateRecord<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.custom_metadata);
+                put_compact_nullable_bytes(buf, self.custom_metadata)?;
             } else {
-                let () = put_nullable_bytes(buf, self.custom_metadata);
+                put_nullable_bytes(buf, self.custom_metadata)?;
             }
         }
         if version >= 0 {
@@ -81,7 +80,7 @@ impl Encode for RemoteLogSegmentMetadataUpdateRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -98,22 +97,10 @@ impl Encode for RemoteLogSegmentMetadataUpdateRecord<'_> {
             n += 8;
         }
         if version >= 0 {
-            n += match self.custom_metadata {
-                None => {
-                    if flex {
-                        1
-                    } else {
-                        4
-                    }
-                }
-                Some(b) => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap())
-                            + b.len()
-                    } else {
-                        4 + b.len()
-                    }
-                }
+            n += if flex {
+                compact_nullable_bytes_len(self.custom_metadata)
+            } else {
+                nullable_bytes_len(self.custom_metadata)
             };
         }
         if version >= 0 {
@@ -186,18 +173,13 @@ impl RemoteLogSegmentMetadataUpdateRecord<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoteLogSegmentIdEntry<'a> {
     pub topic_id_partition: TopicIdPartitionEntry<'a>,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoteLogSegmentIdEntry<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_update_record::RemoteLogSegmentIdEntry {
-        crate::owned::remote_log_segment_metadata_update_record::RemoteLogSegmentIdEntry {
+    pub fn to_owned(&self) -> remote_log_segment_metadata_update_record::RemoteLogSegmentIdEntry {
+        remote_log_segment_metadata_update_record::RemoteLogSegmentIdEntry {
             topic_id_partition: (self.topic_id_partition).to_owned(),
             id: (self.id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -211,11 +193,11 @@ impl Encode for RemoteLogSegmentIdEntry<'_> {
             self.topic_id_partition.encode(buf, version)?;
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -243,7 +225,7 @@ impl<'de> DecodeBorrow<'de> for RemoteLogSegmentIdEntry<'de> {
             out.topic_id_partition = TopicIdPartitionEntry::decode_borrow(buf, version)?;
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -260,7 +242,7 @@ impl RemoteLogSegmentIdEntry<'_> {
             m.topic_id_partition = TopicIdPartitionEntry::populated(version);
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         m
     }
@@ -268,20 +250,15 @@ impl RemoteLogSegmentIdEntry<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicIdPartitionEntry<'a> {
     pub name: &'a str,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub partition: i32,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicIdPartitionEntry<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_log_segment_metadata_update_record::TopicIdPartitionEntry {
-        crate::owned::remote_log_segment_metadata_update_record::TopicIdPartitionEntry {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> remote_log_segment_metadata_update_record::TopicIdPartitionEntry {
+        remote_log_segment_metadata_update_record::TopicIdPartitionEntry {
+            name: (self.name).to_owned(),
             id: (self.id),
             partition: (self.partition),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -293,20 +270,20 @@ impl Encode for TopicIdPartitionEntry<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if version >= 0 {
             put_i32(buf, self.partition);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -345,7 +322,7 @@ impl<'de> DecodeBorrow<'de> for TopicIdPartitionEntry<'de> {
             };
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition = get_i32(buf)?;
@@ -365,7 +342,7 @@ impl TopicIdPartitionEntry<'_> {
             m.name = "x";
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition = 1i32;

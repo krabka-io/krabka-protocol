@@ -54,7 +54,7 @@ impl Encode for DescribeClusterRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -126,15 +126,15 @@ impl DescribeClusterRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "includeClusterAuthorizedOperations".to_string(),
+        "includeClusterAuthorizedOperations".to_owned(),
         ::serde_json::Value::Bool(false),
     );
     if version >= 1 {
-        obj.insert("endpointType".to_string(), ::serde_json::json!(1));
+        obj.insert("endpointType".to_owned(), ::serde_json::json!(1));
     }
     if version >= 2 {
         obj.insert(
-            "includeFencedBrokers".to_string(),
+            "includeFencedBrokers".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }

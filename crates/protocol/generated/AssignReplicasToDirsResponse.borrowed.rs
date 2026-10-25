@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i16, get_i32, put_i16, put_i32},
+    owned::assign_replicas_to_dirs_response,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i16, get_i32, put_i16, put_i32},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 73;
@@ -23,14 +28,9 @@ pub struct AssignReplicasToDirsResponse {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AssignReplicasToDirsResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::assign_replicas_to_dirs_response::AssignReplicasToDirsResponse {
-        crate::owned::assign_replicas_to_dirs_response::AssignReplicasToDirsResponse {
+    pub fn to_owned(&self) -> assign_replicas_to_dirs_response::AssignReplicasToDirsResponse {
+        assign_replicas_to_dirs_response::AssignReplicasToDirsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             directories: (self.directories)
@@ -58,15 +58,15 @@ impl Encode for AssignReplicasToDirsResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.directories).len(), flex);
+                put_array_len(buf, (self.directories).len(), flex)?;
                 for it in &self.directories {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -81,8 +81,7 @@ impl Encode for AssignReplicasToDirsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.directories).len(), flex);
+                let prefix = array_len_prefix_len((self.directories).len(), flex);
                 let body: usize = (self.directories)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -115,7 +114,7 @@ impl<'de> DecodeBorrow<'de> for AssignReplicasToDirsResponse {
         }
         if version >= 0 {
             out.directories = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DirectoryData::decode_borrow(buf, version)?);
@@ -148,17 +147,14 @@ impl AssignReplicasToDirsResponse {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DirectoryData {
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub topics: Vec<TopicData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DirectoryData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::assign_replicas_to_dirs_response::DirectoryData {
-        crate::owned::assign_replicas_to_dirs_response::DirectoryData {
+    pub fn to_owned(&self) -> assign_replicas_to_dirs_response::DirectoryData {
+        assign_replicas_to_dirs_response::DirectoryData {
             id: (self.id),
             topics: (self.topics).iter().map(TopicData::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -169,19 +165,19 @@ impl Encode for DirectoryData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -193,8 +189,7 @@ impl Encode for DirectoryData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -211,11 +206,11 @@ impl<'de> DecodeBorrow<'de> for DirectoryData {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode_borrow(buf, version)?);
@@ -235,7 +230,7 @@ impl DirectoryData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.topics = vec![TopicData::populated(version)];
@@ -245,17 +240,14 @@ impl DirectoryData {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicData {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::assign_replicas_to_dirs_response::TopicData {
-        crate::owned::assign_replicas_to_dirs_response::TopicData {
+    pub fn to_owned(&self) -> assign_replicas_to_dirs_response::TopicData {
+        assign_replicas_to_dirs_response::TopicData {
             topic_id: (self.topic_id),
             partitions: (self.partitions)
                 .iter()
@@ -269,19 +261,19 @@ impl Encode for TopicData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -293,8 +285,7 @@ impl Encode for TopicData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -314,11 +305,11 @@ impl<'de> DecodeBorrow<'de> for TopicData {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -338,7 +329,7 @@ impl TopicData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -353,12 +344,9 @@ pub struct PartitionData {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::assign_replicas_to_dirs_response::PartitionData {
-        crate::owned::assign_replicas_to_dirs_response::PartitionData {
+    pub fn to_owned(&self) -> assign_replicas_to_dirs_response::PartitionData {
+        assign_replicas_to_dirs_response::PartitionData {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -376,7 +364,7 @@ impl Encode for PartitionData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

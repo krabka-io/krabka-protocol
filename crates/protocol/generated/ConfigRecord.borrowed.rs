@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::config_record,
     primitives::{
         fixed::{get_i8, put_i8},
         string_bytes::{
@@ -45,16 +46,13 @@ impl Default for ConfigRecord<'_> {
     }
 }
 impl ConfigRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::config_record::ConfigRecord {
-        crate::owned::config_record::ConfigRecord {
+    pub fn to_owned(&self) -> config_record::ConfigRecord {
+        config_record::ConfigRecord {
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
-            name: (self.name).to_string(),
-            value: (self.value).map(std::string::ToString::to_string),
+            resource_name: (self.resource_name).to_owned(),
+            name: (self.name).to_owned(),
+            value: (self.value).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -72,28 +70,28 @@ impl Encode for ConfigRecord<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value);
+                put_compact_nullable_string(buf, self.value)?;
             } else {
-                let () = put_nullable_string(buf, self.value);
+                put_nullable_string(buf, self.value)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -3,7 +3,11 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i8, put_i8},
+    owned::list_config_resources_request,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i8, put_i8},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 74;
@@ -22,14 +26,9 @@ pub struct ListConfigResourcesRequest {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListConfigResourcesRequest {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::list_config_resources_request::ListConfigResourcesRequest {
-        crate::owned::list_config_resources_request::ListConfigResourcesRequest {
+    pub fn to_owned(&self) -> list_config_resources_request::ListConfigResourcesRequest {
+        list_config_resources_request::ListConfigResourcesRequest {
             resource_types: (self.resource_types).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -46,15 +45,15 @@ impl Encode for ListConfigResourcesRequest {
         let flex = is_flexible(version);
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resource_types).len(), flex);
+                put_array_len(buf, (self.resource_types).len(), flex)?;
                 for it in &self.resource_types {
                     put_i8(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -63,10 +62,7 @@ impl Encode for ListConfigResourcesRequest {
         let mut n: usize = 0;
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.resource_types).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.resource_types).len(), flex);
                 let body: usize = (self.resource_types).iter().map(|_| 1).sum();
                 prefix + body
             };
@@ -90,7 +86,7 @@ impl<'de> DecodeBorrow<'de> for ListConfigResourcesRequest {
         let mut out = Self::default();
         if version >= 1 {
             out.resource_types = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i8(buf)?);

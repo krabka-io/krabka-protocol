@@ -67,7 +67,7 @@ mod tests {
             (
                 "empty freeze scope",
                 MetadataError::EmptyFreezeScope,
-                "topic freeze scope is empty".to_string(),
+                "topic freeze scope is empty".to_owned(),
             ),
             (
                 "approvals that do not extend",

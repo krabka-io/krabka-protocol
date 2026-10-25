@@ -4,6 +4,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -29,9 +30,9 @@ impl Encode for TopologyDescriptionNode {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -39,50 +40,50 @@ impl Encode for TopologyDescriptionNode {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.source_topics).len(), flex);
+                put_array_len(buf, (self.source_topics).len(), flex)?;
                 for it in &self.source_topics {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.sink_topic.as_deref());
+                put_compact_nullable_string(buf, self.sink_topic.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.sink_topic.as_deref());
+                put_nullable_string(buf, self.sink_topic.as_deref())?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.stores).len(), flex);
+                put_array_len(buf, (self.stores).len(), flex)?;
                 for it in &self.stores {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.successors).len(), flex);
+                put_array_len(buf, (self.successors).len(), flex)?;
                 for it in &self.successors {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -101,10 +102,7 @@ impl Encode for TopologyDescriptionNode {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.source_topics).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.source_topics).len(), flex);
                 let body: usize = (self.source_topics)
                     .iter()
                     .map(|it| {
@@ -127,8 +125,7 @@ impl Encode for TopologyDescriptionNode {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.stores).len(), flex);
+                let prefix = array_len_prefix_len((self.stores).len(), flex);
                 let body: usize = (self.stores)
                     .iter()
                     .map(|it| {
@@ -144,8 +141,7 @@ impl Encode for TopologyDescriptionNode {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.successors).len(), flex);
+                let prefix = array_len_prefix_len((self.successors).len(), flex);
                 let body: usize = (self.successors)
                     .iter()
                     .map(|it| {
@@ -182,7 +178,7 @@ impl Decode<'_> for TopologyDescriptionNode {
         }
         if version >= 0 {
             out.source_topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -203,7 +199,7 @@ impl Decode<'_> for TopologyDescriptionNode {
         }
         if version >= 0 {
             out.stores = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -217,7 +213,7 @@ impl Decode<'_> for TopologyDescriptionNode {
         }
         if version >= 0 {
             out.successors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -241,22 +237,22 @@ impl TopologyDescriptionNode {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.node_type = 1i8;
         }
         if version >= 0 {
-            m.source_topics = vec!["x".to_string()];
+            m.source_topics = vec!["x".to_owned()];
         }
         if version >= 0 {
-            m.sink_topic = Some("x".to_string());
+            m.sink_topic = Some("x".to_owned());
         }
         if version >= 0 {
-            m.stores = vec!["x".to_string()];
+            m.stores = vec!["x".to_owned()];
         }
         if version >= 0 {
-            m.successors = vec!["x".to_string()];
+            m.successors = vec!["x".to_owned()];
         }
         m
     }

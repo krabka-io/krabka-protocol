@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remove_topic_record,
+    primitives::uuid::{Uuid, get_uuid, put_uuid},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -15,16 +17,13 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RemoveTopicRecord {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoveTopicRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::remove_topic_record::RemoveTopicRecord {
-        crate::owned::remove_topic_record::RemoveTopicRecord {
+    pub fn to_owned(&self) -> remove_topic_record::RemoveTopicRecord {
+        remove_topic_record::RemoveTopicRecord {
             topic_id: (self.topic_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -39,11 +38,11 @@ impl Encode for RemoveTopicRecord {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -70,7 +69,7 @@ impl<'de> DecodeBorrow<'de> for RemoveTopicRecord {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -84,7 +83,7 @@ impl RemoveTopicRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         m
     }

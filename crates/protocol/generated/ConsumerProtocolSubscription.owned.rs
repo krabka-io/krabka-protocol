@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_nullable_bytes_len, compact_nullable_string_len, compact_string_len,
@@ -55,39 +56,39 @@ impl Encode for ConsumerProtocolSubscription {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.user_data.as_deref());
+                put_compact_nullable_bytes(buf, self.user_data.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.user_data.as_deref());
+                put_nullable_bytes(buf, self.user_data.as_deref())?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.owned_partitions).len(), flex);
+                put_array_len(buf, (self.owned_partitions).len(), flex)?;
                 for it in &self.owned_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 2 {
             put_i32(buf, self.generation_id);
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack_id.as_deref());
+                put_compact_nullable_string(buf, self.rack_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.rack_id.as_deref());
+                put_nullable_string(buf, self.rack_id.as_deref())?;
             }
         }
         Ok(())
@@ -97,8 +98,7 @@ impl Encode for ConsumerProtocolSubscription {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics)
                     .iter()
                     .map(|it| {
@@ -121,10 +121,7 @@ impl Encode for ConsumerProtocolSubscription {
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.owned_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.owned_partitions).len(), flex);
                 let body: usize = (self.owned_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -156,7 +153,7 @@ impl Decode<'_> for ConsumerProtocolSubscription {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -177,7 +174,7 @@ impl Decode<'_> for ConsumerProtocolSubscription {
         }
         if version >= 1 {
             out.owned_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicPartition::decode(buf, version)?);
@@ -204,7 +201,7 @@ impl ConsumerProtocolSubscription {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topics = vec!["x".to_string()];
+            m.topics = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.user_data = Some(::bytes::Bytes::from_static(b"x"));
@@ -216,7 +213,7 @@ impl ConsumerProtocolSubscription {
             m.generation_id = 1i32;
         }
         if version >= 3 {
-            m.rack_id = Some("x".to_string());
+            m.rack_id = Some("x".to_owned());
         }
         m
     }
@@ -232,18 +229,18 @@ impl Encode for TopicPartition {
         let flex = version == i16::MAX;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -259,8 +256,7 @@ impl Encode for TopicPartition {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -281,7 +277,7 @@ impl Decode<'_> for TopicPartition {
         }
         if version >= 1 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -298,7 +294,7 @@ impl TopicPartition {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 1 {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version >= 1 {
             m.partitions = vec![1i32];
@@ -312,19 +308,19 @@ impl TopicPartition {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("userData".to_string(), ::serde_json::Value::Null);
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("userData".to_owned(), ::serde_json::Value::Null);
     if version >= 1 {
         obj.insert(
-            "ownedPartitions".to_string(),
+            "ownedPartitions".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
     if version >= 2 {
-        obj.insert("generationId".to_string(), ::serde_json::json!(-1));
+        obj.insert("generationId".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 3 {
-        obj.insert("rackId".to_string(), ::serde_json::Value::Null);
+        obj.insert("rackId".to_owned(), ::serde_json::Value::Null);
     }
     ::serde_json::Value::Object(obj)
 }

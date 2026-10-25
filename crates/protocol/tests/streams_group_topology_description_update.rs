@@ -5,6 +5,7 @@
 //! differential sweep skips it. These tests pin the wire shape directly: every
 //! message round-trips through the owned and borrowed codecs, and one
 //! hand-encoded frame per direction fixes the exact bytes Kafka writes.
+#![cfg(test)]
 
 use bytes::BytesMut;
 use krabka_protocol::{

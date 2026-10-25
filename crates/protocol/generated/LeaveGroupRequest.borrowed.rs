@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::leave_group_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
             put_compact_nullable_string, put_compact_string, put_nullable_string, put_string,
@@ -34,14 +36,11 @@ pub struct LeaveGroupRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaveGroupRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::leave_group_request::LeaveGroupRequest {
-        crate::owned::leave_group_request::LeaveGroupRequest {
-            group_id: (self.group_id).to_string(),
-            member_id: (self.member_id).to_string(),
+    pub fn to_owned(&self) -> leave_group_request::LeaveGroupRequest {
+        leave_group_request::LeaveGroupRequest {
+            group_id: (self.group_id).to_owned(),
+            member_id: (self.member_id).to_owned(),
             members: (self.members)
                 .iter()
                 .map(MemberIdentity::to_owned)
@@ -61,29 +60,29 @@ impl Encode for LeaveGroupRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if (0..=2).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 3 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -106,8 +105,7 @@ impl Encode for LeaveGroupRequest<'_> {
         }
         if version >= 3 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -148,7 +146,7 @@ impl<'de> DecodeBorrow<'de> for LeaveGroupRequest<'de> {
         }
         if version >= 3 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MemberIdentity::decode_borrow(buf, version)?);
@@ -187,15 +185,12 @@ pub struct MemberIdentity<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl MemberIdentity<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::leave_group_request::MemberIdentity {
-        crate::owned::leave_group_request::MemberIdentity {
-            member_id: (self.member_id).to_string(),
-            group_instance_id: (self.group_instance_id).map(std::string::ToString::to_string),
-            reason: (self.reason).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> leave_group_request::MemberIdentity {
+        leave_group_request::MemberIdentity {
+            member_id: (self.member_id).to_owned(),
+            group_instance_id: (self.group_instance_id).map(str::to_owned),
+            reason: (self.reason).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -205,28 +200,28 @@ impl Encode for MemberIdentity<'_> {
         let flex = version >= 4;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id);
+                put_compact_nullable_string(buf, self.group_instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id);
+                put_nullable_string(buf, self.group_instance_id)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.reason);
+                put_compact_nullable_string(buf, self.reason)?;
             } else {
-                let () = put_nullable_string(buf, self.reason);
+                put_nullable_string(buf, self.reason)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

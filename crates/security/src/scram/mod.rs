@@ -1,6 +1,6 @@
 //! SCRAM (RFC 5802) with support for SHA-256 and SHA-512.
 
-use std::{fmt, str::FromStr};
+use std::{fmt, num::ParseIntError, str::FromStr};
 
 mod client;
 mod messages;
@@ -8,11 +8,13 @@ mod pg_verifier;
 mod server;
 
 pub use client::ScramClientExchange;
-use hmac::{Hmac, KeyInit, Mac};
 pub use messages::{ScramClientFirst, TOKEN_AUTH_EXTENSION, decode_saslname, encode_saslname};
 pub use pg_verifier::{PgScramVerifier, ScramError};
 use refined_type::rule::MinMaxI32;
-use ring::rand::{SecureRandom, SystemRandom};
+use ring::{
+    hmac as ring_hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 pub use server::{ScramServerExchange, StepResult};
 use sha2::{Digest, Sha256, Sha512};
 
@@ -49,7 +51,8 @@ impl ScramIterations {
 
 impl Default for ScramIterations {
     fn default() -> Self {
-        Self::new(DEFAULT_SCRAM_ITERATIONS).expect("default SCRAM iterations are broker-valid")
+        // `DEFAULT_SCRAM_ITERATIONS` lies inside the broker-valid range.
+        Self(DEFAULT_SCRAM_ITERATIONS)
     }
 }
 
@@ -65,7 +68,7 @@ impl FromStr for ScramIterations {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         value
             .parse()
-            .map_err(|error: std::num::ParseIntError| error.to_string())
+            .map_err(|error: ParseIntError| error.to_string())
             .and_then(Self::new)
     }
 }
@@ -96,20 +99,29 @@ pub fn scram_hash_len(mechanism: SaslMechanism) -> usize {
     }
 }
 
-#[must_use]
+/// Hash `password` into a SCRAM credential with a fresh random 16-byte salt.
+///
+/// # Errors
+///
+/// [`ScramError::RandomUnavailable`] when the system RNG cannot produce the
+/// salt.
+///
 /// # Panics
-/// Panics if validated key material has an impossible size or synchronized credential state is poisoned.
+///
+/// Panics if `iterations` is zero, or `mechanism` is not a SCRAM mechanism.
 pub fn hash_scram_password(
     password: &[u8],
     mechanism: SaslMechanism,
     iterations: u32,
-) -> ScramCredential {
+) -> Result<ScramCredential, ScramError> {
     assert2::assert!(iterations > 0);
     let mut salt = vec![0u8; 16];
     SystemRandom::new()
         .fill(&mut salt)
-        .expect("system RNG must succeed");
-    hash_scram_password_with_salt(password, mechanism, iterations, salt)
+        .map_err(|_| ScramError::RandomUnavailable)?;
+    Ok(hash_scram_password_with_salt(
+        password, mechanism, iterations, salt,
+    ))
 }
 
 /// Test-only entry that lets callers fix the salt for golden vectors.
@@ -213,24 +225,31 @@ pub fn derive_keys_from_salted(mechanism: SaslMechanism, salted: &[u8]) -> (Vec<
 }
 
 fn derive_keys_sha512(salted: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let mut ck_mac = <Hmac<Sha512>>::new_from_slice(salted).expect("hmac accepts any key length");
-    ck_mac.update(b"Client Key");
-    let client_key = ck_mac.finalize().into_bytes();
-    let stored_key = Sha512::digest(client_key).to_vec();
-    let mut sk_mac = <Hmac<Sha512>>::new_from_slice(salted).expect("hmac accepts any key length");
-    sk_mac.update(b"Server Key");
-    let server_key = sk_mac.finalize().into_bytes().to_vec();
-    (stored_key, server_key)
+    derive_keys_with(ring_hmac::HMAC_SHA512, salted, |client_key| {
+        Sha512::digest(client_key).to_vec()
+    })
 }
 
 fn derive_keys_sha256(salted: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let mut ck_mac = <Hmac<Sha256>>::new_from_slice(salted).expect("hmac accepts any key length");
-    ck_mac.update(b"Client Key");
-    let client_key = ck_mac.finalize().into_bytes();
-    let stored_key = Sha256::digest(client_key).to_vec();
-    let mut sk_mac = <Hmac<Sha256>>::new_from_slice(salted).expect("hmac accepts any key length");
-    sk_mac.update(b"Server Key");
-    let server_key = sk_mac.finalize().into_bytes().to_vec();
+    derive_keys_with(ring_hmac::HMAC_SHA256, salted, |client_key| {
+        Sha256::digest(client_key).to_vec()
+    })
+}
+
+/// `StoredKey := H(HMAC(salted, "Client Key"))` and
+/// `ServerKey := HMAC(salted, "Server Key")`, with `algorithm` as the HMAC and
+/// `hash` as `H`.
+///
+/// `ring`'s HMAC takes a key of any length, so this cannot fail.
+fn derive_keys_with(
+    algorithm: ring_hmac::Algorithm,
+    salted: &[u8],
+    hash: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> (Vec<u8>, Vec<u8>) {
+    let key = ring_hmac::Key::new(algorithm, salted);
+    let client_key = ring_hmac::sign(&key, b"Client Key");
+    let stored_key = hash(client_key.as_ref());
+    let server_key = ring_hmac::sign(&key, b"Server Key").as_ref().to_vec();
     (stored_key, server_key)
 }
 
@@ -238,6 +257,7 @@ fn derive_keys_sha256(salted: &[u8]) -> (Vec<u8>, Vec<u8>) {
 mod tests {
     use assert2::check;
     use base64::{Engine, engine::general_purpose::STANDARD as B64};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::{Digest, Sha512};
 
     use super::*;
@@ -278,7 +298,7 @@ mod tests {
     #[test]
     fn hash_scram_password_produces_expected_keys() {
         let password = b"pencil";
-        let cred = hash_scram_password(password, SaslMechanism::ScramSha512, 4096);
+        let cred = hash_scram_password(password, SaslMechanism::ScramSha512, 4096).unwrap();
         check!(
             (
                 cred.mechanism,
@@ -305,7 +325,7 @@ mod tests {
     #[test]
     fn hash_scram_password_sha256_produces_expected_keys() {
         let password = b"pencil";
-        let cred = hash_scram_password(password, SaslMechanism::ScramSha256, 4096);
+        let cred = hash_scram_password(password, SaslMechanism::ScramSha256, 4096).unwrap();
         check!(
             (
                 cred.mechanism,
@@ -328,8 +348,8 @@ mod tests {
 
     #[test]
     fn hash_scram_password_is_deterministic_given_salt() {
-        let a = hash_scram_password(b"x", SaslMechanism::ScramSha512, 4096);
-        let b = hash_scram_password(b"x", SaslMechanism::ScramSha512, 4096);
+        let a = hash_scram_password(b"x", SaslMechanism::ScramSha512, 4096).unwrap();
+        let b = hash_scram_password(b"x", SaslMechanism::ScramSha512, 4096).unwrap();
         assert2::assert!(a.salt != b.salt);
     }
 
@@ -350,9 +370,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha512,
         );
@@ -394,9 +414,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         );
@@ -429,12 +449,12 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let rendered = format!("{server:?}");
         assert2::assert!(rendered.contains("ScramServerExchange::AwaitingClientFirst"));
 
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         );
@@ -456,9 +476,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         );
@@ -485,13 +505,19 @@ mod tests {
         Disconnect,
     }
 
-    impl From<StepResult> for Ending {
-        fn from(result: StepResult) -> Self {
+    /// A server exchange that continued past client-final has no ending: the
+    /// conversion hands the result back.
+    impl TryFrom<StepResult> for Ending {
+        type Error = StepResult;
+
+        fn try_from(result: StepResult) -> Result<Self, StepResult> {
             match result {
-                StepResult::Done(principal, server_final) => Self::Done(principal, server_final),
-                StepResult::Failed(e) => Self::Failed(e),
-                StepResult::Disconnect => Self::Disconnect,
-                StepResult::Continue(..) => panic!("server continued past client-final"),
+                StepResult::Done(principal, server_final) => {
+                    Ok(Self::Done(principal, server_final))
+                }
+                StepResult::Failed(e) => Ok(Self::Failed(e)),
+                StepResult::Disconnect => Ok(Self::Disconnect),
+                continued @ StepResult::Continue(..) => Err(continued),
             }
         }
     }
@@ -567,7 +593,7 @@ mod tests {
                 4096,
                 (0..16).collect::<Vec<u8>>(),
             );
-            let server = ScramServerExchange::new("alice".to_string(), cred);
+            let server = ScramServerExchange::new("alice".to_owned(), cred);
             let StepResult::Continue(server_first, server) = server.step(b"n,,n=alice,r=cn") else {
                 panic!("server step 1 must continue");
             };
@@ -579,7 +605,7 @@ mod tests {
             let nonce = if wrong_nonce { "cnX" } else { nonce };
             let client_final = format!("c=biws,r={nonce},p={}", B64.encode(vec![7u8; proof_len]));
             check!(
-                Ending::from(server.step(client_final.as_bytes())) == want,
+                Ending::try_from(server.step(client_final.as_bytes())).unwrap() == want,
                 "case {case}"
             );
         }
@@ -649,19 +675,19 @@ mod tests {
             (0..16).collect::<Vec<u8>>(),
         );
         let override_principal = crate::Principal {
-            name: "alice".to_string(),
+            name: "alice".to_owned(),
             auth_method: crate::AuthMethod::SaslScramSha256,
             groups: vec![],
         };
         // SCRAM username (the wire "n=..." attribute) is "tok-uuid";
         // the override principal is "alice" (the token's owner).
         let server = ScramServerExchange::new_with_principal(
-            "tok-uuid".to_string(),
+            "tok-uuid".to_owned(),
             cred,
             override_principal.clone(),
         );
         let client = ScramClientExchange::new(
-            "tok-uuid".to_string(),
+            "tok-uuid".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         );
@@ -688,9 +714,9 @@ mod tests {
             4096,
             vec![0u8; 16],
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             b"wrong".to_vec(),
             SaslMechanism::ScramSha512,
         );
@@ -720,12 +746,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
-        let client = ScramClientExchange::new(
-            "alice".to_string(),
-            password.clone(),
-            SaslMechanism::ScramSha256,
-        );
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
+        let client =
+            ScramClientExchange::new("alice".to_owned(), password, SaslMechanism::ScramSha256);
         let (c1, client) = client.client_first().unwrap();
         let StepResult::Continue(s1, server) = server.step(&c1) else {
             panic!("server step 1 must continue");
@@ -763,12 +786,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
-        let client = ScramClientExchange::new(
-            "alice".to_string(),
-            password.clone(),
-            SaslMechanism::ScramSha256,
-        );
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
+        let client =
+            ScramClientExchange::new("alice".to_owned(), password, SaslMechanism::ScramSha256);
         let (c1, client) = client.client_first().unwrap();
         let StepResult::Continue(s1, server) = server.step(&c1) else {
             panic!("server step 1 must continue");
@@ -803,7 +823,7 @@ mod tests {
             4096,
             salt.clone(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
 
         let bare = format!("n=alice,r=client-nonce{extensions}");
         let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
@@ -888,7 +908,7 @@ mod tests {
                 "n,,",
                 "",
                 "n,a=alice,",
-                alice.clone(),
+                alice,
             ),
             (
                 "channel binding requested",
@@ -935,7 +955,7 @@ mod tests {
             4096,
             salt.clone(),
         );
-        let server = ScramServerExchange::new(username.to_string(), cred);
+        let server = ScramServerExchange::new(username.to_owned(), cred);
         let (server_first, server) = match server.step(format!("{gs2_header}{bare}").as_bytes()) {
             StepResult::Continue(server_first, next) => (server_first, next),
             StepResult::Failed(e) => return Err(e),
@@ -953,9 +973,9 @@ mod tests {
             .replace("{nonce}", combined_nonce);
         let signed = format!("c={},r={combined_nonce}", B64.encode(gs2_header.as_bytes()));
         let auth_message = format!("{bare},{server_first},{signed}");
-        let (proof, _) =
+        let (client_proof, _) =
             client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes()).unwrap();
-        let mut proof_b64 = B64.encode(proof);
+        let mut proof_b64 = B64.encode(client_proof);
         if flip_unused_bit {
             // 32 bytes encode as 43 characters and one `=`; the 43rd carries
             // four data bits and two unused ones.
@@ -1069,7 +1089,7 @@ mod tests {
                 alice_bare,
                 "c={cb},r={nonce},p={proof},",
                 false,
-                malformed.clone(),
+                malformed,
             ),
             (
                 "escaped authzid equal to the decoded username",
@@ -1168,22 +1188,22 @@ mod tests {
                     4096,
                     salt.clone(),
                 );
-                let server = ScramServerExchange::new("alice".to_string(), cred);
+                let server = ScramServerExchange::new("alice".to_owned(), cred);
                 let StepResult::Continue(server_first, server) =
                     server.step(client_first.as_bytes())
                 else {
                     panic!("case {case}: server step 1 must continue");
                 };
                 let server_first = String::from_utf8(server_first).unwrap();
-                let nonce = server_first
+                let combined_nonce = server_first
                     .strip_prefix("r=")
                     .and_then(|rest| rest.split(',').next())
                     .unwrap();
                 let auth_message = format!(
                     "{signed_bare},{server_first},{}",
-                    signed_final.replace("{nonce}", nonce)
+                    signed_final.replace("{nonce}", combined_nonce)
                 );
-                let (proof, server_key) =
+                let (client_proof, server_key) =
                     client::compute_proof_sha256(&password, &salt, 4096, auth_message.as_bytes())
                         .unwrap();
                 let mut server_mac = <Hmac<Sha256>>::new_from_slice(&server_key).unwrap();
@@ -1196,10 +1216,10 @@ mod tests {
                     Ending::Failed(AuthError::BadProof)
                 };
                 let message = client_final
-                    .replace("{nonce}", nonce)
-                    .replace("{proof}", &B64.encode(proof));
+                    .replace("{nonce}", combined_nonce)
+                    .replace("{proof}", &B64.encode(client_proof));
                 check!(
-                    Ending::from(server.step(message.as_bytes())) == want,
+                    Ending::try_from(server.step(message.as_bytes())).unwrap() == want,
                     "case {case}, signed {signed_bare} / {signed_final}"
                 );
             }
@@ -1218,9 +1238,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("token-id".to_string(), cred);
+        let server = ScramServerExchange::new("token-id".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "token-id".to_string(),
+            "token-id".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         )
@@ -1238,7 +1258,7 @@ mod tests {
             ) == (
                 "n,,",
                 "token-id",
-                vec![(TOKEN_AUTH_EXTENSION.to_string(), "true".to_string())],
+                vec![(TOKEN_AUTH_EXTENSION.to_owned(), "true".to_owned())],
                 true,
             )
         );
@@ -1265,9 +1285,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("alice".to_string(), cred);
+        let server = ScramServerExchange::new("alice".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         )
@@ -1279,8 +1299,8 @@ mod tests {
         check!(
             parsed.extensions
                 == vec![
-                    ("foo".to_string(), "3".to_string()),
-                    ("bar".to_string(), "2".to_string()),
+                    ("foo".to_owned(), "3".to_owned()),
+                    ("bar".to_owned(), "2".to_owned()),
                 ]
         );
         let StepResult::Continue(s1, server) = server.step(&c1) else {
@@ -1304,7 +1324,7 @@ mod tests {
             ("non-ASCII value", "tokenauth", "\u{e9}"),
         ] {
             let client = ScramClientExchange::new(
-                "alice".to_string(),
+                "alice".to_owned(),
                 b"pw".to_vec(),
                 SaslMechanism::ScramSha256,
             );
@@ -1327,9 +1347,9 @@ mod tests {
             4096,
             (0..16).collect::<Vec<u8>>(),
         );
-        let server = ScramServerExchange::new("a,b=c".to_string(), cred);
+        let server = ScramServerExchange::new("a,b=c".to_owned(), cred);
         let client = ScramClientExchange::new(
-            "a,b=c".to_string(),
+            "a,b=c".to_owned(),
             password.to_vec(),
             SaslMechanism::ScramSha256,
         );

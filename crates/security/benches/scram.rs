@@ -5,9 +5,9 @@
 //! password hashing with PBKDF2, and `derive_keys_from_salted`, the broker-side
 //! key derivation from KIP-554.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, abs_file, black_box, criterion_main};
 use krabka_security::{SaslMechanism, scram, verify_plain};
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ fn bench_verify_plain(c: &mut Criterion) {
     for i in 0..16 {
         creds.insert(format!("user-{i:03}"), format!("password-{i:03}"));
     }
-    creds.insert("alice".to_string(), "hunter2".to_string());
+    creds.insert("alice".to_owned(), "hunter2".to_owned());
 
     group.bench_function("ok", |b| {
         b.iter(|| verify_plain(black_box(&creds), black_box("alice"), black_box(b"hunter2")));
@@ -116,11 +116,33 @@ fn bench_scram_hash_len(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_scram_pbkdf2,
-    bench_derive_keys,
-    bench_verify_plain,
-    bench_scram_hash_len,
-);
+/// A benchmark target, under the name `criterion_group!` would give it.
+type Target = (&'static str, fn(&mut Criterion));
+
+/// Every benchmark target, in run order.
+const TARGETS: [Target; 4] = [
+    ("bench_scram_pbkdf2", bench_scram_pbkdf2),
+    ("bench_derive_keys", bench_derive_keys),
+    ("bench_verify_plain", bench_verify_plain),
+    ("bench_scram_hash_len", bench_scram_hash_len),
+];
+
+/// Runs every target in [`TARGETS`].
+fn run_targets(criterion: &mut Criterion) {
+    for (name, target) in TARGETS {
+        if env::var("CODSPEED_ENV").is_ok() {
+            criterion.set_current_file(abs_file!());
+            criterion.set_macro_group(format!("benches::{name}"));
+        }
+        target(criterion);
+    }
+}
+
+/// The benchmark group, written out by hand where `criterion_group!` would
+/// generate it, so that the `Criterion` it configures drops as soon as the
+/// targets have run.
+fn benches() {
+    run_targets(&mut Criterion::default().configure_from_args());
+}
+
 criterion_main!(benches);

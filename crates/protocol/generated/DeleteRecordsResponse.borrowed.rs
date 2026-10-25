@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delete_records_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,12 +28,9 @@ pub struct DeleteRecordsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteRecordsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_records_response::DeleteRecordsResponse {
-        crate::owned::delete_records_response::DeleteRecordsResponse {
+    pub fn to_owned(&self) -> delete_records_response::DeleteRecordsResponse {
+        delete_records_response::DeleteRecordsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             topics: (self.topics)
                 .iter()
@@ -55,15 +54,15 @@ impl Encode for DeleteRecordsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -75,8 +74,7 @@ impl Encode for DeleteRecordsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -103,7 +101,7 @@ impl<'de> DecodeBorrow<'de> for DeleteRecordsResponse<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteRecordsTopicResult::decode_borrow(buf, version)?);
@@ -138,13 +136,10 @@ pub struct DeleteRecordsTopicResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteRecordsTopicResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_records_response::DeleteRecordsTopicResult {
-        crate::owned::delete_records_response::DeleteRecordsTopicResult {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> delete_records_response::DeleteRecordsTopicResult {
+        delete_records_response::DeleteRecordsTopicResult {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(DeleteRecordsPartitionResult::to_owned)
@@ -158,22 +153,22 @@ impl Encode for DeleteRecordsTopicResult<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -189,8 +184,7 @@ impl Encode for DeleteRecordsTopicResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -218,7 +212,7 @@ impl<'de> DecodeBorrow<'de> for DeleteRecordsTopicResult<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteRecordsPartitionResult::decode_borrow(buf, version)?);
@@ -254,12 +248,9 @@ pub struct DeleteRecordsPartitionResult {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteRecordsPartitionResult {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_records_response::DeleteRecordsPartitionResult {
-        crate::owned::delete_records_response::DeleteRecordsPartitionResult {
+    pub fn to_owned(&self) -> delete_records_response::DeleteRecordsPartitionResult {
+        delete_records_response::DeleteRecordsPartitionResult {
             partition_index: (self.partition_index),
             low_watermark: (self.low_watermark),
             error_code: (self.error_code),
@@ -281,7 +272,7 @@ impl Encode for DeleteRecordsPartitionResult {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

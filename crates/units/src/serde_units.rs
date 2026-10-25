@@ -36,6 +36,8 @@
 
 /// The operator-facing string encoding: `"512MiB"`, `"30s"`, `"10MiB/s"`, `"25%"`.
 pub mod human {
+    use crate::parse;
+
     /// Defines a `#[serde(with = ...)]` module over a quantity's human form, plus
     /// an `option_`-prefixed sibling for `Option` fields.
     macro_rules! human_module {
@@ -119,27 +121,27 @@ pub mod human {
         byte_size
             / option_byte_size,
         crate::ByteSize,
-        crate::parse::byte_size
+        super::parse::byte_size
     );
     human_module!(
         /// A time extent as `"30s"`.
         time / option_time,
         crate::Time,
-        crate::parse::time
+        super::parse::time
     );
     human_module!(
         /// A byte throughput as `"10MiB/s"`.
         byte_rate
             / option_byte_rate,
         crate::ByteRate,
-        crate::parse::byte_rate
+        super::parse::byte_rate
     );
     human_module!(
         /// An event rate as `"100/s"`.
         frequency
             / option_frequency,
         crate::Frequency,
-        crate::parse::frequency
+        super::parse::frequency
     );
 
     /// A dimensionless fraction as `"25%"` or `0.25`.
@@ -167,7 +169,7 @@ pub mod human {
         /// If the value is neither a number nor a string holding a fraction.
         pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Ratio, D::Error> {
             match Encoded::deserialize(deserializer)? {
-                Encoded::Text(raw) => crate::parse::ratio(&raw).map_err(D::Error::custom),
+                Encoded::Text(raw) => super::parse::ratio(&raw).map_err(D::Error::custom),
                 Encoded::Number(value) if value.is_finite() => Ok(fraction(value)),
                 Encoded::Number(value) => Err(D::Error::invalid_value(
                     Unexpected::Float(value),
@@ -223,7 +225,7 @@ pub mod human {
         ) -> Result<Option<Ratio>, D::Error> {
             match Option::<Encoded>::deserialize(deserializer)? {
                 None => Ok(None),
-                Some(Encoded::Text(raw)) => crate::parse::ratio(&raw)
+                Some(Encoded::Text(raw)) => super::parse::ratio(&raw)
                     .map(Some)
                     .map_err(D::Error::custom),
                 Some(Encoded::Number(value)) if value.is_finite() => Ok(Some(fraction(value))),
@@ -238,6 +240,8 @@ pub mod human {
 
 /// The exact integer encoding, in an explicitly named unit.
 pub mod numeric {
+    use crate::convert::{ByteRateExt, ByteSizeExt, TimeExt};
+
     /// Defines a `#[serde(with = ...)]` module encoding a quantity as an integer
     /// in one named unit, plus an `option_`-prefixed sibling.
     ///
@@ -319,8 +323,8 @@ pub mod numeric {
             / option_millis_i64,
         crate::Time,
         i64,
-        crate::convert::TimeExt::millis_i64,
-        crate::convert::TimeExt::from_millis
+        super::TimeExt::millis_i64,
+        super::TimeExt::from_millis
     );
     numeric_module!(
         /// A time extent as whole milliseconds, **truncated** on the way out.
@@ -333,8 +337,8 @@ pub mod numeric {
             / option_millis_i64_trunc,
         crate::Time,
         i64,
-        crate::convert::TimeExt::millis_i64_trunc,
-        crate::convert::TimeExt::from_millis
+        super::TimeExt::millis_i64_trunc,
+        super::TimeExt::from_millis
     );
     numeric_module!(
         /// A time extent as whole seconds.
@@ -342,8 +346,8 @@ pub mod numeric {
             / option_secs_i64,
         crate::Time,
         i64,
-        crate::convert::TimeExt::secs_i64,
-        crate::convert::TimeExt::from_secs
+        super::TimeExt::secs_i64,
+        super::TimeExt::from_secs
     );
     numeric_module!(
         /// A time extent as whole nanoseconds.
@@ -351,8 +355,8 @@ pub mod numeric {
             / option_nanos_i64,
         crate::Time,
         i64,
-        crate::convert::TimeExt::nanos_i64,
-        crate::convert::TimeExt::from_nanos
+        super::TimeExt::nanos_i64,
+        super::TimeExt::from_nanos
     );
     numeric_module!(
         /// A byte count as an unsigned total.
@@ -360,8 +364,8 @@ pub mod numeric {
             / option_bytes_u64,
         crate::ByteSize,
         u64,
-        crate::convert::ByteSizeExt::bytes_u64,
-        crate::convert::ByteSizeExt::from_bytes
+        super::ByteSizeExt::bytes_u64,
+        super::ByteSizeExt::from_bytes
     );
     numeric_module!(
         /// A byte count as Kafka's `int64` byte fields.
@@ -369,8 +373,8 @@ pub mod numeric {
             / option_bytes_i64,
         crate::ByteSize,
         i64,
-        crate::convert::ByteSizeExt::bytes_i64,
-        crate::convert::ByteSizeExt::from_bytes_i64
+        super::ByteSizeExt::bytes_i64,
+        super::ByteSizeExt::from_bytes_i64
     );
     numeric_module!(
         /// A byte throughput as Kafka's `int64` quota fields.
@@ -378,7 +382,7 @@ pub mod numeric {
             / option_bytes_per_sec_i64,
         crate::ByteRate,
         i64,
-        crate::convert::ByteRateExt::bytes_per_sec_i64,
-        crate::convert::ByteRateExt::from_bytes_per_sec
+        super::ByteRateExt::bytes_per_sec_i64,
+        super::ByteRateExt::from_bytes_per_sec
     );
 }

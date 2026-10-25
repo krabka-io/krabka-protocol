@@ -1,7 +1,16 @@
+#![cfg(test)]
+
 use assert2::{assert, check};
 use krabka_trace_context::{TRACEPARENT, TRACESTATE, TraceCarrier, TraceContextError};
-use opentelemetry::trace::{SpanId, TraceId, TracerProvider as _};
-use opentelemetry_sdk::trace::{InMemorySpanExporter, Sampler, SdkTracerProvider, SpanData};
+use opentelemetry::{
+    global,
+    trace::{SpanId, TraceId, TracerProvider as _},
+};
+use opentelemetry_sdk::{
+    propagation::TraceContextPropagator,
+    trace::{InMemorySpanExporter, Sampler, SdkTracerProvider, SpanData},
+};
+use tracing::subscriber;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 /// A named case plus the record headers it feeds to `TraceCarrier::from_headers`.
@@ -27,9 +36,7 @@ fn remote_span_id() -> SpanId {
 /// `tracing-opentelemetry` resolves a re-parented span's trace id when the span
 /// closes, not when `set_parent` runs.
 fn exported_spans(f: impl FnOnce()) -> Vec<SpanData> {
-    opentelemetry::global::set_text_map_propagator(
-        opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-    );
+    global::set_text_map_propagator(TraceContextPropagator::new());
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_sampler(Sampler::AlwaysOn)
@@ -38,7 +45,7 @@ fn exported_spans(f: impl FnOnce()) -> Vec<SpanData> {
     let tracer = provider.tracer("carrier-test");
     let subscriber =
         tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer));
-    tracing::subscriber::with_default(subscriber, f);
+    subscriber::with_default(subscriber, f);
     provider.force_flush().unwrap();
     exporter.get_finished_spans().unwrap()
 }

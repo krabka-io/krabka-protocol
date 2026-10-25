@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_topology_description_update_request::topology_description_subtopology,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -16,14 +18,14 @@ pub struct TopologyDescriptionSubtopology<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopologyDescriptionSubtopology<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::streams_group_topology_description_update_request::topology_description_subtopology::TopologyDescriptionSubtopology{
-        crate::owned::common::streams_group_topology_description_update_request::topology_description_subtopology::TopologyDescriptionSubtopology {
-            subtopology_id: (self.subtopology_id).to_string(),
-            nodes: (self.nodes).iter().map(super::topology_description_node::TopologyDescriptionNode::to_owned).collect(),
+    pub fn to_owned(&self) -> topology_description_subtopology::TopologyDescriptionSubtopology {
+        topology_description_subtopology::TopologyDescriptionSubtopology {
+            subtopology_id: (self.subtopology_id).to_owned(),
+            nodes: (self.nodes)
+                .iter()
+                .map(super::topology_description_node::TopologyDescriptionNode::to_owned)
+                .collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -33,22 +35,22 @@ impl Encode for TopologyDescriptionSubtopology<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.subtopology_id);
+                put_compact_string(buf, self.subtopology_id)?;
             } else {
-                let () = put_string(buf, self.subtopology_id);
+                put_string(buf, self.subtopology_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.nodes).len(), flex);
+                put_array_len(buf, (self.nodes).len(), flex)?;
                 for it in &self.nodes {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +66,7 @@ impl Encode for TopologyDescriptionSubtopology<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.nodes).len(), flex);
+                let prefix = array_len_prefix_len((self.nodes).len(), flex);
                 let body: usize = (self.nodes).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -90,7 +91,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescriptionSubtopology<'de> {
         }
         if version >= 0 {
             out.nodes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(

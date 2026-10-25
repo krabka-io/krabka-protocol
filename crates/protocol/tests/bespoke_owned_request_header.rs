@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned RequestHeader wrapper that go beyond the standard
 // min/max-version roundtrip. Relocated here from the hand-written wrapper as
 // part of making wrappers uniformly generated.
@@ -50,7 +52,7 @@ fn owned_request_header_max_version_roundtrips() {
         request_api_key: 18i16,
         request_api_version: 3i16,
         correlation_id: 99i32,
-        client_id: Some("test-client".to_string()),
+        client_id: Some("test-client".to_owned()),
         unknown_tagged_fields: UnknownTaggedFields::default(),
     };
     let mut buf = BytesMut::new();

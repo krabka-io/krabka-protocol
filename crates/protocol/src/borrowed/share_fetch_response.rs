@@ -18,7 +18,7 @@ mod tests {
         let mut reencoded = BytesMut::new();
         decoded.encode(&mut reencoded, v).unwrap();
         assert!(&reencoded[..] == &msg_bytes[..]);
-        let owned = decoded.to_owned();
+        let owned = decoded.to_owned().unwrap();
         let mut owned_buf = BytesMut::new();
         owned.encode(&mut owned_buf, v).unwrap();
         assert!(&owned_buf[..] == &msg_bytes[..]);

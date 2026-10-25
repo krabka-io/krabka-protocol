@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod support;
 use bytes::BytesMut;
 use krabka_protocol::{
@@ -53,13 +55,12 @@ fn response_oracle_value(_version: i16) -> serde_json::Value {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn produce_request_default_byte_equal_every_version() {
-    let mut o = oracle::shared();
     for version in 3..=13i16 {
         let req = ProduceRequest::default();
         let rust = rust_encode(&req, version);
         let oracle_json = request_oracle_value(version);
         // api_key=0, is_request=true
-        let java = o.encode(0, version, true, &oracle_json);
+        let java = oracle::shared().encode(0, version, true, &oracle_json);
         assert2::assert!(rust == java);
         // Also verify decode roundtrip
         let decoded: ProduceRequest = rust_decode(&rust, version);
@@ -71,13 +72,12 @@ fn produce_request_default_byte_equal_every_version() {
 #[test]
 #[ignore = "requires JVM oracle"]
 fn produce_response_default_byte_equal_every_version() {
-    let mut o = oracle::shared();
     for version in 3..=13i16 {
         let resp = ProduceResponse::default();
         let rust = rust_encode(&resp, version);
         let oracle_json = response_oracle_value(version);
         // api_key=0, is_request=false
-        let java = o.encode(0, version, false, &oracle_json);
+        let java = oracle::shared().encode(0, version, false, &oracle_json);
         assert2::assert!(rust == java);
         // Also verify decode roundtrip
         let decoded: ProduceResponse = rust_decode(&rust, version);

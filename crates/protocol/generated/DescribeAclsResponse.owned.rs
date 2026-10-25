@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -60,22 +61,22 @@ impl Encode for DescribeAclsResponse {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -97,8 +98,7 @@ impl Encode for DescribeAclsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -138,7 +138,7 @@ impl Decode<'_> for DescribeAclsResponse {
         }
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeAclsResource::decode(buf, version)?);
@@ -164,7 +164,7 @@ impl DescribeAclsResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.resources = vec![DescribeAclsResource::populated(version)];
@@ -199,9 +199,9 @@ impl Encode for DescribeAclsResource {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 1 {
@@ -209,15 +209,15 @@ impl Encode for DescribeAclsResource {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.acls).len(), flex);
+                put_array_len(buf, (self.acls).len(), flex)?;
                 for it in &self.acls {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -239,8 +239,7 @@ impl Encode for DescribeAclsResource {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.acls).len(), flex);
+                let prefix = array_len_prefix_len((self.acls).len(), flex);
                 let body: usize = (self.acls).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -271,7 +270,7 @@ impl Decode<'_> for DescribeAclsResource {
         }
         if version >= 0 {
             out.acls = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AclDescription::decode(buf, version)?);
@@ -294,7 +293,7 @@ impl DescribeAclsResource {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 1 {
             m.pattern_type = 1i8;
@@ -318,16 +317,16 @@ impl Encode for AclDescription {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal);
+                put_compact_string(buf, &self.principal)?;
             } else {
-                let () = put_string(buf, &self.principal);
+                put_string(buf, &self.principal)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -338,7 +337,7 @@ impl Encode for AclDescription {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -408,10 +407,10 @@ impl AclDescription {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.principal = "x".to_string();
+            m.principal = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.operation = 1i8;
@@ -428,12 +427,12 @@ impl AclDescription {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "errorMessage".to_string(),
+        "errorMessage".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("resources".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("resources".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

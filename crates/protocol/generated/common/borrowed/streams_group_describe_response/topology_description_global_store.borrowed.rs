@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_describe_response::topology_description_global_store,
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -12,12 +13,9 @@ pub struct TopologyDescriptionGlobalStore<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopologyDescriptionGlobalStore<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::streams_group_describe_response::topology_description_global_store::TopologyDescriptionGlobalStore{
-        crate::owned::common::streams_group_describe_response::topology_description_global_store::TopologyDescriptionGlobalStore {
+    pub fn to_owned(&self) -> topology_description_global_store::TopologyDescriptionGlobalStore {
+        topology_description_global_store::TopologyDescriptionGlobalStore {
             source: (self.source).to_owned(),
             processor: (self.processor).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -35,7 +33,7 @@ impl Encode for TopologyDescriptionGlobalStore<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

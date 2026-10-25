@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::streams_group_topology_description_update_response,
     primitives::{
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
@@ -32,15 +33,12 @@ pub struct StreamsGroupTopologyDescriptionUpdateResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl StreamsGroupTopologyDescriptionUpdateResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse{
-        crate::owned::streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse {
+    pub fn to_owned(&self) -> streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse{
+        streams_group_topology_description_update_response::StreamsGroupTopologyDescriptionUpdateResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -62,14 +60,14 @@ impl Encode for StreamsGroupTopologyDescriptionUpdateResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

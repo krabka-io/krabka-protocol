@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::end_txn_response,
     primitives::fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -35,12 +36,9 @@ impl Default for EndTxnResponse {
     }
 }
 impl EndTxnResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_txn_response::EndTxnResponse {
-        crate::owned::end_txn_response::EndTxnResponse {
+    pub fn to_owned(&self) -> end_txn_response::EndTxnResponse {
+        end_txn_response::EndTxnResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             producer_id: (self.producer_id),
@@ -72,7 +70,7 @@ impl Encode for EndTxnResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

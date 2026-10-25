@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::write_txn_markers_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, put_i16, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -25,12 +27,9 @@ pub struct WriteTxnMarkersResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl WriteTxnMarkersResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::write_txn_markers_response::WriteTxnMarkersResponse {
-        crate::owned::write_txn_markers_response::WriteTxnMarkersResponse {
+    pub fn to_owned(&self) -> write_txn_markers_response::WriteTxnMarkersResponse {
+        write_txn_markers_response::WriteTxnMarkersResponse {
             markers: (self.markers)
                 .iter()
                 .map(WritableTxnMarkerResult::to_owned)
@@ -50,15 +49,15 @@ impl Encode for WriteTxnMarkersResponse<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.markers).len(), flex);
+                put_array_len(buf, (self.markers).len(), flex)?;
                 for it in &self.markers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -67,8 +66,7 @@ impl Encode for WriteTxnMarkersResponse<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.markers).len(), flex);
+                let prefix = array_len_prefix_len((self.markers).len(), flex);
                 let body: usize = (self.markers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -95,7 +93,7 @@ impl<'de> DecodeBorrow<'de> for WriteTxnMarkersResponse<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.markers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(WritableTxnMarkerResult::decode_borrow(buf, version)?);
@@ -127,12 +125,9 @@ pub struct WritableTxnMarkerResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl WritableTxnMarkerResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::write_txn_markers_response::WritableTxnMarkerResult {
-        crate::owned::write_txn_markers_response::WritableTxnMarkerResult {
+    pub fn to_owned(&self) -> write_txn_markers_response::WritableTxnMarkerResult {
+        write_txn_markers_response::WritableTxnMarkerResult {
             producer_id: (self.producer_id),
             topics: (self.topics)
                 .iter()
@@ -150,15 +145,15 @@ impl Encode for WritableTxnMarkerResult<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -170,8 +165,7 @@ impl Encode for WritableTxnMarkerResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -192,7 +186,7 @@ impl<'de> DecodeBorrow<'de> for WritableTxnMarkerResult<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(WritableTxnMarkerTopicResult::decode_borrow(buf, version)?);
@@ -227,15 +221,10 @@ pub struct WritableTxnMarkerTopicResult<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl WritableTxnMarkerTopicResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::write_txn_markers_response::WritableTxnMarkerTopicResult {
-        crate::owned::write_txn_markers_response::WritableTxnMarkerTopicResult {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> write_txn_markers_response::WritableTxnMarkerTopicResult {
+        write_txn_markers_response::WritableTxnMarkerTopicResult {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(WritableTxnMarkerPartitionResult::to_owned)
@@ -249,22 +238,22 @@ impl Encode for WritableTxnMarkerTopicResult<'_> {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -280,8 +269,7 @@ impl Encode for WritableTxnMarkerTopicResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -309,7 +297,7 @@ impl<'de> DecodeBorrow<'de> for WritableTxnMarkerTopicResult<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(WritableTxnMarkerPartitionResult::decode_borrow(
@@ -346,14 +334,9 @@ pub struct WritableTxnMarkerPartitionResult {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl WritableTxnMarkerPartitionResult {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::write_txn_markers_response::WritableTxnMarkerPartitionResult {
-        crate::owned::write_txn_markers_response::WritableTxnMarkerPartitionResult {
+    pub fn to_owned(&self) -> write_txn_markers_response::WritableTxnMarkerPartitionResult {
+        write_txn_markers_response::WritableTxnMarkerPartitionResult {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -371,7 +354,7 @@ impl Encode for WritableTxnMarkerPartitionResult {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -1,4 +1,5 @@
 //! The clock state machine: local events, receive events, and the self-fence.
+#![cfg(test)]
 
 use std::sync::Arc;
 

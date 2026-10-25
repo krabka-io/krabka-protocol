@@ -1,6 +1,8 @@
 //! Record-batch v2 header types: `RecordBatchHeader` (zerocopy),
 //! `Attributes`, `TimestampType`.
 
+use std::ops::Range;
+
 use krabka_compression::CompressionType;
 
 /// Timestamp-type bit in the attributes word.
@@ -136,11 +138,11 @@ const _: [(); HEADER_LEN] = [(); size_of::<RecordBatchHeader>()];
 
 /// Byte offset of the `base_offset` field (i64 BE, 8 bytes) within a v2
 /// record-batch header.
-pub const BASE_OFFSET_RANGE: std::ops::Range<usize> = 0..8;
+pub const BASE_OFFSET_RANGE: Range<usize> = 0..8;
 
 /// Byte offset of the `partition_leader_epoch` field (i32 BE, 4 bytes)
 /// within a v2 record-batch header.
-pub const LEADER_EPOCH_RANGE: std::ops::Range<usize> = 12..16;
+pub const LEADER_EPOCH_RANGE: Range<usize> = 12..16;
 
 /// First byte covered by the v2 batch CRC, which starts at `attributes`.
 ///
@@ -160,12 +162,13 @@ pub const CRC_COVERAGE_START: usize = 21;
 /// and leader epoch without a CRC recomputation and without a change to the
 /// body.
 ///
-/// # Panics
-///
-/// Panics if `buf` is shorter than [`HEADER_LEN`]. Callers must validate the
-/// batch header first, for example with a borrowed decode.
-pub fn patch_base_offset_and_leader_epoch(buf: &mut [u8], base_offset: i64, leader_epoch: i32) {
-    assert2::assert!(buf.len() >= HEADER_LEN);
+/// `buf` is exactly one header, so the caller copies the header out of the
+/// batch first, which also validates its length.
+pub fn patch_base_offset_and_leader_epoch(
+    buf: &mut [u8; HEADER_LEN],
+    base_offset: i64,
+    leader_epoch: i32,
+) {
     buf[BASE_OFFSET_RANGE].copy_from_slice(&base_offset.to_be_bytes());
     buf[LEADER_EPOCH_RANGE].copy_from_slice(&leader_epoch.to_be_bytes());
 }
@@ -414,7 +417,7 @@ mod tests {
 
     #[test]
     fn header_is_exactly_61_bytes() {
-        assert2::assert!(std::mem::size_of::<RecordBatchHeader>() == HEADER_LEN);
+        assert2::assert!(size_of::<RecordBatchHeader>() == HEADER_LEN);
     }
 
     #[test]
@@ -425,7 +428,7 @@ mod tests {
 
     #[test]
     fn patch_writes_only_pre_crc_fields() {
-        let mut buf = sample_header_bytes().to_vec();
+        let mut buf = sample_header_bytes();
         let crc_region_before = buf[CRC_COVERAGE_START..].to_vec();
         let crc_field_before = buf[17..21].to_vec();
 

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_topic_partitions_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -38,14 +40,9 @@ impl Default for DescribeTopicPartitionsRequest<'_> {
     }
 }
 impl DescribeTopicPartitionsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::describe_topic_partitions_request::DescribeTopicPartitionsRequest {
-        crate::owned::describe_topic_partitions_request::DescribeTopicPartitionsRequest {
+    pub fn to_owned(&self) -> describe_topic_partitions_request::DescribeTopicPartitionsRequest {
+        describe_topic_partitions_request::DescribeTopicPartitionsRequest {
             topics: (self.topics).iter().map(TopicRequest::to_owned).collect(),
             response_partition_limit: (self.response_partition_limit),
             cursor: (self.cursor).as_ref().map(Cursor::to_owned),
@@ -64,11 +61,11 @@ impl Encode for DescribeTopicPartitionsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.response_partition_limit);
@@ -86,7 +83,7 @@ impl Encode for DescribeTopicPartitionsRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -95,8 +92,7 @@ impl Encode for DescribeTopicPartitionsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -126,7 +122,7 @@ impl<'de> DecodeBorrow<'de> for DescribeTopicPartitionsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicRequest::decode_borrow(buf, version)?);
@@ -173,13 +169,10 @@ pub struct TopicRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_topic_partitions_request::TopicRequest {
-        crate::owned::describe_topic_partitions_request::TopicRequest {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> describe_topic_partitions_request::TopicRequest {
+        describe_topic_partitions_request::TopicRequest {
+            name: (self.name).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -189,14 +182,14 @@ impl Encode for TopicRequest<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -252,13 +245,10 @@ pub struct Cursor<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Cursor<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_topic_partitions_request::Cursor {
-        crate::owned::describe_topic_partitions_request::Cursor {
-            topic_name: (self.topic_name).to_string(),
+    pub fn to_owned(&self) -> describe_topic_partitions_request::Cursor {
+        describe_topic_partitions_request::Cursor {
+            topic_name: (self.topic_name).to_owned(),
             partition_index: (self.partition_index),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -269,9 +259,9 @@ impl Encode for Cursor<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
@@ -279,7 +269,7 @@ impl Encode for Cursor<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

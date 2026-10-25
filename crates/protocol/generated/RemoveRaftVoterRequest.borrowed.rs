@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remove_raft_voter_request,
     primitives::{
         fixed::{get_i32, put_i32},
         string_bytes::{
@@ -12,6 +13,7 @@ use crate::{
         string_bytes_borrowed::{
             get_compact_nullable_string_borrowed, get_nullable_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -29,7 +31,7 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct RemoveRaftVoterRequest<'a> {
     pub cluster_id: Option<&'a str>,
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for RemoveRaftVoterRequest<'_> {
@@ -37,19 +39,16 @@ impl Default for RemoveRaftVoterRequest<'_> {
         Self {
             cluster_id: Some(""),
             voter_id: 0i32,
-            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            voter_directory_id: Uuid::default(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
 }
 impl RemoveRaftVoterRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::remove_raft_voter_request::RemoveRaftVoterRequest {
-        crate::owned::remove_raft_voter_request::RemoveRaftVoterRequest {
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> remove_raft_voter_request::RemoveRaftVoterRequest {
+        remove_raft_voter_request::RemoveRaftVoterRequest {
+            cluster_id: (self.cluster_id).map(str::to_owned),
             voter_id: (self.voter_id),
             voter_directory_id: (self.voter_directory_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -67,20 +66,20 @@ impl Encode for RemoveRaftVoterRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 0 {
             put_i32(buf, self.voter_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -128,7 +127,7 @@ impl<'de> DecodeBorrow<'de> for RemoveRaftVoterRequest<'de> {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -148,7 +147,7 @@ impl RemoveRaftVoterRequest<'_> {
             m.voter_id = 1i32;
         }
         if version >= 0 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         m
     }

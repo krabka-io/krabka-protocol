@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_cluster_request,
     primitives::fixed::{get_bool, get_i8, put_bool, put_i8},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -34,12 +35,9 @@ impl Default for DescribeClusterRequest {
     }
 }
 impl DescribeClusterRequest {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_cluster_request::DescribeClusterRequest {
-        crate::owned::describe_cluster_request::DescribeClusterRequest {
+    pub fn to_owned(&self) -> describe_cluster_request::DescribeClusterRequest {
+        describe_cluster_request::DescribeClusterRequest {
             include_cluster_authorized_operations: (self.include_cluster_authorized_operations),
             endpoint_type: (self.endpoint_type),
             include_fenced_brokers: (self.include_fenced_brokers),
@@ -67,7 +65,7 @@ impl Encode for DescribeClusterRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

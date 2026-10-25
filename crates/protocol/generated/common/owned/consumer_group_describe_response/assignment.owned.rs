@@ -3,6 +3,7 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    primitives::array::{array_len_prefix_len, get_array_len, put_array_len},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -15,15 +16,15 @@ impl Encode for Assignment {
         let flex = version >= 0;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_partitions).len(), flex);
+                put_array_len(buf, (self.topic_partitions).len(), flex)?;
                 for it in &self.topic_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -32,10 +33,7 @@ impl Encode for Assignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_partitions).len(), flex);
                 let body: usize = (self.topic_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -56,7 +54,7 @@ impl Decode<'_> for Assignment {
         let mut out = Self::default();
         if version >= 0 {
             out.topic_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::topic_partitions::TopicPartitions::decode(

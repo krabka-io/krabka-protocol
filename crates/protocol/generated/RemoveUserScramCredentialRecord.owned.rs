@@ -37,9 +37,9 @@ impl Encode for RemoveUserScramCredentialRecord {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -47,7 +47,7 @@ impl Encode for RemoveUserScramCredentialRecord {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -102,7 +102,7 @@ impl RemoveUserScramCredentialRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.mechanism = 1i8;
@@ -117,9 +117,9 @@ impl RemoveUserScramCredentialRecord {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "name".to_string(),
+        "name".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("mechanism".to_string(), ::serde_json::json!(0));
+    obj.insert("mechanism".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

@@ -11,6 +11,7 @@ use crate::{
             get_nullable_string_owned, nullable_string_len, put_compact_nullable_string,
             put_nullable_string,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -28,7 +29,7 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct RemoveRaftVoterRequest {
     pub cluster_id: Option<String>,
     pub voter_id: i32,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub voter_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for RemoveRaftVoterRequest {
@@ -36,7 +37,7 @@ impl Default for RemoveRaftVoterRequest {
         Self {
             cluster_id: Some(String::new()),
             voter_id: 0i32,
-            voter_directory_id: crate::primitives::uuid::Uuid::default(),
+            voter_directory_id: Uuid::default(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -52,20 +53,20 @@ impl Encode for RemoveRaftVoterRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id.as_deref());
+                put_compact_nullable_string(buf, self.cluster_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id.as_deref());
+                put_nullable_string(buf, self.cluster_id.as_deref())?;
             }
         }
         if version >= 0 {
             put_i32(buf, self.voter_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -113,7 +114,7 @@ impl Decode<'_> for RemoveRaftVoterRequest {
             out.voter_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -127,13 +128,13 @@ impl RemoveRaftVoterRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.voter_id = 1i32;
         }
         if version >= 0 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -145,13 +146,13 @@ impl RemoveRaftVoterRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "clusterId".to_string(),
+        "clusterId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("voterId".to_string(), ::serde_json::json!(0));
+    obj.insert("voterId".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "voterDirectoryId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "voterDirectoryId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
     ::serde_json::Value::Object(obj)
 }

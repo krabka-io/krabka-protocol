@@ -3,11 +3,12 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::user_scram_credential_record,
     primitives::{
         fixed::{get_i8, get_i32, put_i8, put_i32},
         string_bytes::{
-            compact_string_len, put_bytes, put_compact_bytes, put_compact_string, put_string,
-            string_len,
+            bytes_len, compact_bytes_len, compact_string_len, put_bytes, put_compact_bytes,
+            put_compact_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_string_borrowed,
@@ -35,15 +36,10 @@ pub struct UserScramCredentialRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl UserScramCredentialRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::user_scram_credential_record::UserScramCredentialRecord {
-        crate::owned::user_scram_credential_record::UserScramCredentialRecord {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> user_scram_credential_record::UserScramCredentialRecord {
+        user_scram_credential_record::UserScramCredentialRecord {
+            name: (self.name).to_owned(),
             mechanism: (self.mechanism),
             salt: Bytes::copy_from_slice(self.salt),
             stored_key: Bytes::copy_from_slice(self.stored_key),
@@ -63,9 +59,9 @@ impl Encode for UserScramCredentialRecord<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -73,23 +69,23 @@ impl Encode for UserScramCredentialRecord<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.salt);
+                put_compact_bytes(buf, self.salt)?;
             } else {
-                let () = put_bytes(buf, self.salt);
+                put_bytes(buf, self.salt)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.stored_key);
+                put_compact_bytes(buf, self.stored_key)?;
             } else {
-                let () = put_bytes(buf, self.stored_key);
+                put_bytes(buf, self.stored_key)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.server_key);
+                put_compact_bytes(buf, self.server_key)?;
             } else {
-                let () = put_bytes(buf, self.server_key);
+                put_bytes(buf, self.server_key)?;
             }
         }
         if version >= 0 {
@@ -97,7 +93,7 @@ impl Encode for UserScramCredentialRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -116,29 +112,23 @@ impl Encode for UserScramCredentialRecord<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.salt).len() + 1).unwrap(),
-                ) + (self.salt).len()
+                compact_bytes_len(self.salt)
             } else {
-                4 + (self.salt).len()
+                bytes_len(self.salt)
             };
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.stored_key).len() + 1).unwrap(),
-                ) + (self.stored_key).len()
+                compact_bytes_len(self.stored_key)
             } else {
-                4 + (self.stored_key).len()
+                bytes_len(self.stored_key)
             };
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.server_key).len() + 1).unwrap(),
-                ) + (self.server_key).len()
+                compact_bytes_len(self.server_key)
             } else {
-                4 + (self.server_key).len()
+                bytes_len(self.server_key)
             };
         }
         if version >= 0 {

@@ -1,6 +1,9 @@
+#![cfg(test)]
+
 use std::path::PathBuf;
 
 use assert2::assert;
+use krabka_protocol_codegen::ir::{self, MessageType};
 
 #[test]
 fn every_vendored_schema_parses() {
@@ -10,7 +13,7 @@ fn every_vendored_schema_parses() {
         .join("protocol")
         .join("schemas");
 
-    let specs = krabka_protocol_codegen::ir::load_dir(&dir).expect("schemas must parse");
+    let specs = ir::load_dir(&dir).expect("schemas must parse");
 
     assert!(
         specs.len() > 50,
@@ -24,8 +27,5 @@ fn every_vendored_schema_parses() {
         .find(|s| s.name == "ApiVersionsRequest")
         .unwrap();
     assert!(api_versions.valid_versions.contains(0));
-    assert!(matches!(
-        api_versions.message_type,
-        krabka_protocol_codegen::ir::MessageType::Request
-    ));
+    assert!(matches!(api_versions.message_type, MessageType::Request));
 }

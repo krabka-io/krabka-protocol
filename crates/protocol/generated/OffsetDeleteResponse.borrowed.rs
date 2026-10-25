@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::offset_delete_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,12 +28,9 @@ pub struct OffsetDeleteResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_response::OffsetDeleteResponse {
-        crate::owned::offset_delete_response::OffsetDeleteResponse {
+    pub fn to_owned(&self) -> offset_delete_response::OffsetDeleteResponse {
+        offset_delete_response::OffsetDeleteResponse {
             error_code: (self.error_code),
             throttle_time_ms: (self.throttle_time_ms),
             topics: (self.topics)
@@ -59,11 +58,11 @@ impl Encode for OffsetDeleteResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -78,8 +77,7 @@ impl Encode for OffsetDeleteResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -105,7 +103,7 @@ impl<'de> DecodeBorrow<'de> for OffsetDeleteResponse<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetDeleteResponseTopic::decode_borrow(buf, version)?);
@@ -140,13 +138,10 @@ pub struct OffsetDeleteResponseTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteResponseTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_response::OffsetDeleteResponseTopic {
-        crate::owned::offset_delete_response::OffsetDeleteResponseTopic {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> offset_delete_response::OffsetDeleteResponseTopic {
+        offset_delete_response::OffsetDeleteResponseTopic {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(OffsetDeleteResponsePartition::to_owned)
@@ -160,18 +155,18 @@ impl Encode for OffsetDeleteResponseTopic<'_> {
         let flex = version == i16::MAX;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -187,8 +182,7 @@ impl Encode for OffsetDeleteResponseTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -212,7 +206,7 @@ impl<'de> DecodeBorrow<'de> for OffsetDeleteResponseTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetDeleteResponsePartition::decode_borrow(buf, version)?);
@@ -244,12 +238,9 @@ pub struct OffsetDeleteResponsePartition {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl OffsetDeleteResponsePartition {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_delete_response::OffsetDeleteResponsePartition {
-        crate::owned::offset_delete_response::OffsetDeleteResponsePartition {
+    pub fn to_owned(&self) -> offset_delete_response::OffsetDeleteResponsePartition {
+        offset_delete_response::OffsetDeleteResponsePartition {
             partition_index: (self.partition_index),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),

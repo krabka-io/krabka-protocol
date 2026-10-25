@@ -7,10 +7,16 @@
 //! new variant goes at the end. The golden bytes in `wincode_contract.rs` pin
 //! one value of every variant.
 
+use std::collections::BTreeMap;
+
 pub use krabka_ids::LeaderEpoch;
 pub use krabka_voters::NodeId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::{
+    break_glass::BreakGlassProposalRecord, voters::VoterSet, write_freeze::TopicFreezeRecord,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TopicRecord {
@@ -64,13 +70,14 @@ pub struct PartitionRecord {
     pub partition_epoch: i32,
 }
 
-/// KIP-858 directory-assignment delta. A broker reports which log-dir UUID
-/// hosts its replica of `(topic, partition)`. Apply treats it as a DELTA: it
-/// sets ONLY the slot of the reporting replica in
-/// `PartitionRecord.directories` and never touches leader, isr, replicas,
-/// adding, or removing. It therefore cannot clobber a concurrent reassignment
-/// or ISR change. On the `KRaft` log it is encoded as Kafka's standard
-/// `PartitionChangeRecord` with only the directories field set.
+/// KIP-858 directory-assignment delta.
+///
+/// A broker reports which log-dir UUID hosts its replica of `(topic,
+/// partition)`. Apply treats it as a DELTA: it sets ONLY the slot of the
+/// reporting replica in `PartitionRecord.directories` and never touches leader,
+/// isr, replicas, adding, or removing. It therefore cannot clobber a concurrent
+/// reassignment or ISR change. On the `KRaft` log it is encoded as Kafka's
+/// standard `PartitionChangeRecord` with only the directories field set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartitionDirAssignmentRecord {
     pub topic: String,
@@ -131,11 +138,12 @@ pub struct PartitionUpdateRecord {
     pub recovery_state: Option<LeaderRecoveryState>,
 }
 
-/// A single named listener endpoint advertised by a broker. It is stored as a
-/// list on [`BrokerRegistrationRecord::endpoints`], so KRaft-style metadata
-/// can advertise per-listener `host:port` and protocol triples to clients on
-/// `Metadata` v9+. A legacy single-listener broker leaves the list empty and
-/// relies on the top-level `host` and `port` fields.
+/// A single named listener endpoint advertised by a broker.
+///
+/// It is stored as a list on [`BrokerRegistrationRecord::endpoints`], so
+/// KRaft-style metadata can advertise per-listener `host:port` and protocol
+/// triples to clients on `Metadata` v9+. A legacy single-listener broker leaves
+/// the list empty and relies on the top-level `host` and `port` fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrokerEndpoint {
     /// Listener name (e.g. `"PLAINTEXT"`, `"SSL"`, `"SASL_SSL"`).
@@ -189,7 +197,7 @@ pub struct BrokerRegistrationRecord {
     /// Empty only for legacy Krabka snapshots written before the ranges were
     /// retained in the image.
     #[serde(default)]
-    pub features: std::collections::BTreeMap<String, (i16, i16)>,
+    pub features: BTreeMap<String, (i16, i16)>,
 }
 
 /// KIP-919 controller registration persisted in the metadata log.
@@ -204,7 +212,7 @@ pub struct ControllerRegistrationRecord {
     pub incarnation_id: Uuid,
     pub zk_migration_ready: bool,
     pub endpoints: Vec<BrokerEndpoint>,
-    pub features: std::collections::BTreeMap<String, (i16, i16)>,
+    pub features: BTreeMap<String, (i16, i16)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,10 +221,11 @@ pub struct DeleteTopicRecord {
 }
 
 /// KIP-919 / `UnregisterBroker` (`api_key` 64), Kafka's
-/// `UnregisterBrokerRecord` (metadata apiKey 1). Marks a broker as
-/// permanently unregistered: the admin operator confirms that the broker is
-/// gone for good and asks the cluster to drop its registration entry
-/// from the metadata image. Later `Metadata` responses no longer
+/// `UnregisterBrokerRecord` (metadata apiKey 1).
+///
+/// Marks a broker as permanently unregistered: the admin operator confirms that
+/// the broker is gone for good and asks the cluster to drop its registration
+/// entry from the metadata image. Later `Metadata` responses no longer
 /// advertise the endpoints of the broker, and clients stop routing to it.
 ///
 /// As in `ClusterControlManager.replay(UnregisterBrokerRecord)`, the record
@@ -335,22 +344,24 @@ impl BrokerRegistrationChangeRecord {
 }
 
 /// KIP-1312 `UnregisterController` (`api_key` 94), Kafka trunk's
-/// `UnregisterControllerRecord` (metadata apiKey 29). Removes the
-/// registration of one controller. An apply against an unknown `node_id`
-/// does nothing.
+/// `UnregisterControllerRecord` (metadata apiKey 29).
+///
+/// Removes the registration of one controller. An apply against an unknown
+/// `node_id` does nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnregisterControllerRecord {
     pub node_id: NodeId,
 }
 
-/// Mutable topic configuration overrides. Authoritative target state:
-/// each `V1TopicConfig` record fully replaces the previous override map
-/// for `topic`. An empty map clears all overrides. The `AlterConfigs`
-/// handler merges before it submits the record.
+/// Mutable topic configuration overrides.
+///
+/// Authoritative target state: each `V1TopicConfig` record fully replaces the
+/// previous override map for `topic`. An empty map clears all overrides. The
+/// `AlterConfigs` handler merges before it submits the record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TopicConfigRecord {
     pub topic: String,
-    pub overrides: std::collections::BTreeMap<String, String>,
+    pub overrides: BTreeMap<String, String>,
 }
 
 /// Per-broker configuration key/value pair. `Some(value)` = set; `None` = delete.
@@ -371,15 +382,16 @@ pub struct BrokerConfigRecord {
 /// this value cannot collide with a real broker.
 pub const DEFAULT_BROKER_CONFIG_NODE_ID: NodeId = NodeId(u64::MAX);
 
-/// KIP-714 client-metrics subscription config. Authoritative target
-/// state: each `V1ClientMetricsConfig` fully replaces the previous
-/// override map for `name`, the subscription name. An empty map deletes
-/// the subscription. The `IncrementalAlterConfigs` handler merges before it
-/// submits the record, in the same pattern as [`TopicConfigRecord`].
+/// KIP-714 client-metrics subscription config.
+///
+/// Authoritative target state: each `V1ClientMetricsConfig` fully replaces the
+/// previous override map for `name`, the subscription name. An empty map
+/// deletes the subscription. The `IncrementalAlterConfigs` handler merges
+/// before it submits the record, in the same pattern as [`TopicConfigRecord`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientMetricsConfigRecord {
     pub name: String,
-    pub configs: std::collections::BTreeMap<String, String>,
+    pub configs: BTreeMap<String, String>,
 }
 
 /// KIP-1071 dynamic configuration for one group resource. Each record is the
@@ -387,10 +399,10 @@ pub struct ClientMetricsConfigRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupConfigRecord {
     pub group_id: String,
-    pub configs: std::collections::BTreeMap<String, String>,
+    pub configs: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuotaEntity {
     pub entity_type: String,
     pub entity_name: Option<String>,
@@ -430,6 +442,7 @@ pub struct DeleteScramCredentialRecord {
 }
 
 /// A single delegation token's authoritative state (KIP-48).
+///
 /// The record has replacement semantics: a new record with the same
 /// `token_id` overwrites the prior one in the image. Both Create and Renew
 /// use that. Removal goes through
@@ -471,14 +484,15 @@ pub struct KRaftVersionRecord {
 /// KIP-853: full snapshot of the controller voter set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VotersRecord {
-    pub voters: crate::voters::VoterSet,
+    pub voters: VoterSet,
 }
 
-/// KIP-584 finalized feature level. `level` is the finalized
-/// `max_version_level` for `name`. `level == 0` is the KIP-584 sentinel
-/// for "delete this finalized feature": `MetadataImage::apply` removes the
-/// entry and does not store a zero. Replacement semantics: a later record
-/// with the same `name` overwrites the previous level.
+/// KIP-584 finalized feature level.
+///
+/// `level` is the finalized `max_version_level` for `name`. `level == 0` is the
+/// KIP-584 sentinel for "delete this finalized feature": `MetadataImage::apply`
+/// removes the entry and does not store a zero. Replacement semantics: a later
+/// record with the same `name` overwrites the previous level.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureLevelRecord {
     pub name: String,
@@ -547,12 +561,12 @@ pub enum MetadataRecord {
     /// [`TopicFreezeRecord`](crate::write_freeze::TopicFreezeRecord)).
     /// `frozen: false` removes the entry and is the thaw, so the registry
     /// needs no separate tombstone record.
-    V1TopicFreeze(crate::write_freeze::TopicFreezeRecord),
+    V1TopicFreeze(TopicFreezeRecord),
     /// One break-glass proposal (see
     /// [`BreakGlassProposalRecord`](crate::break_glass::BreakGlassProposalRecord)).
     /// Replacement semantics on `proposal_id`: an approval and a consumption
     /// each write the whole record back.
-    V1BreakGlassProposal(crate::break_glass::BreakGlassProposalRecord),
+    V1BreakGlassProposal(BreakGlassProposalRecord),
     /// Tombstone that removes a break-glass proposal by id. The expiry sweep
     /// emits it, in the same shape as `V1DeleteDelegationToken`.
     V1DeleteBreakGlassProposal(Uuid),
@@ -577,6 +591,10 @@ mod tests {
     use wincode::{Deserialize as _, Serialize as _};
 
     use super::*;
+    use crate::{
+        break_glass::{BreakGlassAction, BreakGlassApproval},
+        voters::{KRaftVersionRange, Voter, VoterEndpoint},
+    };
 
     fn round_trip(r: &MetadataRecord) -> MetadataRecord {
         let bytes = <SerdeCompat<MetadataRecord>>::serialize(r).unwrap();
@@ -596,10 +614,7 @@ mod tests {
     fn group_config_round_trip() {
         let r = MetadataRecord::V1GroupConfig(GroupConfigRecord {
             group_id: "streams-app".into(),
-            configs: std::collections::BTreeMap::from([(
-                "streams.num.standby.replicas".into(),
-                "1".into(),
-            )]),
+            configs: BTreeMap::from([("streams.num.standby.replicas".into(), "1".into())]),
         });
         assert2::assert!(round_trip(&r) == r);
     }
@@ -616,7 +631,7 @@ mod tests {
                 port: 9093,
                 protocol: krabka_security::ListenerProtocol::Plaintext,
             }],
-            features: std::collections::BTreeMap::from([("metadata.version".into(), (7, 25))]),
+            features: BTreeMap::from([("metadata.version".into(), (7, 25))]),
         });
         assert2::assert!(round_trip(&r) == r);
     }
@@ -690,7 +705,7 @@ mod tests {
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
             endpoints: vec![],
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         });
         assert2::assert!(round_trip(&r) == r);
     }
@@ -714,7 +729,7 @@ mod tests {
                 port: 9092,
                 protocol: krabka_security::ListenerProtocol::SaslSsl,
             }],
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         });
         assert2::assert!(round_trip(&r) == r);
     }
@@ -796,7 +811,7 @@ mod tests {
             fenced: true,
             in_controlled_shutdown: false,
             cordoned_log_dirs: None,
-            features: std::collections::BTreeMap::new(),
+            features: BTreeMap::new(),
         };
         let base = BrokerRegistrationChangeRecord::no_change(NodeId(4), 12);
         let with = |edit: fn(&mut BrokerRegistrationRecord)| {
@@ -851,9 +866,9 @@ mod tests {
 
     #[test]
     fn topic_config_record_round_trip() {
-        let mut overrides = std::collections::BTreeMap::new();
-        overrides.insert("retention.ms".to_string(), "60000".to_string());
-        overrides.insert("segment.bytes".to_string(), "1048576".to_string());
+        let mut overrides = BTreeMap::new();
+        overrides.insert("retention.ms".to_owned(), "60000".to_owned());
+        overrides.insert("segment.bytes".to_owned(), "1048576".to_owned());
         let r = MetadataRecord::V1TopicConfig(TopicConfigRecord {
             topic: "t".into(),
             overrides,
@@ -976,15 +991,15 @@ mod tests {
     #[test]
     fn voters_record_round_trips() {
         let rec = MetadataRecord::V1Voters(VotersRecord {
-            voters: crate::voters::VoterSet::from_voters([crate::voters::Voter {
+            voters: VoterSet::from_voters([Voter {
                 id: NodeId(7),
                 directory_id: uuid::Uuid::from_u128(7),
-                endpoints: vec![crate::voters::VoterEndpoint {
+                endpoints: vec![VoterEndpoint {
                     name: "CONTROLLER".into(),
                     host: "h".into(),
                     port: 1,
                 }],
-                kraft_version: crate::voters::KRaftVersionRange::default(),
+                kraft_version: KRaftVersionRange::default(),
             }]),
         });
         assert2::assert!(round_trip(&rec) == rec);
@@ -998,11 +1013,11 @@ mod tests {
 
     #[test]
     fn client_metrics_config_round_trip() {
-        let mut overrides = std::collections::BTreeMap::new();
-        overrides.insert("interval.ms".to_string(), "60000".to_string());
+        let mut overrides = BTreeMap::new();
+        overrides.insert("interval.ms".to_owned(), "60000".to_owned());
         overrides.insert(
-            "metrics".to_string(),
-            "org.apache.kafka.consumer.".to_string(),
+            "metrics".to_owned(),
+            "org.apache.kafka.consumer.".to_owned(),
         );
         let r = MetadataRecord::V1ClientMetricsConfig(ClientMetricsConfigRecord {
             name: "sub-a".into(),
@@ -1013,7 +1028,7 @@ mod tests {
 
     #[test]
     fn topic_freeze_round_trip() {
-        let r = MetadataRecord::V1TopicFreeze(crate::write_freeze::TopicFreezeRecord {
+        let r = MetadataRecord::V1TopicFreeze(TopicFreezeRecord {
             scope: "tenant-a.".into(),
             pattern_type: crate::PatternType::Prefixed,
             frozen: true,
@@ -1029,24 +1044,23 @@ mod tests {
 
     #[test]
     fn break_glass_proposal_round_trip() {
-        let r =
-            MetadataRecord::V1BreakGlassProposal(crate::break_glass::BreakGlassProposalRecord {
-                proposal_id: Uuid::from_u128(0xB1),
-                action: crate::break_glass::BreakGlassAction::ThawTopicFreeze,
-                target: "literal:orders".into(),
-                proposer: "User:alice".into(),
-                reason: "incident 4711 closed".into(),
-                created_at_ms: 1_700_000_000_000,
-                expires_at_ms: 1_700_000_600_000,
-                approvals: vec![crate::break_glass::BreakGlassApproval {
-                    principal: "User:bob".into(),
-                    approved_at_ms: 1_700_000_060_000,
-                    key_id: "bob-yubi".into(),
-                    signature: vec![0xCD; 64],
-                }],
-                consumed_at_ms: 0,
-                withdrawn: false,
-            });
+        let r = MetadataRecord::V1BreakGlassProposal(BreakGlassProposalRecord {
+            proposal_id: Uuid::from_u128(0xB1),
+            action: BreakGlassAction::ThawTopicFreeze,
+            target: "literal:orders".into(),
+            proposer: "User:alice".into(),
+            reason: "incident 4711 closed".into(),
+            created_at_ms: 1_700_000_000_000,
+            expires_at_ms: 1_700_000_600_000,
+            approvals: vec![BreakGlassApproval {
+                principal: "User:bob".into(),
+                approved_at_ms: 1_700_000_060_000,
+                key_id: "bob-yubi".into(),
+                signature: vec![0xCD; 64],
+            }],
+            consumed_at_ms: 0,
+            withdrawn: false,
+        });
         assert2::assert!(round_trip(&r) == r);
     }
 

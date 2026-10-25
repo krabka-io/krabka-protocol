@@ -3,14 +3,18 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::fetch_snapshot_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, nullable_string_len,
-            put_compact_nullable_string, put_compact_string, put_nullable_string, put_string,
-            string_len,
+            compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
+            get_nullable_string_owned, nullable_string_len, put_compact_nullable_string,
+            put_compact_string, put_nullable_string, put_string, string_len,
         },
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -44,12 +48,9 @@ impl Default for FetchSnapshotRequest<'_> {
     }
 }
 impl FetchSnapshotRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_request::FetchSnapshotRequest {
-        crate::owned::fetch_snapshot_request::FetchSnapshotRequest {
+    pub fn to_owned(&self) -> fetch_snapshot_request::FetchSnapshotRequest {
+        fetch_snapshot_request::FetchSnapshotRequest {
             replica_id: (self.replica_id),
             max_bytes: (self.max_bytes),
             topics: (self.topics).iter().map(TopicSnapshot::to_owned).collect(),
@@ -75,11 +76,11 @@ impl Encode for FetchSnapshotRequest<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
@@ -92,16 +93,16 @@ impl Encode for FetchSnapshotRequest<'_> {
                     },
                     |b| {
                         if flex {
-                            let () = put_compact_nullable_string(b, self.cluster_id.as_deref());
+                            put_compact_nullable_string(b, self.cluster_id.as_deref())?;
                         } else {
-                            let () = put_nullable_string(b, self.cluster_id.as_deref());
+                            put_nullable_string(b, self.cluster_id.as_deref())?;
                         }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -116,8 +117,7 @@ impl Encode for FetchSnapshotRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -157,7 +157,7 @@ impl<'de> DecodeBorrow<'de> for FetchSnapshotRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicSnapshot::decode_borrow(buf, version)?);
@@ -172,9 +172,9 @@ impl<'de> DecodeBorrow<'de> for FetchSnapshotRequest<'de> {
                     tag_cluster_id = Some({
                         let b: &mut &[u8] = payload;
                         if flex {
-                            crate::primitives::string_bytes::get_compact_nullable_string_owned(b)?
+                            get_compact_nullable_string_owned(b)?
                         } else {
-                            crate::primitives::string_bytes::get_nullable_string_owned(b)?
+                            get_nullable_string_owned(b)?
                         }
                     });
                     Ok(true)
@@ -203,7 +203,7 @@ impl FetchSnapshotRequest<'_> {
             m.topics = vec![TopicSnapshot::populated(version)];
         }
         if version >= 0 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         m
     }
@@ -215,13 +215,10 @@ pub struct TopicSnapshot<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicSnapshot<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_request::TopicSnapshot {
-        crate::owned::fetch_snapshot_request::TopicSnapshot {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> fetch_snapshot_request::TopicSnapshot {
+        fetch_snapshot_request::TopicSnapshot {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionSnapshot::to_owned)
@@ -235,22 +232,22 @@ impl Encode for TopicSnapshot<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -266,8 +263,7 @@ impl Encode for TopicSnapshot<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -295,7 +291,7 @@ impl<'de> DecodeBorrow<'de> for TopicSnapshot<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionSnapshot::decode_borrow(buf, version)?);
@@ -329,16 +325,13 @@ pub struct PartitionSnapshot {
     pub current_leader_epoch: i32,
     pub snapshot_id: SnapshotId,
     pub position: i64,
-    pub replica_directory_id: crate::primitives::uuid::Uuid,
+    pub replica_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionSnapshot {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_request::PartitionSnapshot {
-        crate::owned::fetch_snapshot_request::PartitionSnapshot {
+    pub fn to_owned(&self) -> fetch_snapshot_request::PartitionSnapshot {
+        fetch_snapshot_request::PartitionSnapshot {
             partition: (self.partition),
             current_leader_epoch: (self.current_leader_epoch),
             snapshot_id: (self.snapshot_id).to_owned(),
@@ -365,14 +358,14 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(is_default(&self.replica_directory_id)) {
                 let payload = encode_to_bytes(16, |b| {
-                    crate::primitives::uuid::put_uuid(b, self.replica_directory_id);
+                    put_uuid(b, self.replica_directory_id);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -393,7 +386,7 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(is_default(&self.replica_directory_id)) {
                 known_pairs.push((0, 16));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -423,7 +416,7 @@ impl<'de> DecodeBorrow<'de> for PartitionSnapshot {
                 0 if version >= 1 => {
                     tag_replica_directory_id = Some({
                         let b: &mut &[u8] = payload;
-                        crate::primitives::uuid::get_uuid(b)?
+                        get_uuid(b)?
                     });
                     Ok(true)
                 }
@@ -455,7 +448,7 @@ impl PartitionSnapshot {
             m.position = 1i64;
         }
         if version >= 1 {
-            m.replica_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.replica_directory_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -467,12 +460,9 @@ pub struct SnapshotId {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SnapshotId {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_request::SnapshotId {
-        crate::owned::fetch_snapshot_request::SnapshotId {
+    pub fn to_owned(&self) -> fetch_snapshot_request::SnapshotId {
+        fetch_snapshot_request::SnapshotId {
             end_offset: (self.end_offset),
             epoch: (self.epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -490,7 +480,7 @@ impl Encode for SnapshotId {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -1,4 +1,5 @@
 //! Owned wire encoding agrees with the generic encoder and decodes completely.
+#![cfg(test)]
 
 use bytes::{Bytes, BytesMut};
 use krabka_compression::CompressionType;
@@ -54,11 +55,11 @@ fn owned_wire_preserves_batch_fields_and_bytes() {
                     batch.records.clear();
                 }
                 let mut expected = BytesMut::new();
-                batch.encode(&mut expected).unwrap();
+                batch.encode_batch(&mut expected).unwrap();
                 let wire = batch.encode_to_bytes().unwrap();
                 assert2::assert!(wire.as_ref() == expected.as_ref());
                 let mut cursor = wire.as_ref();
-                let decoded = RecordBatch::decode(&mut cursor).unwrap();
+                let decoded = RecordBatch::decode_batch(&mut cursor).unwrap();
                 assert2::assert!((decoded, cursor.is_empty()) == (batch.clone(), true));
             }
         }

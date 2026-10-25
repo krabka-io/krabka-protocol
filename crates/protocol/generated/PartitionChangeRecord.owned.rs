@@ -4,7 +4,11 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i8, get_i32, put_i8, put_i32},
+    primitives::{
+        array::{get_nullable_array_len, nullable_array_len_prefix_len, put_nullable_array_len},
+        fixed::{get_i8, get_i32, put_i8, put_i32},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -18,14 +22,14 @@ pub fn is_flexible(version: i16) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartitionChangeRecord {
     pub partition_id: i32,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub isr: Option<Vec<i32>>,
     pub leader: i32,
     pub replicas: Option<Vec<i32>>,
     pub removing_replicas: Option<Vec<i32>>,
     pub adding_replicas: Option<Vec<i32>>,
     pub leader_recovery_state: i8,
-    pub directories: Option<Vec<crate::primitives::uuid::Uuid>>,
+    pub directories: Option<Vec<Uuid>>,
     pub eligible_leader_replicas: Option<Vec<i32>>,
     pub last_known_elr: Option<Vec<i32>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
@@ -34,7 +38,7 @@ impl Default for PartitionChangeRecord {
     fn default() -> Self {
         Self {
             partition_id: -1i32,
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             isr: None,
             leader: -2i32,
             replicas: None,
@@ -56,210 +60,195 @@ impl PartitionChangeRecord {
     }
     fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
             if self.isr.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.isr).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.isr).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.isr {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
             if self.leader != -2i32 {
                 let payload = encode_to_bytes(4, |b| {
                     put_i32(b, self.leader);
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
             if self.replicas.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.replicas).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.replicas).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.replicas {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(2, payload);
             }
             if self.removing_replicas.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.removing_replicas).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.removing_replicas).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.removing_replicas {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(3, payload);
             }
             if self.adding_replicas.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.adding_replicas).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.adding_replicas).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.adding_replicas {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(4, payload);
             }
             if self.leader_recovery_state != -1i8 {
                 let payload = encode_to_bytes(1, |b| {
                     put_i8(b, self.leader_recovery_state);
                     Ok(())
-                });
+                })?;
                 tagged.add(5, payload);
             }
             if version >= 1 && self.directories.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.directories).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.directories).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.directories {
                                 for it in v {
-                                    crate::primitives::uuid::put_uuid(b, *it);
+                                    put_uuid(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(8, payload);
             }
             if version >= 2 && self.eligible_leader_replicas.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.eligible_leader_replicas).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.eligible_leader_replicas).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.eligible_leader_replicas {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(6, payload);
             }
             if version >= 2 && self.last_known_elr.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.last_known_elr).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.last_known_elr).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.last_known_elr {
                                 for it in v {
                                     put_i32(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(7, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -279,7 +268,7 @@ impl PartitionChangeRecord {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -304,7 +293,7 @@ impl PartitionChangeRecord {
                     tag_isr = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -330,7 +319,7 @@ impl PartitionChangeRecord {
                     tag_replicas = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -349,7 +338,7 @@ impl PartitionChangeRecord {
                     tag_removing_replicas = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -368,7 +357,7 @@ impl PartitionChangeRecord {
                     tag_adding_replicas = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -394,13 +383,13 @@ impl PartitionChangeRecord {
                     tag_directories = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
                                     let mut v = Vec::with_capacity(n);
                                     for _ in 0..n {
-                                        v.push(crate::primitives::uuid::get_uuid(b)?);
+                                        v.push(get_uuid(b)?);
                                     }
                                     Some(v)
                                 }
@@ -414,7 +403,7 @@ impl PartitionChangeRecord {
                     tag_eligible_leader_replicas = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -434,7 +423,7 @@ impl PartitionChangeRecord {
                     tag_last_known_elr = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
@@ -493,7 +482,7 @@ impl Encode for PartitionChangeRecord {
         let flex = is_flexible(version);
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -510,10 +499,7 @@ impl Encode for PartitionChangeRecord {
             if self.isr.is_some() {
                 known_pairs.push((0, {
                     let opt: Option<&Vec<_>> = (self.isr).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -524,10 +510,7 @@ impl Encode for PartitionChangeRecord {
             if self.replicas.is_some() {
                 known_pairs.push((2, {
                     let opt: Option<&Vec<_>> = (self.replicas).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -535,10 +518,7 @@ impl Encode for PartitionChangeRecord {
             if self.removing_replicas.is_some() {
                 known_pairs.push((3, {
                     let opt: Option<&Vec<_>> = (self.removing_replicas).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -546,10 +526,7 @@ impl Encode for PartitionChangeRecord {
             if self.adding_replicas.is_some() {
                 known_pairs.push((4, {
                     let opt: Option<&Vec<_>> = (self.adding_replicas).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -560,10 +537,7 @@ impl Encode for PartitionChangeRecord {
             if version >= 1 && self.directories.is_some() {
                 known_pairs.push((8, {
                     let opt: Option<&Vec<_>> = (self.directories).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                     prefix + body
                 }));
@@ -571,10 +545,7 @@ impl Encode for PartitionChangeRecord {
             if version >= 2 && self.eligible_leader_replicas.is_some() {
                 known_pairs.push((6, {
                     let opt: Option<&Vec<_>> = (self.eligible_leader_replicas).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -582,10 +553,7 @@ impl Encode for PartitionChangeRecord {
             if version >= 2 && self.last_known_elr.is_some() {
                 known_pairs.push((7, {
                     let opt: Option<&Vec<_>> = (self.last_known_elr).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 4).sum());
                     prefix + body
                 }));
@@ -619,7 +587,7 @@ impl PartitionChangeRecord {
             m.partition_id = 1i32;
         }
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.isr = Some(vec![1i32]);
@@ -640,7 +608,7 @@ impl PartitionChangeRecord {
             m.leader_recovery_state = 1i8;
         }
         if version >= 1 {
-            m.directories = Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]);
+            m.directories = Some(vec![Uuid([1u8; 16])]);
         }
         if version >= 2 {
             m.eligible_leader_replicas = Some(vec![1i32]);
@@ -657,28 +625,28 @@ impl PartitionChangeRecord {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("partitionId".to_string(), ::serde_json::json!(-1));
+    obj.insert("partitionId".to_owned(), ::serde_json::json!(-1));
     obj.insert(
-        "topicId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "topicId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("isr".to_string(), ::serde_json::Value::Null);
-    obj.insert("leader".to_string(), ::serde_json::json!(-2));
-    obj.insert("replicas".to_string(), ::serde_json::Value::Null);
-    obj.insert("removingReplicas".to_string(), ::serde_json::Value::Null);
-    obj.insert("addingReplicas".to_string(), ::serde_json::Value::Null);
-    obj.insert("leaderRecoveryState".to_string(), ::serde_json::json!(-1));
+    obj.insert("isr".to_owned(), ::serde_json::Value::Null);
+    obj.insert("leader".to_owned(), ::serde_json::json!(-2));
+    obj.insert("replicas".to_owned(), ::serde_json::Value::Null);
+    obj.insert("removingReplicas".to_owned(), ::serde_json::Value::Null);
+    obj.insert("addingReplicas".to_owned(), ::serde_json::Value::Null);
+    obj.insert("leaderRecoveryState".to_owned(), ::serde_json::json!(-1));
     if version >= 1 {
-        obj.insert("directories".to_string(), ::serde_json::Value::Null);
+        obj.insert("directories".to_owned(), ::serde_json::Value::Null);
     }
     if version >= 2 {
         obj.insert(
-            "eligibleLeaderReplicas".to_string(),
+            "eligibleLeaderReplicas".to_owned(),
             ::serde_json::Value::Null,
         );
     }
     if version >= 2 {
-        obj.insert("lastKnownElr".to_string(), ::serde_json::Value::Null);
+        obj.insert("lastKnownElr".to_owned(), ::serde_json::Value::Null);
     }
     ::serde_json::Value::Object(obj)
 }
@@ -693,7 +661,7 @@ pub fn tagged_fixture() -> PartitionChangeRecord {
         removing_replicas: Some(vec![1i32]),
         adding_replicas: Some(vec![1i32]),
         leader_recovery_state: 1i8,
-        directories: Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]),
+        directories: Some(vec![Uuid([1u8; 16])]),
         eligible_leader_replicas: Some(vec![1i32]),
         last_known_elr: Some(vec![1i32]),
         ..PartitionChangeRecord::default()
@@ -704,46 +672,46 @@ pub fn tagged_fixture() -> PartitionChangeRecord {
 #[must_use]
 pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("partitionId".to_string(), ::serde_json::json!(-1));
+    m.insert("partitionId".to_owned(), ::serde_json::json!(-1));
     m.insert(
-        "topicId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "topicId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
     m.insert(
-        "isr".to_string(),
+        "isr".to_owned(),
         ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
     );
-    m.insert("leader".to_string(), ::serde_json::json!(1));
+    m.insert("leader".to_owned(), ::serde_json::json!(1));
     m.insert(
-        "replicas".to_string(),
-        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
-    );
-    m.insert(
-        "removingReplicas".to_string(),
+        "replicas".to_owned(),
         ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
     );
     m.insert(
-        "addingReplicas".to_string(),
+        "removingReplicas".to_owned(),
         ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
     );
-    m.insert("leaderRecoveryState".to_string(), ::serde_json::json!(1));
+    m.insert(
+        "addingReplicas".to_owned(),
+        ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
+    );
+    m.insert("leaderRecoveryState".to_owned(), ::serde_json::json!(1));
     if version >= 1 {
         m.insert(
-            "directories".to_string(),
+            "directories".to_owned(),
             ::serde_json::Value::Array(vec![::serde_json::Value::String(
-                "AQEBAQEBAQEBAQEBAQEBAQ".to_string(),
+                "AQEBAQEBAQEBAQEBAQEBAQ".to_owned(),
             )]),
         );
     }
     if version == 2 {
         m.insert(
-            "eligibleLeaderReplicas".to_string(),
+            "eligibleLeaderReplicas".to_owned(),
             ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
         );
     }
     if version == 2 {
         m.insert(
-            "lastKnownElr".to_string(),
+            "lastKnownElr".to_owned(),
             ::serde_json::Value::Array(vec![::serde_json::json!(1)]),
         );
     }

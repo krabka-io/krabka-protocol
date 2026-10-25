@@ -3,6 +3,7 @@
 use std::{
     cell::RefCell,
     io::{Read, Write},
+    mem,
 };
 
 use bytes::Bytes;
@@ -62,22 +63,23 @@ fn compress_reused(
         .saturating_add(data.len().div_ceil(16 * 1024).saturating_mul(5))
         .saturating_add(20);
     let out = Vec::with_capacity(capacity);
-    if let Some((cached_level, encoder)) = cached.as_mut()
-        && *cached_level == level
-    {
-        encoder.reset(out)?;
-    } else {
-        // Release the previous workspace before allocating a different level.
-        cached.take();
-        *cached = Some((level, DeflateEncoder::new(out, level)));
-    }
-    let encoder = &mut cached.as_mut().expect("the encoder was initialized").1;
+    let encoder = match cached {
+        Some((cached_level, encoder)) if *cached_level == level => {
+            encoder.reset(out)?;
+            encoder
+        }
+        _ => {
+            // Release the previous workspace before allocating a different level.
+            cached.take();
+            &mut cached.insert((level, DeflateEncoder::new(out, level))).1
+        }
+    };
     encoder.get_mut().extend_from_slice(&frame_header(level));
     encoder.write_all(data)?;
     encoder.try_finish()?;
     // Leave the cached encoder finished with an empty writer. Reset it only
     // when the next frame starts, so drop does not write an empty stream.
-    let mut out = std::mem::take(encoder.get_mut());
+    let mut out = mem::take(encoder.get_mut());
     let mut crc = Crc::new();
     crc.update(data);
     out.extend_from_slice(&crc.sum().to_le_bytes());
@@ -104,7 +106,10 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
     }
     // This complete frame is already valid, including its block, CRC and size.
     // MTIME, XFL and OS are unrestricted; optional headers use the decoder.
-    if data.len() == 20 && data.starts_with(&[0x1f, 0x8b, 8, 0]) && &data[10..] == EMPTY_BODY {
+    if data.len() == 20
+        && data.starts_with(&[0x1f, 0x8b, 8, 0])
+        && data.get(10..) == Some(EMPTY_BODY)
+    {
         return Ok(Bytes::new());
     }
     let decoder = GzDecoder::new(data);

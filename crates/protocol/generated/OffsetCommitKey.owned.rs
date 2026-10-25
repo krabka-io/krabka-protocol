@@ -37,16 +37,16 @@ impl Encode for OffsetCommitKey {
         let flex = is_flexible(version);
         if version == 0 {
             if flex {
-                let () = put_compact_string(buf, &self.group);
+                put_compact_string(buf, &self.group)?;
             } else {
-                let () = put_string(buf, &self.group);
+                put_string(buf, &self.group)?;
             }
         }
         if version == 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version == 0 {
@@ -112,10 +112,10 @@ impl OffsetCommitKey {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version == 0 {
-            m.group = "x".to_string();
+            m.group = "x".to_owned();
         }
         if version == 0 {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version == 0 {
             m.partition = 1i32;
@@ -131,18 +131,18 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version <= 0 {
         obj.insert(
-            "group".to_string(),
+            "group".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version <= 0 {
         obj.insert(
-            "topic".to_string(),
+            "topic".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version <= 0 {
-        obj.insert("partition".to_string(), ::serde_json::json!(0));
+        obj.insert("partition".to_owned(), ::serde_json::json!(0));
     }
     ::serde_json::Value::Object(obj)
 }

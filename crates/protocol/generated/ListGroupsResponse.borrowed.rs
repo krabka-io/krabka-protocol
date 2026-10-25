@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::list_groups_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -27,12 +29,9 @@ pub struct ListGroupsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListGroupsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_groups_response::ListGroupsResponse {
-        crate::owned::list_groups_response::ListGroupsResponse {
+    pub fn to_owned(&self) -> list_groups_response::ListGroupsResponse {
+        list_groups_response::ListGroupsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             groups: (self.groups).iter().map(ListedGroup::to_owned).collect(),
@@ -57,15 +56,15 @@ impl Encode for ListGroupsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -80,8 +79,7 @@ impl Encode for ListGroupsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -111,7 +109,7 @@ impl<'de> DecodeBorrow<'de> for ListGroupsResponse<'de> {
         }
         if version >= 0 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ListedGroup::decode_borrow(buf, version)?);
@@ -151,16 +149,13 @@ pub struct ListedGroup<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListedGroup<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_groups_response::ListedGroup {
-        crate::owned::list_groups_response::ListedGroup {
-            group_id: (self.group_id).to_string(),
-            protocol_type: (self.protocol_type).to_string(),
-            group_state: (self.group_state).to_string(),
-            group_type: (self.group_type).to_string(),
+    pub fn to_owned(&self) -> list_groups_response::ListedGroup {
+        list_groups_response::ListedGroup {
+            group_id: (self.group_id).to_owned(),
+            protocol_type: (self.protocol_type).to_owned(),
+            group_state: (self.group_state).to_owned(),
+            group_type: (self.group_type).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -170,35 +165,35 @@ impl Encode for ListedGroup<'_> {
         let flex = version >= 3;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.protocol_type);
+                put_compact_string(buf, self.protocol_type)?;
             } else {
-                let () = put_string(buf, self.protocol_type);
+                put_string(buf, self.protocol_type)?;
             }
         }
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, self.group_state);
+                put_compact_string(buf, self.group_state)?;
             } else {
-                let () = put_string(buf, self.group_state);
+                put_string(buf, self.group_state)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_string(buf, self.group_type);
+                put_compact_string(buf, self.group_type)?;
             } else {
-                let () = put_string(buf, self.group_type);
+                put_string(buf, self.group_type)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -8,6 +8,7 @@
 use quote::{format_ident, quote};
 
 use crate::{
+    emit::{EmitError, common::validate},
     ir::{MessageSpec, MessageType},
     name_conv,
 };
@@ -15,24 +16,24 @@ use crate::{
 /// Emit the `impl crate::ProtocolRequest for <Type>` block for a request spec.
 ///
 /// Returns `None` if the spec is not a `MessageType::Request`.
-#[must_use]
-/// # Panics
-/// Panics if the validated schema model cannot be represented as the expected Rust syntax tree.
-pub fn emit_protocol_request(spec: &MessageSpec) -> Option<String> {
+///
+/// # Errors
+/// Returns an error when the emitted impl is not valid Rust, which is an
+/// emitter bug.
+pub fn emit_protocol_request(spec: &MessageSpec) -> Result<Option<String>, EmitError> {
     if spec.message_type != MessageType::Request {
-        return None;
+        return Ok(None);
     }
 
     let type_name = name_conv::type_name(&spec.name);
 
     // Derive the response type name: replace trailing "Request" with "Response".
     // Every Kafka request has a matching response with exactly this naming convention.
-    let response_type_name = if let Some(prefix) = type_name.strip_suffix("Request") {
-        format!("{prefix}Response")
-    } else {
-        // Fallback: append "Response" directly (should not occur in practice).
-        format!("{type_name}Response")
-    };
+    // Fallback: append "Response" directly (should not occur in practice).
+    let response_type_name = type_name.strip_suffix("Request").map_or_else(
+        || format!("{type_name}Response"),
+        |prefix| format!("{prefix}Response"),
+    );
 
     let response_module = name_conv::module_name(&response_type_name);
 
@@ -53,8 +54,7 @@ pub fn emit_protocol_request(spec: &MessageSpec) -> Option<String> {
 
     // Validate at generation time; rustfmt (applied by the caller) does the
     // actual formatting. See `crate::fmt`.
-    syn::parse2::<syn::ItemImpl>(tokens.clone())
-        .expect("generated ProtocolRequest impl must be valid Rust");
+    validate::<syn::ItemImpl>(&tokens, "ProtocolRequest impl")?;
 
-    Some(format!("\n{tokens}"))
+    Ok(Some(format!("\n{tokens}")))
 }

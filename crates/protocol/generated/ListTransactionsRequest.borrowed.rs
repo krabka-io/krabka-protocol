@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::list_transactions_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i64, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -47,20 +49,13 @@ impl Default for ListTransactionsRequest<'_> {
     }
 }
 impl ListTransactionsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_transactions_request::ListTransactionsRequest {
-        crate::owned::list_transactions_request::ListTransactionsRequest {
-            state_filters: (self.state_filters)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> list_transactions_request::ListTransactionsRequest {
+        list_transactions_request::ListTransactionsRequest {
+            state_filters: (self.state_filters).iter().map(|&s| s.to_owned()).collect(),
             producer_id_filters: (self.producer_id_filters).clone(),
             duration_filter: (self.duration_filter),
-            transactional_id_pattern: (self.transactional_id_pattern)
-                .map(std::string::ToString::to_string),
+            transactional_id_pattern: (self.transactional_id_pattern).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -76,41 +71,37 @@ impl Encode for ListTransactionsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.state_filters).len(), flex);
+                put_array_len(buf, (self.state_filters).len(), flex)?;
                 for it in &self.state_filters {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.producer_id_filters).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.producer_id_filters).len(), flex)?;
                 for it in &self.producer_id_filters {
                     put_i64(buf, *it);
                 }
-            };
+            }
         }
         if version >= 1 {
             put_i64(buf, self.duration_filter);
         }
         if version >= 2 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.transactional_id_pattern);
+                put_compact_nullable_string(buf, self.transactional_id_pattern)?;
             } else {
-                let () = put_nullable_string(buf, self.transactional_id_pattern);
+                put_nullable_string(buf, self.transactional_id_pattern)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -119,10 +110,7 @@ impl Encode for ListTransactionsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.state_filters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.state_filters).len(), flex);
                 let body: usize = (self.state_filters)
                     .iter()
                     .map(|it| {
@@ -138,10 +126,7 @@ impl Encode for ListTransactionsRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.producer_id_filters).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.producer_id_filters).len(), flex);
                 let body: usize = (self.producer_id_filters).iter().map(|_| 8).sum();
                 prefix + body
             };
@@ -175,7 +160,7 @@ impl<'de> DecodeBorrow<'de> for ListTransactionsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.state_filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -189,7 +174,7 @@ impl<'de> DecodeBorrow<'de> for ListTransactionsRequest<'de> {
         }
         if version >= 0 {
             out.producer_id_filters = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i64(buf)?);

@@ -1,4 +1,5 @@
 use std::{
+    env,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -25,7 +26,7 @@ impl Oracle {
         // reaches this is `#[ignore]`d, and the `jvm differential` CI job runs
         // them with `--ignored`. The assertion below reports a missing build.
         let base = PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
+            env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
         )
         .parent()
         .unwrap()

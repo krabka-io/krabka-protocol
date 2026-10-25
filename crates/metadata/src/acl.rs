@@ -1,8 +1,10 @@
 //! Wire-stable ACL types replicated through the raft quorum
 //! with `MetadataRecord::V1AccessControlEntry` and
-//! `V1DeleteAccessControlEntry`. They mirror the shape that Kafka exposes on
-//! the `CreateAcls`, `DeleteAcls`, and `DescribeAcls` wire messages, but they
-//! stay pure data. The authorizer in `krabka-broker` evaluates them.
+//! `V1DeleteAccessControlEntry`.
+//!
+//! They mirror the shape that Kafka exposes on the `CreateAcls`, `DeleteAcls`,
+//! and `DescribeAcls` wire messages, but they stay pure data. The authorizer in
+//! `krabka-broker` evaluates them.
 
 use serde::{Deserialize, Serialize};
 
@@ -111,6 +113,8 @@ impl AclEntryFilter {
 #[cfg(test)]
 mod tests {
 
+    use std::fmt::Debug;
+
     use serde_wincode::SerdeCompat;
     use wincode::{Deserialize as _, Serialize as _};
 
@@ -118,7 +122,7 @@ mod tests {
 
     fn rt<T>(value: &T) -> T
     where
-        T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
+        T: Serialize + for<'de> Deserialize<'de> + PartialEq + Debug,
     {
         let bytes = <SerdeCompat<T>>::serialize(value).unwrap();
         <SerdeCompat<T>>::deserialize(&bytes).unwrap()

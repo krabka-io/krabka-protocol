@@ -50,28 +50,28 @@ impl Encode for SyncGroupResponse {
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_type.as_deref());
+                put_compact_nullable_string(buf, self.protocol_type.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_type.as_deref());
+                put_nullable_string(buf, self.protocol_type.as_deref())?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_name.as_deref());
+                put_compact_nullable_string(buf, self.protocol_name.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_name.as_deref());
+                put_nullable_string(buf, self.protocol_name.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.assignment);
+                put_compact_bytes(buf, &self.assignment)?;
             } else {
-                let () = put_bytes(buf, &self.assignment);
+                put_bytes(buf, &self.assignment)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -167,10 +167,10 @@ impl SyncGroupResponse {
             m.error_code = 1i16;
         }
         if version >= 5 {
-            m.protocol_type = Some("x".to_string());
+            m.protocol_type = Some("x".to_owned());
         }
         if version >= 5 {
-            m.protocol_name = Some("x".to_string());
+            m.protocol_name = Some("x".to_owned());
         }
         if version >= 0 {
             m.assignment = ::bytes::Bytes::from_static(b"x");
@@ -185,17 +185,17 @@ impl SyncGroupResponse {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     if version >= 5 {
-        obj.insert("protocolType".to_string(), ::serde_json::Value::Null);
+        obj.insert("protocolType".to_owned(), ::serde_json::Value::Null);
     }
     if version >= 5 {
-        obj.insert("protocolName".to_string(), ::serde_json::Value::Null);
+        obj.insert("protocolName".to_owned(), ::serde_json::Value::Null);
     }
     obj.insert(
-        "assignment".to_string(),
+        "assignment".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

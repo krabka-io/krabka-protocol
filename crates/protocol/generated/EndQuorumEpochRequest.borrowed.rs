@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::end_quorum_epoch_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_u16, put_i32, put_u16},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -35,13 +38,10 @@ pub struct EndQuorumEpochRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EndQuorumEpochRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_quorum_epoch_request::EndQuorumEpochRequest {
-        crate::owned::end_quorum_epoch_request::EndQuorumEpochRequest {
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> end_quorum_epoch_request::EndQuorumEpochRequest {
+        end_quorum_epoch_request::EndQuorumEpochRequest {
+            cluster_id: (self.cluster_id).map(str::to_owned),
             topics: (self.topics).iter().map(TopicData::to_owned).collect(),
             leader_endpoints: (self.leader_endpoints)
                 .iter()
@@ -62,30 +62,30 @@ impl Encode for EndQuorumEpochRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.leader_endpoints).len(), flex);
+                put_array_len(buf, (self.leader_endpoints).len(), flex)?;
                 for it in &self.leader_endpoints {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -101,18 +101,14 @@ impl Encode for EndQuorumEpochRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.leader_endpoints).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.leader_endpoints).len(), flex);
                 let body: usize = (self.leader_endpoints)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -146,7 +142,7 @@ impl<'de> DecodeBorrow<'de> for EndQuorumEpochRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode_borrow(buf, version)?);
@@ -156,7 +152,7 @@ impl<'de> DecodeBorrow<'de> for EndQuorumEpochRequest<'de> {
         }
         if version >= 1 {
             out.leader_endpoints = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(LeaderEndpoint::decode_borrow(buf, version)?);
@@ -194,13 +190,10 @@ pub struct TopicData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_quorum_epoch_request::TopicData {
-        crate::owned::end_quorum_epoch_request::TopicData {
-            topic_name: (self.topic_name).to_string(),
+    pub fn to_owned(&self) -> end_quorum_epoch_request::TopicData {
+        end_quorum_epoch_request::TopicData {
+            topic_name: (self.topic_name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionData::to_owned)
@@ -214,22 +207,22 @@ impl Encode for TopicData<'_> {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -245,8 +238,7 @@ impl Encode for TopicData<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -274,7 +266,7 @@ impl<'de> DecodeBorrow<'de> for TopicData<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -312,12 +304,9 @@ pub struct PartitionData {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_quorum_epoch_request::PartitionData {
-        crate::owned::end_quorum_epoch_request::PartitionData {
+    pub fn to_owned(&self) -> end_quorum_epoch_request::PartitionData {
+        end_quorum_epoch_request::PartitionData {
             partition_index: (self.partition_index),
             leader_id: (self.leader_id),
             leader_epoch: (self.leader_epoch),
@@ -344,31 +333,23 @@ impl Encode for PartitionData {
         }
         if version == 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.preferred_successors).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.preferred_successors).len(), flex)?;
                 for it in &self.preferred_successors {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.preferred_candidates).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.preferred_candidates).len(), flex)?;
                 for it in &self.preferred_candidates {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -386,20 +367,14 @@ impl Encode for PartitionData {
         }
         if version == 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.preferred_successors).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.preferred_successors).len(), flex);
                 let body: usize = (self.preferred_successors).iter().map(|_| 4).sum();
                 prefix + body
             };
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.preferred_candidates).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.preferred_candidates).len(), flex);
                 let body: usize = (self.preferred_candidates)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -429,7 +404,7 @@ impl<'de> DecodeBorrow<'de> for PartitionData {
         }
         if version == 0 {
             out.preferred_successors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -439,7 +414,7 @@ impl<'de> DecodeBorrow<'de> for PartitionData {
         }
         if version >= 1 {
             out.preferred_candidates = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ReplicaInfo::decode_borrow(buf, version)?);
@@ -479,16 +454,13 @@ impl PartitionData {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReplicaInfo {
     pub candidate_id: i32,
-    pub candidate_directory_id: crate::primitives::uuid::Uuid,
+    pub candidate_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ReplicaInfo {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_quorum_epoch_request::ReplicaInfo {
-        crate::owned::end_quorum_epoch_request::ReplicaInfo {
+    pub fn to_owned(&self) -> end_quorum_epoch_request::ReplicaInfo {
+        end_quorum_epoch_request::ReplicaInfo {
             candidate_id: (self.candidate_id),
             candidate_directory_id: (self.candidate_directory_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -502,11 +474,11 @@ impl Encode for ReplicaInfo {
             put_i32(buf, self.candidate_id);
         }
         if version >= 1 {
-            crate::primitives::uuid::put_uuid(buf, self.candidate_directory_id);
+            put_uuid(buf, self.candidate_directory_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -534,7 +506,7 @@ impl<'de> DecodeBorrow<'de> for ReplicaInfo {
             out.candidate_id = get_i32(buf)?;
         }
         if version >= 1 {
-            out.candidate_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.candidate_directory_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -551,7 +523,7 @@ impl ReplicaInfo {
             m.candidate_id = 1i32;
         }
         if version >= 1 {
-            m.candidate_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.candidate_directory_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -564,14 +536,11 @@ pub struct LeaderEndpoint<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaderEndpoint<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_quorum_epoch_request::LeaderEndpoint {
-        crate::owned::end_quorum_epoch_request::LeaderEndpoint {
-            name: (self.name).to_string(),
-            host: (self.host).to_string(),
+    pub fn to_owned(&self) -> end_quorum_epoch_request::LeaderEndpoint {
+        end_quorum_epoch_request::LeaderEndpoint {
+            name: (self.name).to_owned(),
+            host: (self.host).to_owned(),
             port: (self.port),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -582,16 +551,16 @@ impl Encode for LeaderEndpoint<'_> {
         let flex = version >= 1;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 1 {
@@ -599,7 +568,7 @@ impl Encode for LeaderEndpoint<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

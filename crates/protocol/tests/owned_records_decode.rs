@@ -1,4 +1,5 @@
 //! Owned generated Fetch codecs preserve framing and lenient record decoding.
+#![cfg(test)]
 
 use assert2::assert;
 use bytes::{Buf, Bytes, BytesMut};

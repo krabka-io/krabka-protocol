@@ -17,6 +17,7 @@
 
 use bytes::{BufMut, Bytes, BytesMut};
 use krabka_units::prelude::{ByteSize, ByteSizeExt as _, kibibytes};
+use snap::raw::{Decoder, Encoder, decompress_len, max_compress_len};
 
 use crate::CompressionError;
 
@@ -47,57 +48,57 @@ pub fn compress(data: &[u8]) -> Result<Bytes, CompressionError> {
     let mut out = BytesMut::with_capacity(capacity);
     out.put_slice(&XERIAL_HEADER);
 
-    let mut encoder = snap::raw::Encoder::new();
+    let mut encoder = Encoder::new();
     // `slice::chunks` is a primitive-typed substrate: hand it a raw count.
     for chunk in data.chunks(XERIAL_CHUNK.bytes_usize()) {
-        let max = snap::raw::max_compress_len(chunk.len());
+        let max = max_compress_len(chunk.len());
         let header = out.len();
-        out.put_u32(0);
-        let start = out.len();
-        out.resize(start + max, 0);
+        out.resize(header + 4 + max, 0);
+        let (len_slot, scratch) = out
+            .split_at_mut_checked(header)
+            .and_then(|(_, tail)| tail.split_first_chunk_mut::<4>())
+            .ok_or_else(|| {
+                CompressionError::InvalidData("snappy encode: scratch space too short".into())
+            })?;
         let n = encoder
-            .compress(chunk, &mut out[start..])
+            .compress(chunk, scratch)
             .map_err(|e| CompressionError::InvalidData(format!("snappy encode: {e}")))?;
-        out[header..start]
-            .copy_from_slice(&u32::try_from(n).expect("chunk size fits u32").to_be_bytes());
-        out.truncate(start + n);
+        *len_slot = u32::try_from(n)
+            .map_err(|_| {
+                CompressionError::InvalidData(format!("snappy chunk of {n} bytes exceeds u32"))
+            })?
+            .to_be_bytes();
+        out.truncate(header + 4 + n);
     }
     Ok(out.freeze())
 }
 
 pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionError> {
-    if data.len() < XERIAL_HEADER.len() {
-        return Err(CompressionError::InvalidData(
-            "snappy payload too short for xerial header".into(),
-        ));
-    }
-    if data[..8] != XERIAL_HEADER[..8] {
+    let (header, mut rest) = data
+        .split_first_chunk::<{ XERIAL_HEADER.len() }>()
+        .ok_or_else(|| {
+            CompressionError::InvalidData("snappy payload too short for xerial header".into())
+        })?;
+    if header[..8] != XERIAL_HEADER[..8] {
         return Err(CompressionError::InvalidData(
             "snappy missing xerial magic".into(),
         ));
     }
     // Ignore version fields (bytes 8..16); Kafka never bumped them.
-    let mut rest = &data[XERIAL_HEADER.len()..];
 
     let mut out = BytesMut::new();
-    let mut decoder = snap::raw::Decoder::new();
+    let mut decoder = Decoder::new();
     while !rest.is_empty() {
-        if rest.len() < 4 {
-            return Err(CompressionError::InvalidData(
-                "snappy chunk header truncated".into(),
-            ));
-        }
-        let len = u32::from_be_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
-        rest = &rest[4..];
-        if rest.len() < len {
-            return Err(CompressionError::InvalidData(
-                "snappy chunk body truncated".into(),
-            ));
-        }
-        let (block, tail) = rest.split_at(len);
+        let (len, tail) = rest
+            .split_first_chunk::<4>()
+            .ok_or_else(|| CompressionError::InvalidData("snappy chunk header truncated".into()))?;
+        let len = u32::from_be_bytes(*len) as usize;
+        let (block, tail) = tail
+            .split_at_checked(len)
+            .ok_or_else(|| CompressionError::InvalidData("snappy chunk body truncated".into()))?;
         rest = tail;
 
-        let max_out = snap::raw::decompress_len(block)
+        let max_out = decompress_len(block)
             .map_err(|e| CompressionError::InvalidData(format!("snappy decode_len: {e}")))?;
         // Reject before allocating this chunk if it would push us past the cap.
         // `decompress_len` reads the block's stored uncompressed size, so this
@@ -116,8 +117,11 @@ pub fn decompress(data: &[u8], max_output: usize) -> Result<Bytes, CompressionEr
         }
         let start = out.len();
         out.resize(end, 0);
+        let scratch = out.get_mut(start..).ok_or_else(|| {
+            CompressionError::InvalidData("snappy decode: output buffer too short".into())
+        })?;
         let n = decoder
-            .decompress(block, &mut out[start..])
+            .decompress(block, scratch)
             .map_err(|e| CompressionError::InvalidData(format!("snappy decode: {e}")))?;
         out.truncate(start + n);
     }

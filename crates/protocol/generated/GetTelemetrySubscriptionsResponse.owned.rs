@@ -5,11 +5,13 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -26,7 +28,7 @@ pub fn is_flexible(version: i16) -> bool {
 pub struct GetTelemetrySubscriptionsResponse {
     pub throttle_time_ms: i32,
     pub error_code: i16,
-    pub client_instance_id: crate::primitives::uuid::Uuid,
+    pub client_instance_id: Uuid,
     pub subscription_id: i32,
     pub accepted_compression_types: Vec<i8>,
     pub push_interval_ms: i32,
@@ -48,7 +50,7 @@ impl GetTelemetrySubscriptionsResponse {
     }
     fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.client_instance_id);
+            put_uuid(buf, self.client_instance_id);
         }
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -56,19 +58,21 @@ impl GetTelemetrySubscriptionsResponse {
             put_i32(buf, self.subscription_id);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.accepted_compression_types).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.accepted_compression_types).len(), flex)?;
                 for it in &self.accepted_compression_types {
                     put_i8(buf, *it);
                 }
-            };
+            }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -85,25 +89,37 @@ impl GetTelemetrySubscriptionsResponse {
             put_bool(buf, self.delta_temporality);
         }
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.requested_metrics).len(), flex);
+                put_array_len(buf, (self.requested_metrics).len(), flex)?;
                 for it in &self.requested_metrics {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
+        Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -134,7 +150,7 @@ impl GetTelemetrySubscriptionsResponse {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
-            out.client_instance_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.client_instance_id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -157,7 +173,7 @@ impl GetTelemetrySubscriptionsResponse {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.accepted_compression_types = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i8(buf)?);
@@ -208,7 +224,7 @@ impl GetTelemetrySubscriptionsResponse {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.requested_metrics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -247,12 +263,12 @@ impl Encode for GetTelemetrySubscriptionsResponse {
         self.encode_field_1(buf, version, flex);
         self.encode_field_2(buf, version, flex);
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_field_8(buf, version, flex)?;
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -272,10 +288,7 @@ impl Encode for GetTelemetrySubscriptionsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.accepted_compression_types).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.accepted_compression_types).len(), flex);
                 let body: usize = (self.accepted_compression_types).iter().map(|_| 1).sum();
                 prefix + body
             };
@@ -291,10 +304,7 @@ impl Encode for GetTelemetrySubscriptionsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.requested_metrics).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.requested_metrics).len(), flex);
                 let body: usize = (self.requested_metrics)
                     .iter()
                     .map(|it| {
@@ -350,7 +360,7 @@ impl GetTelemetrySubscriptionsResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.client_instance_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.client_instance_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.subscription_id = 1i32;
@@ -368,7 +378,7 @@ impl GetTelemetrySubscriptionsResponse {
             m.delta_temporality = true;
         }
         if version >= 0 {
-            m.requested_metrics = vec!["x".to_string()];
+            m.requested_metrics = vec!["x".to_owned()];
         }
         m
     }
@@ -379,25 +389,25 @@ impl GetTelemetrySubscriptionsResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "clientInstanceId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "clientInstanceId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("subscriptionId".to_string(), ::serde_json::json!(0));
+    obj.insert("subscriptionId".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "acceptedCompressionTypes".to_string(),
+        "acceptedCompressionTypes".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
-    obj.insert("pushIntervalMs".to_string(), ::serde_json::json!(0));
-    obj.insert("telemetryMaxBytes".to_string(), ::serde_json::json!(0));
+    obj.insert("pushIntervalMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("telemetryMaxBytes".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "deltaTemporality".to_string(),
+        "deltaTemporality".to_owned(),
         ::serde_json::Value::Bool(false),
     );
     obj.insert(
-        "requestedMetrics".to_string(),
+        "requestedMetrics".to_owned(),
         ::serde_json::Value::Array(vec![]),
     );
     ::serde_json::Value::Object(obj)

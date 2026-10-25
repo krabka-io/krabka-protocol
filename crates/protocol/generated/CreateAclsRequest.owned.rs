@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -39,15 +40,15 @@ impl Encode for CreateAclsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.creations).len(), flex);
+                put_array_len(buf, (self.creations).len(), flex)?;
                 for it in &self.creations {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -56,8 +57,7 @@ impl Encode for CreateAclsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.creations).len(), flex);
+                let prefix = array_len_prefix_len((self.creations).len(), flex);
                 let body: usize = (self.creations)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -84,7 +84,7 @@ impl Decode<'_> for CreateAclsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.creations = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AclCreation::decode(buf, version)?);
@@ -142,9 +142,9 @@ impl Encode for AclCreation {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 1 {
@@ -152,16 +152,16 @@ impl Encode for AclCreation {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal);
+                put_compact_string(buf, &self.principal)?;
             } else {
-                let () = put_string(buf, &self.principal);
+                put_string(buf, &self.principal)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -172,7 +172,7 @@ impl Encode for AclCreation {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -271,16 +271,16 @@ impl AclCreation {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 1 {
             m.resource_pattern_type = 1i8;
         }
         if version >= 0 {
-            m.principal = "x".to_string();
+            m.principal = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.operation = 1i8;
@@ -297,7 +297,7 @@ impl AclCreation {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("creations".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("creations".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for CreateAclsRequest {

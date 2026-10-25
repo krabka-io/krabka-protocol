@@ -24,9 +24,9 @@ impl Encode for TaskOffset {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.subtopology_id);
+                put_compact_string(buf, &self.subtopology_id)?;
             } else {
-                let () = put_string(buf, &self.subtopology_id);
+                put_string(buf, &self.subtopology_id)?;
             }
         }
         if version >= 0 {
@@ -37,7 +37,7 @@ impl Encode for TaskOffset {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -93,7 +93,7 @@ impl TaskOffset {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.subtopology_id = "x".to_string();
+            m.subtopology_id = "x".to_owned();
         }
         if version >= 0 {
             m.partition = 1i32;

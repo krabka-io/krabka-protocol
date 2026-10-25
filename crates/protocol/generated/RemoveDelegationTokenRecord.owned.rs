@@ -33,14 +33,14 @@ impl Encode for RemoveDelegationTokenRecord {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.token_id);
+                put_compact_string(buf, &self.token_id)?;
             } else {
-                let () = put_string(buf, &self.token_id);
+                put_string(buf, &self.token_id)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -89,7 +89,7 @@ impl RemoveDelegationTokenRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.token_id = "x".to_string();
+            m.token_id = "x".to_owned();
         }
         m
     }
@@ -101,7 +101,7 @@ impl RemoveDelegationTokenRecord {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "tokenId".to_string(),
+        "tokenId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

@@ -1,12 +1,13 @@
-//! Builds a `KRaft` `bootstrap.checkpoint`: a `SnapshotHeader` control batch, a
-//! data batch of `FeatureLevelRecord`s, and a `SnapshotFooter` control batch.
-//! This matches what `kafka-storage format` writes, except for the per-run
+//! Builds a `KRaft` `bootstrap.checkpoint`.
+//!
+//! The checkpoint is a `SnapshotHeader` control batch, a data batch of
+//! `FeatureLevelRecord`s, and a `SnapshotFooter` control batch. This matches what `kafka-storage format` writes, except for the per-run
 //! timestamps.
 
 use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
-    Encode,
+    Encode, ProtocolError,
     owned::{
         feature_level_record::FeatureLevelRecord, snapshot_footer_record::SnapshotFooterRecord,
         snapshot_header_record::SnapshotHeaderRecord,
@@ -26,67 +27,61 @@ const FEATURE_LEVEL_API_VERSION: i16 = 0;
 /// Builds a `bootstrap.checkpoint` from an ordered list of
 /// `(feature_name, level)`.
 ///
-/// # Panics
-/// Panics only if a record fails to encode, which cannot happen for these
-/// well-formed feature/control records.
-#[must_use]
-pub fn build_bootstrap_checkpoint(features: &[(&str, i16)]) -> Bytes {
+/// # Errors
+/// Returns a [`ProtocolError`] if a record fails to encode, which these
+/// well-formed feature and control records never do.
+pub fn build_bootstrap_checkpoint(features: &[(&str, i16)]) -> Result<Bytes, ProtocolError> {
     let mut out = BytesMut::new();
 
     // (1) SnapshotHeader control batch at offset 0.
     let header = SnapshotHeaderRecord::default();
     let mut header_body = BytesMut::new();
-    header
-        .encode(&mut header_body, 0)
-        .expect("snapshot header encodes");
+    header.encode(&mut header_body, 0)?;
     out.put_slice(&encode_control_batch(
         0,
         control_record_key(ControlRecordType::SnapshotHeader),
         header_body.freeze(),
-    ));
+    )?);
 
     // (2) Data batch of FeatureLevelRecords at offset 1.
-    let records: Vec<Record> = features
+    let records = features
         .iter()
         .enumerate()
         .map(|(i, (name, level))| {
             let rec = KraftMetadataRecord::FeatureLevel(FeatureLevelRecord {
-                name: (*name).to_string(),
+                name: (*name).to_owned(),
                 feature_level: *level,
                 ..Default::default()
             });
-            Record {
-                offset_delta: i32::try_from(i).expect("few features"),
-                value: Some(
-                    rec.encode_value(FEATURE_LEVEL_API_VERSION)
-                        .expect("feature record encodes"),
-                ),
+            Ok(Record {
+                offset_delta: i32::try_from(i)
+                    .map_err(|_| ProtocolError::InvalidValue("too many bootstrap features"))?,
+                value: Some(rec.encode_value(FEATURE_LEVEL_API_VERSION)?),
                 ..Default::default()
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<Record>, ProtocolError>>()?;
     let data = RecordBatch {
         base_offset: 1,
         last_offset_delta: i32::try_from(features.len().saturating_sub(1)).unwrap_or(0),
         records,
         ..Default::default()
     };
-    data.encode(&mut out).expect("feature data batch encodes");
+    data.encode_batch(&mut out)?;
 
     // (3) SnapshotFooter control batch.
-    let footer_offset = 1 + i64::try_from(features.len()).expect("few features");
+    let footer_offset = 1 + i64::try_from(features.len())
+        .map_err(|_| ProtocolError::InvalidValue("too many bootstrap features"))?;
     let footer = SnapshotFooterRecord::default();
     let mut footer_body = BytesMut::new();
-    footer
-        .encode(&mut footer_body, 0)
-        .expect("snapshot footer encodes");
+    footer.encode(&mut footer_body, 0)?;
     out.put_slice(&encode_control_batch(
         footer_offset,
         control_record_key(ControlRecordType::SnapshotFooter),
         footer_body.freeze(),
-    ));
+    )?);
 
-    out.freeze()
+    Ok(out.freeze())
 }
 
 #[cfg(test)]
@@ -102,11 +97,12 @@ mod tests {
             ("metadata.version", 25),
             ("group.version", 1),
             ("transaction.version", 2),
-        ]);
+        ])
+        .unwrap();
         // Walk batches: control header (offset 0), data batch (offsets 1..=3),
         // control footer.
         let mut cur: &[u8] = &bytes;
-        let header = RecordBatch::decode(&mut cur).expect("header batch");
+        let header = RecordBatch::decode_batch(&mut cur).expect("header batch");
         check!(header.base_offset == 0);
         check!(header.attributes.is_control_batch());
         assert2::assert!(header.records.len() == 1);
@@ -122,7 +118,7 @@ mod tests {
         assert2::assert!(header_record == expected_header);
         assert2::assert!(header_cur.is_empty());
 
-        let data = RecordBatch::decode(&mut cur).expect("data batch");
+        let data = RecordBatch::decode_batch(&mut cur).expect("data batch");
         check!(data.base_offset == 1);
         check!(data.last_offset_delta == 2);
         check!(!data.attributes.is_control_batch());
@@ -137,7 +133,7 @@ mod tests {
             let (decoded, version) =
                 KraftMetadataRecord::decode_value(value).expect("feature record");
             let expected_record = KraftMetadataRecord::FeatureLevel(FeatureLevelRecord {
-                name: name.to_string(),
+                name: name.to_owned(),
                 feature_level: level,
                 ..Default::default()
             });
@@ -151,7 +147,7 @@ mod tests {
             );
         }
 
-        let footer = RecordBatch::decode(&mut cur).expect("footer batch");
+        let footer = RecordBatch::decode_batch(&mut cur).expect("footer batch");
         check!(footer.base_offset == 4);
         check!(footer.attributes.is_control_batch());
         assert2::assert!(footer.records.len() == 1);

@@ -35,9 +35,9 @@ impl Encode for SaslHandshakeRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.mechanism);
+                put_compact_string(buf, &self.mechanism)?;
             } else {
-                let () = put_string(buf, &self.mechanism);
+                put_string(buf, &self.mechanism)?;
             }
         }
         Ok(())
@@ -81,7 +81,7 @@ impl SaslHandshakeRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.mechanism = "x".to_string();
+            m.mechanism = "x".to_owned();
         }
         m
     }
@@ -93,7 +93,7 @@ impl SaslHandshakeRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "mechanism".to_string(),
+        "mechanism".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

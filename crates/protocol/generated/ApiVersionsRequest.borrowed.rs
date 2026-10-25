@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::api_versions_request,
     primitives::{
         fixed::{get_i32, put_i32},
         string_bytes::{
@@ -47,15 +48,12 @@ impl Default for ApiVersionsRequest<'_> {
     }
 }
 impl ApiVersionsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::api_versions_request::ApiVersionsRequest {
-        crate::owned::api_versions_request::ApiVersionsRequest {
-            client_software_name: (self.client_software_name).to_string(),
-            client_software_version: (self.client_software_version).to_string(),
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> api_versions_request::ApiVersionsRequest {
+        api_versions_request::ApiVersionsRequest {
+            client_software_name: (self.client_software_name).to_owned(),
+            client_software_version: (self.client_software_version).to_owned(),
+            cluster_id: (self.cluster_id).map(str::to_owned),
             node_id: (self.node_id),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -72,23 +70,23 @@ impl Encode for ApiVersionsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.client_software_name);
+                put_compact_string(buf, self.client_software_name)?;
             } else {
-                let () = put_string(buf, self.client_software_name);
+                put_string(buf, self.client_software_name)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, self.client_software_version);
+                put_compact_string(buf, self.client_software_version)?;
             } else {
-                let () = put_string(buf, self.client_software_version);
+                put_string(buf, self.client_software_version)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 5 {
@@ -96,7 +94,7 @@ impl Encode for ApiVersionsRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

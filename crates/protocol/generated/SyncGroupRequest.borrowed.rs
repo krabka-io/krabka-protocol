@@ -3,12 +3,14 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sync_group_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, nullable_string_len, put_bytes,
-            put_compact_bytes, put_compact_nullable_string, put_compact_string,
-            put_nullable_string, put_string, string_len,
+            bytes_len, compact_bytes_len, compact_nullable_string_len, compact_string_len,
+            nullable_string_len, put_bytes, put_compact_bytes, put_compact_nullable_string,
+            put_compact_string, put_nullable_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_nullable_string_borrowed,
@@ -39,18 +41,15 @@ pub struct SyncGroupRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SyncGroupRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sync_group_request::SyncGroupRequest {
-        crate::owned::sync_group_request::SyncGroupRequest {
-            group_id: (self.group_id).to_string(),
+    pub fn to_owned(&self) -> sync_group_request::SyncGroupRequest {
+        sync_group_request::SyncGroupRequest {
+            group_id: (self.group_id).to_owned(),
             generation_id: (self.generation_id),
-            member_id: (self.member_id).to_string(),
-            group_instance_id: (self.group_instance_id).map(std::string::ToString::to_string),
-            protocol_type: (self.protocol_type).map(std::string::ToString::to_string),
-            protocol_name: (self.protocol_name).map(std::string::ToString::to_string),
+            member_id: (self.member_id).to_owned(),
+            group_instance_id: (self.group_instance_id).map(str::to_owned),
+            protocol_type: (self.protocol_type).map(str::to_owned),
+            protocol_name: (self.protocol_name).map(str::to_owned),
             assignments: (self.assignments)
                 .iter()
                 .map(SyncGroupRequestAssignment::to_owned)
@@ -70,9 +69,9 @@ impl Encode for SyncGroupRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
@@ -80,43 +79,43 @@ impl Encode for SyncGroupRequest<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id);
+                put_compact_nullable_string(buf, self.group_instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id);
+                put_nullable_string(buf, self.group_instance_id)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_type);
+                put_compact_nullable_string(buf, self.protocol_type)?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_type);
+                put_nullable_string(buf, self.protocol_type)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_name);
+                put_compact_nullable_string(buf, self.protocol_name)?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_name);
+                put_nullable_string(buf, self.protocol_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.assignments).len(), flex);
+                put_array_len(buf, (self.assignments).len(), flex)?;
                 for it in &self.assignments {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -163,8 +162,7 @@ impl Encode for SyncGroupRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.assignments).len(), flex);
+                let prefix = array_len_prefix_len((self.assignments).len(), flex);
                 let body: usize = (self.assignments)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -229,7 +227,7 @@ impl<'de> DecodeBorrow<'de> for SyncGroupRequest<'de> {
         }
         if version >= 0 {
             out.assignments = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(SyncGroupRequestAssignment::decode_borrow(buf, version)?);
@@ -279,13 +277,10 @@ pub struct SyncGroupRequestAssignment<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SyncGroupRequestAssignment<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sync_group_request::SyncGroupRequestAssignment {
-        crate::owned::sync_group_request::SyncGroupRequestAssignment {
-            member_id: (self.member_id).to_string(),
+    pub fn to_owned(&self) -> sync_group_request::SyncGroupRequestAssignment {
+        sync_group_request::SyncGroupRequestAssignment {
+            member_id: (self.member_id).to_owned(),
             assignment: Bytes::copy_from_slice(self.assignment),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -296,21 +291,21 @@ impl Encode for SyncGroupRequestAssignment<'_> {
         let flex = version >= 4;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.assignment);
+                put_compact_bytes(buf, self.assignment)?;
             } else {
-                let () = put_bytes(buf, self.assignment);
+                put_bytes(buf, self.assignment)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -326,11 +321,9 @@ impl Encode for SyncGroupRequestAssignment<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.assignment).len() + 1).unwrap(),
-                ) + (self.assignment).len()
+                compact_bytes_len(self.assignment)
             } else {
-                4 + (self.assignment).len()
+                bytes_len(self.assignment)
             };
         }
         if flex {

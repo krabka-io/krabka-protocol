@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_configs_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -34,12 +36,9 @@ pub struct AlterConfigsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterConfigsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_configs_request::AlterConfigsRequest {
-        crate::owned::alter_configs_request::AlterConfigsRequest {
+    pub fn to_owned(&self) -> alter_configs_request::AlterConfigsRequest {
+        alter_configs_request::AlterConfigsRequest {
             resources: (self.resources)
                 .iter()
                 .map(AlterConfigsResource::to_owned)
@@ -60,18 +59,18 @@ impl Encode for AlterConfigsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.validate_only);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -80,8 +79,7 @@ impl Encode for AlterConfigsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -111,7 +109,7 @@ impl<'de> DecodeBorrow<'de> for AlterConfigsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterConfigsResource::decode_borrow(buf, version)?);
@@ -150,14 +148,11 @@ pub struct AlterConfigsResource<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterConfigsResource<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_configs_request::AlterConfigsResource {
-        crate::owned::alter_configs_request::AlterConfigsResource {
+    pub fn to_owned(&self) -> alter_configs_request::AlterConfigsResource {
+        alter_configs_request::AlterConfigsResource {
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             configs: (self.configs)
                 .iter()
                 .map(AlterableConfig::to_owned)
@@ -174,22 +169,22 @@ impl Encode for AlterConfigsResource<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.configs).len(), flex);
+                put_array_len(buf, (self.configs).len(), flex)?;
                 for it in &self.configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -208,8 +203,7 @@ impl Encode for AlterConfigsResource<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.configs).len(), flex);
+                let prefix = array_len_prefix_len((self.configs).len(), flex);
                 let body: usize = (self.configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -240,7 +234,7 @@ impl<'de> DecodeBorrow<'de> for AlterConfigsResource<'de> {
         }
         if version >= 0 {
             out.configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterableConfig::decode_borrow(buf, version)?);
@@ -287,14 +281,11 @@ impl Default for AlterableConfig<'_> {
     }
 }
 impl AlterableConfig<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_configs_request::AlterableConfig {
-        crate::owned::alter_configs_request::AlterableConfig {
-            name: (self.name).to_string(),
-            value: (self.value).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> alter_configs_request::AlterableConfig {
+        alter_configs_request::AlterableConfig {
+            name: (self.name).to_owned(),
+            value: (self.value).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -304,21 +295,21 @@ impl Encode for AlterableConfig<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value);
+                put_compact_nullable_string(buf, self.value)?;
             } else {
-                let () = put_nullable_string(buf, self.value);
+                put_nullable_string(buf, self.value)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

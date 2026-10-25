@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use arbitrary::Arbitrary;
 use bytes::BytesMut;
 use krabka_protocol::{

@@ -3,17 +3,21 @@ use bytes::BufMut;
 
 use crate::{
     Decode, DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::fetch_snapshot_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, get_u16, put_i16, put_i32, put_i64, put_u16},
         string_bytes::{
-            compact_string_len, put_bytes, put_compact_bytes, put_compact_string, put_string,
-            string_len,
+            compact_bytes_len_from_size, compact_string_len, put_bytes, put_compact_bytes,
+            put_compact_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_string_borrowed,
             get_string_borrowed,
         },
     },
+    records::{RecordsError, RecordsPayloadBorrowed},
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 59;
@@ -30,22 +34,25 @@ pub struct FetchSnapshotResponse<'a> {
     pub throttle_time_ms: i32,
     pub error_code: i16,
     pub topics: Vec<TopicSnapshot<'a>>,
-    pub node_endpoints: Vec<crate::owned::fetch_snapshot_response::NodeEndpoint>,
+    pub node_endpoints: Vec<fetch_snapshot_response::NodeEndpoint>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl FetchSnapshotResponse<'_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::FetchSnapshotResponse {
-        crate::owned::fetch_snapshot_response::FetchSnapshotResponse {
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_snapshot_response::FetchSnapshotResponse, RecordsError> {
+        Ok(fetch_snapshot_response::FetchSnapshotResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            topics: (self.topics).iter().map(TopicSnapshot::to_owned).collect(),
+            topics: (self.topics)
+                .iter()
+                .map(TopicSnapshot::to_owned)
+                .collect::<Result<_, _>>()?,
             node_endpoints: self.node_endpoints.clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
 }
 impl Encode for FetchSnapshotResponse<'_> {
@@ -65,21 +72,18 @@ impl Encode for FetchSnapshotResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.node_endpoints).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                         let body: usize = (self.node_endpoints)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -88,21 +92,17 @@ impl Encode for FetchSnapshotResponse<'_> {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.node_endpoints).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.node_endpoints).len(), flex)?;
                             for it in &self.node_endpoints {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -117,20 +117,16 @@ impl Encode for FetchSnapshotResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.node_endpoints).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                     let body: usize = (self.node_endpoints)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -161,7 +157,7 @@ impl<'de> DecodeBorrow<'de> for FetchSnapshotResponse<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicSnapshot::decode_borrow(buf, version)?);
@@ -176,14 +172,10 @@ impl<'de> DecodeBorrow<'de> for FetchSnapshotResponse<'de> {
                     tag_node_endpoints = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(
-                                    crate::owned::fetch_snapshot_response::NodeEndpoint::decode(
-                                        b, version,
-                                    )?,
-                                );
+                                v.push(fetch_snapshot_response::NodeEndpoint::decode(b, version)?);
                             }
                             v
                         }
@@ -215,8 +207,7 @@ impl FetchSnapshotResponse<'_> {
             m.topics = vec![TopicSnapshot::populated(version)];
         }
         if version >= 1 {
-            m.node_endpoints =
-                vec![crate::owned::fetch_snapshot_response::NodeEndpoint::populated(version)];
+            m.node_endpoints = vec![fetch_snapshot_response::NodeEndpoint::populated(version)];
         }
         m
     }
@@ -228,19 +219,19 @@ pub struct TopicSnapshot<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicSnapshot<'_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::TopicSnapshot {
-        crate::owned::fetch_snapshot_response::TopicSnapshot {
-            name: (self.name).to_string(),
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_snapshot_response::TopicSnapshot, RecordsError> {
+        Ok(fetch_snapshot_response::TopicSnapshot {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionSnapshot::to_owned)
-                .collect(),
+                .collect::<Result<_, _>>()?,
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
 }
 impl Encode for TopicSnapshot<'_> {
@@ -248,22 +239,22 @@ impl Encode for TopicSnapshot<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -279,8 +270,7 @@ impl Encode for TopicSnapshot<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -308,7 +298,7 @@ impl<'de> DecodeBorrow<'de> for TopicSnapshot<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionSnapshot::decode_borrow(buf, version)?);
@@ -343,28 +333,26 @@ pub struct PartitionSnapshot<'a> {
     pub snapshot_id: SnapshotId,
     pub size: i64,
     pub position: i64,
-    pub unaligned_records: crate::records::RecordsPayloadBorrowed<'a>,
+    pub unaligned_records: RecordsPayloadBorrowed<'a>,
     pub current_leader: LeaderIdAndEpoch,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionSnapshot<'_> {
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if a records field contains an invalid encoded record batch.
-    #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::PartitionSnapshot {
-        crate::owned::fetch_snapshot_response::PartitionSnapshot {
+    /// Returns the error of a records field that holds an invalid
+    /// encoded record batch.
+    pub fn to_owned(&self) -> Result<fetch_snapshot_response::PartitionSnapshot, RecordsError> {
+        Ok(fetch_snapshot_response::PartitionSnapshot {
             index: (self.index),
             error_code: (self.error_code),
             snapshot_id: (self.snapshot_id).to_owned(),
             size: (self.size),
             position: (self.position),
-            unaligned_records: (self.unaligned_records)
-                .to_owned()
-                .expect("records to_owned"),
+            unaligned_records: (self.unaligned_records).to_owned()?,
             current_leader: (self.current_leader).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
-        }
+        })
     }
 }
 impl Encode for PartitionSnapshot<'_> {
@@ -388,28 +376,28 @@ impl Encode for PartitionSnapshot<'_> {
         if version >= 0 {
             {
                 let mut __rb_buf = bytes::BytesMut::new();
-                <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(
+                <RecordsPayloadBorrowed as crate::Encode>::encode(
                     &self.unaligned_records,
                     &mut __rb_buf,
                     version,
                 )?;
                 if flex {
-                    let () = put_compact_bytes(buf, &__rb_buf);
+                    put_compact_bytes(buf, &__rb_buf)?;
                 } else {
-                    let () = put_bytes(buf, &__rb_buf);
+                    put_bytes(buf, &__rb_buf)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -433,13 +421,12 @@ impl Encode for PartitionSnapshot<'_> {
         }
         if version >= 0 {
             n += {
-                let __rb_len =
-                    <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(
-                        &(self.unaligned_records),
-                        version,
-                    );
+                let __rb_len = <RecordsPayloadBorrowed as crate::Encode>::encoded_len(
+                    &(self.unaligned_records),
+                    version,
+                );
                 if flex {
-                    crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                    compact_bytes_len_from_size(__rb_len)
                 } else {
                     4 + __rb_len
                 }
@@ -447,7 +434,7 @@ impl Encode for PartitionSnapshot<'_> {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 known_pairs.push((0, self.current_leader.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -482,7 +469,7 @@ impl<'de> DecodeBorrow<'de> for PartitionSnapshot<'de> {
                     get_bytes_borrowed(buf)?
                 };
                 let mut __rb_cur = __rb_slice;
-                <crate::records::RecordsPayloadBorrowed as crate::DecodeBorrow>::decode_borrow(
+                <RecordsPayloadBorrowed as crate::DecodeBorrow>::decode_borrow(
                     &mut __rb_cur,
                     version,
                 )?
@@ -540,12 +527,9 @@ pub struct SnapshotId {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SnapshotId {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::SnapshotId {
-        crate::owned::fetch_snapshot_response::SnapshotId {
+    pub fn to_owned(&self) -> fetch_snapshot_response::SnapshotId {
+        fetch_snapshot_response::SnapshotId {
             end_offset: (self.end_offset),
             epoch: (self.epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -563,7 +547,7 @@ impl Encode for SnapshotId {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -620,12 +604,9 @@ pub struct LeaderIdAndEpoch {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl LeaderIdAndEpoch {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::LeaderIdAndEpoch {
-        crate::owned::fetch_snapshot_response::LeaderIdAndEpoch {
+    pub fn to_owned(&self) -> fetch_snapshot_response::LeaderIdAndEpoch {
+        fetch_snapshot_response::LeaderIdAndEpoch {
             leader_id: (self.leader_id),
             leader_epoch: (self.leader_epoch),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -643,7 +624,7 @@ impl Encode for LeaderIdAndEpoch {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -701,14 +682,11 @@ pub struct NodeEndpoint<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl NodeEndpoint<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::fetch_snapshot_response::NodeEndpoint {
-        crate::owned::fetch_snapshot_response::NodeEndpoint {
+    pub fn to_owned(&self) -> fetch_snapshot_response::NodeEndpoint {
+        fetch_snapshot_response::NodeEndpoint {
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -722,9 +700,9 @@ impl Encode for NodeEndpoint<'_> {
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 1 {
@@ -732,7 +710,7 @@ impl Encode for NodeEndpoint<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

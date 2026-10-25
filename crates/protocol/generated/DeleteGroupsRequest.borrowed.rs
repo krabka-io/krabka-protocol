@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delete_groups_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -25,16 +27,10 @@ pub struct DeleteGroupsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteGroupsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_groups_request::DeleteGroupsRequest {
-        crate::owned::delete_groups_request::DeleteGroupsRequest {
-            groups_names: (self.groups_names)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> delete_groups_request::DeleteGroupsRequest {
+        delete_groups_request::DeleteGroupsRequest {
+            groups_names: (self.groups_names).iter().map(|&s| s.to_owned()).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -50,19 +46,19 @@ impl Encode for DeleteGroupsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups_names).len(), flex);
+                put_array_len(buf, (self.groups_names).len(), flex)?;
                 for it in &self.groups_names {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -71,8 +67,7 @@ impl Encode for DeleteGroupsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups_names).len(), flex);
+                let prefix = array_len_prefix_len((self.groups_names).len(), flex);
                 let body: usize = (self.groups_names)
                     .iter()
                     .map(|it| {
@@ -105,7 +100,7 @@ impl<'de> DecodeBorrow<'de> for DeleteGroupsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.groups_names = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

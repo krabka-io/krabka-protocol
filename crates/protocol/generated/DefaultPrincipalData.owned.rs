@@ -38,16 +38,16 @@ impl Encode for DefaultPrincipalData {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.type_);
+                put_compact_string(buf, &self.type_)?;
             } else {
-                let () = put_string(buf, &self.type_);
+                put_string(buf, &self.type_)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
@@ -55,7 +55,7 @@ impl Encode for DefaultPrincipalData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -124,10 +124,10 @@ impl DefaultPrincipalData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.type_ = "x".to_string();
+            m.type_ = "x".to_owned();
         }
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.token_authenticated = true;
@@ -142,15 +142,15 @@ impl DefaultPrincipalData {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "type".to_string(),
+        "type".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "name".to_string(),
+        "name".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "tokenAuthenticated".to_string(),
+        "tokenAuthenticated".to_owned(),
         ::serde_json::Value::Bool(false),
     );
     ::serde_json::Value::Object(obj)

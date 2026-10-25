@@ -11,6 +11,7 @@ use crate::{
     },
     records::{
         RecordsError,
+        borrowed::parse_one_record,
         crc::{crc32c, crc32c_append},
         header::{Attributes, CRC_COVERAGE_START, HEADER_LEN, RecordBatchHeader},
     },
@@ -80,13 +81,11 @@ impl Record {
     }
 
     /// Predicted total length of this record on the wire, length-prefix plus body.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
     pub fn encoded_len(&self) -> usize {
         let body = self.body_len();
-        let body_i64 = i64::try_from(body).expect("record body length must fit in i64");
+        // `encode` rejects a body longer than `i64::MAX`; the prediction
+        // saturates there.
+        let body_i64 = i64::try_from(body).unwrap_or(i64::MAX);
         varlong_len(body_i64) + body
     }
 
@@ -124,8 +123,8 @@ impl Record {
             Some(k) => {
                 let Ok(len) = i32::try_from(k.len()) else {
                     // Preserve the fields already written before an invalid key.
-                    let used = PREFIX_LEN - fields.len();
-                    buf.put_slice(&prefix[..used]);
+                    let unused = fields.len();
+                    buf.put_slice(written_prefix(&prefix, unused)?);
                     return Err(RecordsError::RecordParse(
                         "record key length overflow".into(),
                     ));
@@ -138,8 +137,8 @@ impl Record {
         {
             fields.put_slice(key);
         }
-        let used = PREFIX_LEN - fields.len();
-        buf.put_slice(&prefix[..used]);
+        let unused = fields.len();
+        buf.put_slice(written_prefix(&prefix, unused)?);
         if let Some(key) = &self.key
             && key.len() > SMALL_KEY_LEN
         {
@@ -233,13 +232,11 @@ impl Record {
 
         let header_count =
             get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("header_count: {e}")))?;
-        if header_count < 0 {
+        let Ok(header_count_usize) = usize::try_from(header_count) else {
             return Err(RecordsError::RecordParse(format!(
                 "negative header count {header_count}"
             )));
-        }
-        let header_count_usize =
-            usize::try_from(header_count).expect("non-negative header count must fit in usize");
+        };
         // Bound pre-allocation: a record header is at least 1 byte on the wire,
         // so an honest `header_count` can never exceed the bytes left in the
         // record body. Clamp the capacity hint to reject huge declared counts
@@ -266,16 +263,18 @@ impl Record {
 /// The body size of a record with these field lengths, shared by the owned and
 /// the borrowed `Record::body_len`. `key` and `value` are `None` for null, and
 /// `headers` yields each header's key length and optional value length.
-pub(crate) fn body_len_of(
+pub fn body_len_of(
     timestamp_delta: i64,
     offset_delta: i32,
     key: Option<usize>,
     value: Option<usize>,
     headers: impl ExactSizeIterator<Item = (usize, Option<usize>)>,
 ) -> usize {
-    let field = |len: Option<usize>| match len {
-        None => varint_len(-1),
-        Some(len) => varint_len(i32::try_from(len).unwrap_or(i32::MAX)) + len,
+    let field = |len: Option<usize>| {
+        len.map_or_else(
+            || varint_len(-1),
+            |len| varint_len(i32::try_from(len).unwrap_or(i32::MAX)) + len,
+        )
     };
     let header_count = varint_len(i32::try_from(headers.len()).unwrap_or(i32::MAX));
     let headers: usize = headers
@@ -293,27 +292,35 @@ pub(crate) fn body_len_of(
 fn decode_nullable_bytes<B: Buf>(buf: &mut B, label: &str) -> Result<Option<Bytes>, RecordsError> {
     let len =
         get_varint(buf).map_err(|e| RecordsError::RecordParse(format!("{label} length: {e}")))?;
-    if len < 0 {
-        Ok(None)
-    } else {
-        let n = usize::try_from(len).expect("non-negative value length must fit in usize");
-        if buf.remaining() < n {
-            return Err(RecordsError::BodyTooShort {
-                needed: n - buf.remaining(),
-            });
-        }
-        let mut v = vec![0u8; n];
-        buf.copy_to_slice(&mut v);
-        Ok(Some(Bytes::from(v)))
+    // A negative length is null.
+    let Ok(n) = usize::try_from(len) else {
+        return Ok(None);
+    };
+    if buf.remaining() < n {
+        return Err(RecordsError::BodyTooShort {
+            needed: n - buf.remaining(),
+        });
     }
+    let mut v = vec![0u8; n];
+    buf.copy_to_slice(&mut v);
+    Ok(Some(Bytes::from(v)))
+}
+
+/// The bytes written to the front of `prefix` when `unused` bytes of it are
+/// left over.
+fn written_prefix(prefix: &[u8], unused: usize) -> Result<&[u8], RecordsError> {
+    prefix
+        .len()
+        .checked_sub(unused)
+        .and_then(|used| prefix.get(..used))
+        .ok_or_else(|| RecordsError::RecordParse("record prefix overflow".into()))
 }
 
 fn decode_record_header<B: Buf>(buf: &mut B) -> Result<RecordHeader, String> {
     let key_len = get_varint(buf).map_err(|e| format!("key length: {e}"))?;
-    if key_len < 0 {
+    let Ok(n) = usize::try_from(key_len) else {
         return Err(format!("non-nullable key has negative length {key_len}"));
-    }
-    let n = usize::try_from(key_len).expect("non-negative key length must fit in usize");
+    };
     if buf.remaining() < n {
         return Err(format!("key truncated (need {} more)", n - buf.remaining()));
     }
@@ -322,10 +329,8 @@ fn decode_record_header<B: Buf>(buf: &mut B) -> Result<RecordHeader, String> {
     let key = String::from_utf8(kv).map_err(|e| format!("key utf-8: {e}"))?;
 
     let value_len = get_varint(buf).map_err(|e| format!("value length: {e}"))?;
-    let value = if value_len < 0 {
-        None
-    } else {
-        let n = usize::try_from(value_len).expect("non-negative value length must fit in usize");
+    // A negative length is null.
+    let value = if let Ok(n) = usize::try_from(value_len) {
         if buf.remaining() < n {
             return Err(format!(
                 "value truncated (need {} more)",
@@ -335,6 +340,8 @@ fn decode_record_header<B: Buf>(buf: &mut B) -> Result<RecordHeader, String> {
         let mut vv = vec![0u8; n];
         buf.copy_to_slice(&mut vv);
         Some(Bytes::from(vv))
+    } else {
+        None
     };
 
     Ok(RecordHeader { key, value })
@@ -342,6 +349,8 @@ fn decode_record_header<B: Buf>(buf: &mut B) -> Result<RecordHeader, String> {
 
 #[cfg(test)]
 mod record_tests {
+
+    use std::iter;
 
     use bytes::BytesMut;
 
@@ -367,11 +376,11 @@ mod record_tests {
             value: Some(Bytes::from_static(b"hello kafka")),
             headers: vec![
                 RecordHeader {
-                    key: "trace-id".to_string(),
+                    key: "trace-id".to_owned(),
                     value: Some(Bytes::from_static(b"abc")),
                 },
                 RecordHeader {
-                    key: "null-val".to_string(),
+                    key: "null-val".to_owned(),
                     value: None,
                 },
             ],
@@ -429,7 +438,7 @@ mod record_tests {
             let mut expected = length_prefix;
             expected.extend_from_slice(&[0, 0, 0]);
             expected.extend(key_prefix);
-            expected.extend(std::iter::repeat_n(b'k', len));
+            expected.extend(iter::repeat_n(b'k', len));
             expected.extend_from_slice(&[1, 0]);
             cases.push((
                 Record {
@@ -620,16 +629,14 @@ impl RecordBatch {
 
     /// Decode a complete v2 record batch from `buf`.
     ///
-    /// This method reads from the start of the header.
+    /// This method reads from the start of the header. Unlike
+    /// [`Decode::decode`](crate::Decode::decode), it takes no API version and
+    /// returns the typed [`RecordsError`].
     ///
     /// # Errors
     ///
     /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
-    pub fn decode<B: Buf>(buf: &mut B) -> Result<Self, RecordsError> {
+    pub fn decode_batch<B: Buf>(buf: &mut B) -> Result<Self, RecordsError> {
         Self::decode_with_policy(buf, RecordDecompressionPolicy::default())
     }
 
@@ -639,11 +646,6 @@ impl RecordBatch {
     ///
     /// Returns the underlying records error for malformed, truncated, corrupt,
     /// or over-limit input.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a value previously validated by the protocol type no longer
-    /// satisfies its field-range invariant.
     pub fn decode_with_policy<B: Buf>(
         buf: &mut B,
         policy: RecordDecompressionPolicy,
@@ -714,9 +716,9 @@ impl RecordBatch {
         // original staged read did. Fragmented input still needs staging;
         // uncompressed records keep their own body instead of a larger frame.
         let body_for_records = if codec != krabka_compression::CompressionType::None
-            && buf.chunk().len() >= body_len
+            && let Some(chunk) = buf.chunk().get(..body_len)
         {
-            let decoded = decompress(&buf.chunk()[..body_len]);
+            let decoded = decompress(chunk);
             buf.advance(body_len);
             decoded?
         } else {
@@ -732,18 +734,16 @@ impl RecordBatch {
 
         // Parse records.
         let count = hdr.records_count.get();
-        if count < 0 {
+        let Ok(count_usize) = usize::try_from(count) else {
             return Err(RecordsError::RecordParse(format!(
                 "negative records_count {count}"
             )));
-        }
+        };
         let mut body_cur: &[u8] = &body_for_records[..];
         // Bound pre-allocation: each record is at least 1 byte in the
         // decompressed body, so an honest `records_count` can never exceed the
         // body length. Clamp the capacity hint to reject huge declared counts.
-        let record_capacity = usize::try_from(count)
-            .expect("non-negative record count must fit in usize")
-            .min(body_for_records.len());
+        let record_capacity = count_usize.min(body_for_records.len());
         let mut records = Vec::with_capacity(record_capacity);
         for i in 0..count {
             // Parse the record into borrowed slices, then materialise its
@@ -752,7 +752,7 @@ impl RecordBatch {
             // allocation instead of copying every field into its own `Bytes`,
             // which removes ~2 heap allocations + memcpys per record on the
             // common (header-free) path.
-            let r = crate::records::borrowed::parse_one_record(&mut body_cur)
+            let r = parse_one_record(&mut body_cur)
                 .map_err(|e| RecordsError::RecordParse(format!("record[{i}]: {e}")))?;
             records.push(Record {
                 attributes: r.attributes,
@@ -764,7 +764,7 @@ impl RecordBatch {
                     .headers
                     .into_iter()
                     .map(|h| RecordHeader {
-                        key: h.key.to_string(),
+                        key: h.key.to_owned(),
                         value: h.value.map(|s| body_for_records.slice_ref(s)),
                     })
                     .collect(),
@@ -793,10 +793,13 @@ impl RecordBatch {
 
     /// Encode this batch into `buf`.
     ///
+    /// Unlike [`Encode::encode`](crate::Encode::encode), this method takes no
+    /// API version and returns the typed [`RecordsError`].
+    ///
     /// # Errors
     ///
     /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-    pub fn encode<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
+    pub fn encode_batch<B: BufMut>(&self, buf: &mut B) -> Result<(), RecordsError> {
         self.encode_with_compression_level(buf, None)
     }
 
@@ -807,13 +810,13 @@ impl RecordBatch {
     ///
     /// # Errors
     ///
-    /// Returns the same encoding errors as [`Self::encode`].
+    /// Returns the same encoding errors as [`Self::encode_batch`].
     pub fn encode_to_bytes(&self) -> Result<Bytes, RecordsError> {
         if self.attributes.compression() == krabka_compression::CompressionType::None {
             return Ok(self.encode_uncompressed()?.freeze());
         }
-        let mut wire = BytesMut::with_capacity(self.encoded_len());
-        self.encode(&mut wire)?;
+        let mut wire = BytesMut::with_capacity(self.encoded_batch_len());
+        self.encode_batch(&mut wire)?;
         Ok(wire.freeze())
     }
 
@@ -821,7 +824,7 @@ impl RecordBatch {
     /// reserved header, then the header is filled in and the CRC taken over
     /// the contiguous covered region in one pass.
     fn encode_uncompressed(&self) -> Result<BytesMut, RecordsError> {
-        let mut wire = BytesMut::with_capacity(self.encoded_len());
+        let mut wire = BytesMut::with_capacity(self.encoded_batch_len());
         wire.resize(HEADER_LEN, 0);
         for record in &self.records {
             record.encode(&mut wire)?;
@@ -829,15 +832,22 @@ impl RecordBatch {
         let body_len = wire.len() - HEADER_LEN;
         let batch_length = batch_length_for(body_len)?;
         let covered_head = self.covered_head()?;
-        wire[CRC_COVERAGE_START..HEADER_LEN].copy_from_slice(&covered_head);
-        let crc = crc32c(&wire[CRC_COVERAGE_START..]);
-        self.put_header_prefix(&mut &mut wire[..CRC_COVERAGE_START], batch_length, crc);
+        let short = || RecordsError::RecordParse("batch buffer shorter than its header".into());
+        let (prefix, covered) = wire
+            .split_at_mut_checked(CRC_COVERAGE_START)
+            .ok_or_else(short)?;
+        let (covered_head_dst, _) = covered
+            .split_first_chunk_mut::<{ HEADER_LEN - CRC_COVERAGE_START }>()
+            .ok_or_else(short)?;
+        *covered_head_dst = covered_head;
+        let crc = crc32c(covered);
+        self.put_header_prefix(&mut &mut *prefix, batch_length, crc);
         Ok(wire)
     }
 
     /// Encode this batch into `buf`, and compress the records at `level`.
     ///
-    /// `None` uses the default level of the codec, as [`Self::encode`] does.
+    /// `None` uses the default level of the codec, as [`Self::encode_batch`] does.
     /// A producer passes its `compression.<codec>.level` setting (KIP-390).
     /// See [`krabka_compression::compress_with_level`] for how each codec
     /// applies the level.
@@ -847,7 +857,7 @@ impl RecordBatch {
     /// Returns [`RecordsError::Compression`] when `level` is not a level that
     /// Kafka accepts for the codec of the batch attributes, including any
     /// level for a batch with no compression. Returns the other errors of
-    /// [`Self::encode`].
+    /// [`Self::encode_batch`].
     pub fn encode_with_compression_level<B: BufMut>(
         &self,
         buf: &mut B,
@@ -918,10 +928,12 @@ impl RecordBatch {
         buf.put_u32(crc);
     }
 
-    /// Predicted total bytes that `encode` will write, for an uncompressed batch.
+    /// Predicted total bytes that [`Self::encode_batch`] will write, for an
+    /// uncompressed batch. Unlike [`Encode::encoded_len`](crate::Encode::encoded_len),
+    /// it takes no API version.
     ///
     /// For a compressed batch, the actual size will differ.
-    pub fn encoded_len(&self) -> usize {
+    pub fn encoded_batch_len(&self) -> usize {
         let body: usize = self.records.iter().map(Record::encoded_len).sum();
         HEADER_LEN + body
     }
@@ -937,7 +949,8 @@ const HEADER_TAIL_LEN: i32 = 49;
 /// The body length a `batch_length` declares, or `None` when it is shorter
 /// than the header tail.
 fn declared_body_len(batch_length: i32) -> Option<usize> {
-    i32::checked_sub(batch_length, HEADER_TAIL_LEN).and_then(|n| usize::try_from(n).ok())
+    let n = i32::checked_sub(batch_length, HEADER_TAIL_LEN)?;
+    usize::try_from(n).ok()
 }
 
 /// The `batch_length` of a batch with a `body_len`-byte body.
@@ -1014,7 +1027,7 @@ mod batch_tests {
                     key: None,
                     value: Some(Bytes::from_static(b"3")),
                     headers: vec![RecordHeader {
-                        key: "h".to_string(),
+                        key: "h".to_owned(),
                         value: Some(Bytes::from_static(b"hv")),
                     }],
                     ..Default::default()
@@ -1036,10 +1049,10 @@ mod batch_tests {
             let mut batch = fixture();
             batch.attributes = batch.attributes.with_compression(CompressionType::None);
             let mut buf = BytesMut::new();
-            batch.encode(&mut buf).unwrap();
-            assert2::assert!(buf.len() == batch.encoded_len());
+            batch.encode_batch(&mut buf).unwrap();
+            assert2::assert!(buf.len() == batch.encoded_batch_len());
             let mut cur: &[u8] = &buf[..];
-            let decoded = RecordBatch::decode(&mut cur).unwrap();
+            let decoded = RecordBatch::decode_batch(&mut cur).unwrap();
             assert2::assert!((decoded, cur.is_empty()) == (batch, true));
         }
     }
@@ -1061,7 +1074,7 @@ mod batch_tests {
                 let mut batch = fixture();
                 batch.attributes = batch.attributes.with_compression(codec);
                 let mut encoded = BytesMut::new();
-                batch.encode(&mut encoded).unwrap();
+                batch.encode_batch(&mut encoded).unwrap();
                 let to_bytes = batch.encode_to_bytes().unwrap();
                 let stored = u32::from_be_bytes(encoded[17..21].try_into().unwrap());
                 assert2::assert!(
@@ -1085,10 +1098,10 @@ mod batch_tests {
             let mut batch = fixture_multi_record_batch();
             batch.attributes = batch.attributes.with_compression(codec);
             let mut encoded = BytesMut::new();
-            batch.encode(&mut encoded).unwrap();
+            batch.encode_batch(&mut encoded).unwrap();
             let mut corrupt = encoded.to_vec();
             *corrupt.last_mut().unwrap() ^= 0xFF;
-            let contiguous_error = RecordBatch::decode(&mut &corrupt[..]).unwrap_err();
+            let contiguous_error = RecordBatch::decode_batch(&mut &corrupt[..]).unwrap_err();
             let RecordsError::CrcMismatch { expected, computed } = contiguous_error else {
                 panic!("{codec:?}: {contiguous_error:?}");
             };
@@ -1096,14 +1109,14 @@ mod batch_tests {
 
             for split in [0, 10, 30, HEADER_LEN, HEADER_LEN + 1, encoded.len() - 1] {
                 let mut fragmented = (&encoded[..split]).chain(&encoded[split..]);
-                let decoded = RecordBatch::decode(&mut fragmented).unwrap();
+                let decoded = RecordBatch::decode_batch(&mut fragmented).unwrap();
                 assert2::assert!(
                     (decoded == batch, fragmented.has_remaining()) == (true, false),
                     "{codec:?} split at {split}"
                 );
 
                 let mut fragmented = (&corrupt[..split]).chain(&corrupt[split..]);
-                let error = RecordBatch::decode(&mut fragmented).unwrap_err();
+                let error = RecordBatch::decode_batch(&mut fragmented).unwrap_err();
                 assert2::assert!(
                     matches!(
                         error,
@@ -1142,8 +1155,8 @@ mod batch_tests {
         let default = encoded(None).unwrap();
         let fastest = encoded(Some(1)).unwrap();
         let best = encoded(Some(9)).unwrap();
-        let decoded =
-            [&fastest, &best].map(|bytes| RecordBatch::decode(&mut &bytes[..]).unwrap() == batch);
+        let decoded = [&fastest, &best]
+            .map(|bytes| RecordBatch::decode_batch(&mut &bytes[..]).unwrap() == batch);
 
         assert2::assert!(
             (
@@ -1174,7 +1187,7 @@ mod batch_tests {
         }
         let mut cur: &[u8] = &buf[..];
         assert2::assert!(matches!(
-            RecordBatch::decode(&mut cur),
+            RecordBatch::decode_batch(&mut cur),
             Err(RecordsError::UnsupportedMagic { found: 1 })
         ));
     }
@@ -1183,12 +1196,12 @@ mod batch_tests {
     fn rejects_bad_crc() {
         let b = fixture_single_record_batch();
         let mut buf = BytesMut::new();
-        b.encode(&mut buf).unwrap();
+        b.encode_batch(&mut buf).unwrap();
         // Corrupt the CRC bytes (offsets 17..21).
         buf[17] ^= 0xFF;
         let mut cur: &[u8] = &buf[..];
         assert2::assert!(matches!(
-            RecordBatch::decode(&mut cur),
+            RecordBatch::decode_batch(&mut cur),
             Err(RecordsError::CrcMismatch { .. })
         ));
     }
@@ -1204,9 +1217,9 @@ mod batch_tests {
             let mut batch = fixture_multi_record_batch();
             batch.attributes = batch.attributes.with_compression(codec);
             let mut buf = BytesMut::new();
-            batch.encode(&mut buf).unwrap();
+            batch.encode_batch(&mut buf).unwrap();
             let mut cur: &[u8] = &buf[..];
-            let decoded = RecordBatch::decode(&mut cur).unwrap();
+            let decoded = RecordBatch::decode_batch(&mut cur).unwrap();
             assert2::assert!((decoded, cur.is_empty()) == (batch, true));
         }
     }
@@ -1217,10 +1230,10 @@ mod batch_tests {
         batch.records[0].value = Some(Bytes::from(vec![b'x'; 4096]));
         batch.attributes = batch.attributes.with_compression(CompressionType::Lz4);
         let mut wire = BytesMut::new();
-        batch.encode(&mut wire).unwrap();
+        batch.encode_batch(&mut wire).unwrap();
 
         let mut default_cur = &wire[..];
-        RecordBatch::decode(&mut default_cur).unwrap();
+        RecordBatch::decode_batch(&mut default_cur).unwrap();
 
         let policy = RecordDecompressionPolicy::new(fraction(1.0), bytes(1), bytes(32)).unwrap();
         let mut limited_cur = &wire[..];
@@ -1292,10 +1305,10 @@ mod batch_tests {
         .with_delete_horizon(9999);
 
         let mut buf = BytesMut::new();
-        b.encode(&mut buf).unwrap();
+        b.encode_batch(&mut buf).unwrap();
 
         let mut cur: &[u8] = &buf[..];
-        let decoded = RecordBatch::decode(&mut cur).unwrap();
+        let decoded = RecordBatch::decode_batch(&mut cur).unwrap();
         assert2::assert!(cur.is_empty());
 
         assert2::assert!(decoded.delete_horizon_ms() == Some(9999));
@@ -1317,7 +1330,7 @@ mod batch_tests {
         let mut b = fixture_empty_batch();
         b.attributes = b.attributes.with_compression(CompressionType::None);
         let mut buf = BytesMut::new();
-        b.encode(&mut buf).unwrap();
+        b.encode_batch(&mut buf).unwrap();
 
         // records_count is the last 4 bytes of the fixed header.
         let rc_off = HEADER_LEN - 4;
@@ -1329,22 +1342,22 @@ mod batch_tests {
 
         let mut cur: &[u8] = &buf[..];
         // Must return an Err (EOF reading the first record), not OOM.
-        assert2::assert!(RecordBatch::decode(&mut cur).is_err());
+        assert2::assert!(RecordBatch::decode_batch(&mut cur).is_err());
     }
 }
 
 impl crate::Encode for RecordBatch {
     fn encode<B: BufMut>(&self, buf: &mut B, _version: i16) -> Result<(), crate::ProtocolError> {
-        RecordBatch::encode(self, buf).map_err(Into::into)
+        self.encode_batch(buf).map_err(Into::into)
     }
 
     fn encoded_len(&self, _version: i16) -> usize {
-        RecordBatch::encoded_len(self)
+        self.encoded_batch_len()
     }
 }
 
 impl crate::Decode<'_> for RecordBatch {
     fn decode<B: Buf>(buf: &mut B, _version: i16) -> Result<Self, crate::ProtocolError> {
-        RecordBatch::decode(buf).map_err(Into::into)
+        Self::decode_batch(buf).map_err(Into::into)
     }
 }

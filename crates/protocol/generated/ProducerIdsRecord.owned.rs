@@ -51,7 +51,7 @@ impl Encode for ProducerIdsRecord {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -121,8 +121,8 @@ impl ProducerIdsRecord {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("brokerId".to_string(), ::serde_json::json!(0));
-    obj.insert("brokerEpoch".to_string(), ::serde_json::json!(-1));
-    obj.insert("nextProducerId".to_string(), ::serde_json::json!(0));
+    obj.insert("brokerId".to_owned(), ::serde_json::json!(0));
+    obj.insert("brokerEpoch".to_owned(), ::serde_json::json!(-1));
+    obj.insert("nextProducerId".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

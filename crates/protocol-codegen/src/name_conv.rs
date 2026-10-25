@@ -12,8 +12,11 @@ pub fn field_name(s: &str) -> String {
     for (i, &b) in bytes.iter().enumerate() {
         if b.is_ascii_uppercase() {
             let is_first = i == 0;
-            let prev_upper = i > 0 && bytes[i - 1].is_ascii_uppercase();
-            let next_lower = i + 1 < bytes.len() && bytes[i + 1].is_ascii_lowercase();
+            let prev_upper = i
+                .checked_sub(1)
+                .and_then(|prev| bytes.get(prev))
+                .is_some_and(u8::is_ascii_uppercase);
+            let next_lower = bytes.get(i + 1).is_some_and(u8::is_ascii_lowercase);
             if !is_first && (!prev_upper || next_lower) {
                 out.push('_');
             }
@@ -39,7 +42,7 @@ pub fn module_name(s: &str) -> String {
 /// single place to change if the rules evolve.
 #[must_use]
 pub fn type_name(s: &str) -> String {
-    s.to_string()
+    s.to_owned()
 }
 
 fn is_reserved_keyword(s: &str) -> bool {

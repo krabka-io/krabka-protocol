@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -42,18 +43,18 @@ impl Encode for AlterConfigsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resources).len(), flex);
+                put_array_len(buf, (self.resources).len(), flex)?;
                 for it in &self.resources {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.validate_only);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -62,8 +63,7 @@ impl Encode for AlterConfigsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.resources).len(), flex);
+                let prefix = array_len_prefix_len((self.resources).len(), flex);
                 let body: usize = (self.resources)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -93,7 +93,7 @@ impl Decode<'_> for AlterConfigsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.resources = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterConfigsResource::decode(buf, version)?);
@@ -139,22 +139,22 @@ impl Encode for AlterConfigsResource {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.configs).len(), flex);
+                put_array_len(buf, (self.configs).len(), flex)?;
                 for it in &self.configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -173,8 +173,7 @@ impl Encode for AlterConfigsResource {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.configs).len(), flex);
+                let prefix = array_len_prefix_len((self.configs).len(), flex);
                 let body: usize = (self.configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -205,7 +204,7 @@ impl Decode<'_> for AlterConfigsResource {
         }
         if version >= 0 {
             out.configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterableConfig::decode(buf, version)?);
@@ -228,7 +227,7 @@ impl AlterConfigsResource {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 0 {
             m.configs = vec![AlterableConfig::populated(version)];
@@ -256,21 +255,21 @@ impl Encode for AlterableConfig {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value.as_deref());
+                put_compact_nullable_string(buf, self.value.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.value.as_deref());
+                put_nullable_string(buf, self.value.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -328,10 +327,10 @@ impl AlterableConfig {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.value = Some("x".to_string());
+            m.value = Some("x".to_owned());
         }
         m
     }
@@ -342,8 +341,8 @@ impl AlterableConfig {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("resources".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("validateOnly".to_string(), ::serde_json::Value::Bool(false));
+    obj.insert("resources".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("validateOnly".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for AlterConfigsRequest {

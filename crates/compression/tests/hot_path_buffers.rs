@@ -1,10 +1,18 @@
 //! Check buffer optimizations against separately assembled codec streams.
+#![cfg(test)]
+
+use std::{iter, thread};
 
 use assert2::assert;
+use flate2::read::GzDecoder;
 use krabka_compression::{
     CompressionError, CompressionType, compress, compress_with_level, decompress,
 };
 use krabka_units::{ByteSize, convert::ByteSizeExt as _};
+use lz4rip::block::{compress_into, get_maximum_output_size};
+use lzzzz::{lz4::max_compressed_size, lz4_hc};
+use snap::raw::Encoder as SnapEncoder;
+use zstd::bulk;
 
 fn payload(size: usize, random: bool) -> Vec<u8> {
     let mut state = 0xDEAD_BEEF_CAFE_BABE_u64;
@@ -63,8 +71,7 @@ fn streaming_gzip_reference(wire: &[u8], limit: usize) -> Result<Vec<u8>, String
     if wire.is_empty() {
         return Err("invalid compressed data: empty gzip payload".into());
     }
-    let mut reader =
-        flate2::read::GzDecoder::new(wire).take(u64::try_from(limit).unwrap().saturating_add(1));
+    let mut reader = GzDecoder::new(wire).take(u64::try_from(limit).unwrap().saturating_add(1));
     let mut output = Vec::with_capacity(wire.len().saturating_mul(2).min(limit));
     reader
         .read_to_end(&mut output)
@@ -205,7 +212,7 @@ fn lz4_matches_streaming_encoder() {
 fn lz4_reuse_preserves_independent_frames() {
     let threads: Vec<_> = (0..2_u8)
         .map(|seed| {
-            std::thread::spawn(move || {
+            thread::spawn(move || {
                 for size in [65_536, 65_535, 65_534, 131_071, 12, 65_536, 1_048_576] {
                     for random in [false, true] {
                         let mut input = payload(size, random);
@@ -214,9 +221,8 @@ fn lz4_reuse_preserves_independent_frames() {
                         }
                         let mut reference = vec![0x04, 0x22, 0x4d, 0x18, 0x60, 0x40, 0x82];
                         for block in input.chunks(65_536) {
-                            let mut compressed =
-                                vec![0; lz4rip::block::get_maximum_output_size(block.len())];
-                            let len = lz4rip::block::compress_into(block, &mut compressed).unwrap();
+                            let mut compressed = vec![0; get_maximum_output_size(block.len())];
+                            let len = compress_into(block, &mut compressed).unwrap();
                             if len < block.len() {
                                 reference
                                     .extend_from_slice(&u32::try_from(len).unwrap().to_le_bytes());
@@ -267,9 +273,8 @@ fn lz4_hc_matches_separate_block_buffers() {
                 // block buffers, including blocks too short to shrink.
                 let mut reference = vec![0x04, 0x22, 0x4d, 0x18, 0x60, 0x40, 0x82];
                 for block in input.chunks(BLOCK) {
-                    let mut compressed = vec![0; lzzzz::lz4::max_compressed_size(block.len())];
-                    let len =
-                        lzzzz::lz4_hc::compress(block, &mut compressed, level.min(12)).unwrap();
+                    let mut compressed = vec![0; max_compressed_size(block.len())];
+                    let len = lz4_hc::compress(block, &mut compressed, level.min(12)).unwrap();
                     if len < block.len() {
                         reference.extend_from_slice(&u32::try_from(len).unwrap().to_le_bytes());
                         reference.extend_from_slice(&compressed[..len]);
@@ -309,7 +314,7 @@ fn snappy_matches_separate_chunk_buffers() {
             let mut reference = vec![
                 0x82, b'S', b'N', b'A', b'P', b'P', b'Y', 0, 0, 0, 0, 1, 0, 0, 0, 1,
             ];
-            let mut encoder = snap::raw::Encoder::new();
+            let mut encoder = SnapEncoder::new();
             for chunk in input.chunks(32_768) {
                 let block = encoder.compress_vec(chunk).unwrap();
                 reference.extend_from_slice(&u32::try_from(block.len()).unwrap().to_be_bytes());
@@ -333,11 +338,11 @@ fn zstd_reuse_preserves_fresh_context_output() {
     // Alternating sizes/levels and independent threads must not leak a previous
     // batch's parameters or dictionary into the next frame.
     for _ in 0..2 {
-        std::thread::spawn(|| {
+        thread::spawn(|| {
             for size in [65_536, 1, 131_072, 0, 131_073, 1024, 1_048_576, 65_536] {
                 for level in [3, 1, 9, 3, -3, 3] {
                     let input = payload(size, false);
-                    let reference = zstd::bulk::compress(&input, level).unwrap();
+                    let reference = bulk::compress(&input, level).unwrap();
                     let wire = compress_with_level(CompressionType::Zstd, &input, level).unwrap();
                     assert!(wire.as_ref() == reference);
                 }
@@ -359,7 +364,7 @@ fn gzip_reuse_matches_streaming_encoder() {
     ] {
         for random in [false, true] {
             let input = payload(size, random);
-            for level in std::iter::once(-1).chain(1..=9) {
+            for level in iter::once(-1).chain(1..=9) {
                 let compression =
                     u32::try_from(level).map_or_else(|_| Compression::default(), Compression::new);
                 let mut reference = GzEncoder::new(Vec::new(), compression);
@@ -384,7 +389,7 @@ fn gzip_reuse_preserves_independent_frames() {
     use flate2::{Compression, write::GzEncoder};
     let threads: Vec<_> = (0..2)
         .map(|seed| {
-            std::thread::spawn(move || {
+            thread::spawn(move || {
                 for level in [6, 6, 1, 1, 9, -1, 6] {
                     for size in [65_536, 1, 131_073, 131_072, 0, 32_768, 13] {
                         let mut input = payload(size, seed != 0);
@@ -435,7 +440,7 @@ fn gzip_encoding_during_thread_local_drop() {
     thread_local! {
         static FIRST: EncodeOnDrop = const { EncodeOnDrop };
     }
-    std::thread::spawn(|| {
+    thread::spawn(|| {
         // Rust drops these in reverse initialization order. FIRST must encode
         // after the cache initialized by this nonempty compression is gone.
         FIRST.with(|_| {});

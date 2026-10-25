@@ -4,9 +4,12 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
-        put_string, string_len,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        string_bytes::{
+            compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
+            put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -36,19 +39,19 @@ impl Encode for DeleteGroupsRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups_names).len(), flex);
+                put_array_len(buf, (self.groups_names).len(), flex)?;
                 for it in &self.groups_names {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -57,8 +60,7 @@ impl Encode for DeleteGroupsRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups_names).len(), flex);
+                let prefix = array_len_prefix_len((self.groups_names).len(), flex);
                 let body: usize = (self.groups_names)
                     .iter()
                     .map(|it| {
@@ -91,7 +93,7 @@ impl Decode<'_> for DeleteGroupsRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.groups_names = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -115,7 +117,7 @@ impl DeleteGroupsRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.groups_names = vec!["x".to_string()];
+            m.groups_names = vec!["x".to_owned()];
         }
         m
     }
@@ -126,10 +128,7 @@ impl DeleteGroupsRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert(
-        "groupsNames".to_string(),
-        ::serde_json::Value::Array(vec![]),
-    );
+    obj.insert("groupsNames".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DeleteGroupsRequest {

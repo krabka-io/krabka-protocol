@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -62,28 +63,40 @@ impl DescribeClusterResponse {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 1 {
             put_i8(buf, self.endpoint_type);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.cluster_id);
+                put_compact_string(buf, &self.cluster_id)?;
             } else {
-                let () = put_string(buf, &self.cluster_id);
+                put_string(buf, &self.cluster_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -98,11 +111,11 @@ impl DescribeClusterResponse {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.brokers).len(), flex);
+                put_array_len(buf, (self.brokers).len(), flex)?;
                 for it in &self.brokers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -111,11 +124,17 @@ impl DescribeClusterResponse {
             put_i32(buf, self.cluster_authorized_operations);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -199,7 +218,7 @@ impl DescribeClusterResponse {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.brokers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeClusterBroker::decode(buf, version)?);
@@ -243,13 +262,13 @@ impl Encode for DescribeClusterResponse {
         let flex = is_flexible(version);
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
+        self.encode_field_2(buf, version, flex)?;
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -283,8 +302,7 @@ impl Encode for DescribeClusterResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.brokers).len(), flex);
+                let prefix = array_len_prefix_len((self.brokers).len(), flex);
                 let body: usize = (self.brokers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -336,13 +354,13 @@ impl DescribeClusterResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 1 {
             m.endpoint_type = 1i8;
         }
         if version >= 0 {
-            m.cluster_id = "x".to_string();
+            m.cluster_id = "x".to_owned();
         }
         if version >= 0 {
             m.controller_id = 1i32;
@@ -373,9 +391,9 @@ impl Encode for DescribeClusterBroker {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 0 {
@@ -383,9 +401,9 @@ impl Encode for DescribeClusterBroker {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack.as_deref());
+                put_compact_nullable_string(buf, self.rack.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.rack.as_deref());
+                put_nullable_string(buf, self.rack.as_deref())?;
             }
         }
         if version >= 2 {
@@ -393,7 +411,7 @@ impl Encode for DescribeClusterBroker {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -472,13 +490,13 @@ impl DescribeClusterBroker {
             m.broker_id = 1i32;
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.port = 1i32;
         }
         if version >= 0 {
-            m.rack = Some("x".to_string());
+            m.rack = Some("x".to_owned());
         }
         if version >= 2 {
             m.is_fenced = true;
@@ -492,20 +510,20 @@ impl DescribeClusterBroker {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorMessage".to_owned(), ::serde_json::Value::Null);
     if version >= 1 {
-        obj.insert("endpointType".to_string(), ::serde_json::json!(1));
+        obj.insert("endpointType".to_owned(), ::serde_json::json!(1));
     }
     obj.insert(
-        "clusterId".to_string(),
+        "clusterId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("controllerId".to_string(), ::serde_json::json!(-1));
-    obj.insert("brokers".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("controllerId".to_owned(), ::serde_json::json!(-1));
+    obj.insert("brokers".to_owned(), ::serde_json::Value::Array(vec![]));
     obj.insert(
-        "clusterAuthorizedOperations".to_string(),
+        "clusterAuthorizedOperations".to_owned(),
         ::serde_json::json!(-2_147_483_648),
     );
     ::serde_json::Value::Object(obj)

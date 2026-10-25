@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, put_bool},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -41,15 +42,15 @@ impl Encode for StreamsGroupDescribeRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.group_ids).len(), flex);
+                put_array_len(buf, (self.group_ids).len(), flex)?;
                 for it in &self.group_ids {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.include_authorized_operations);
@@ -59,7 +60,7 @@ impl Encode for StreamsGroupDescribeRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -68,8 +69,7 @@ impl Encode for StreamsGroupDescribeRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.group_ids).len(), flex);
+                let prefix = array_len_prefix_len((self.group_ids).len(), flex);
                 let body: usize = (self.group_ids)
                     .iter()
                     .map(|it| {
@@ -108,7 +108,7 @@ impl Decode<'_> for StreamsGroupDescribeRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.group_ids = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -138,7 +138,7 @@ impl StreamsGroupDescribeRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.group_ids = vec!["x".to_string()];
+            m.group_ids = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.include_authorized_operations = true;
@@ -155,14 +155,14 @@ impl StreamsGroupDescribeRequest {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("groupIds".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("groupIds".to_owned(), ::serde_json::Value::Array(vec![]));
     obj.insert(
-        "includeAuthorizedOperations".to_string(),
+        "includeAuthorizedOperations".to_owned(),
         ::serde_json::Value::Bool(false),
     );
     if version >= 1 {
         obj.insert(
-            "includeTopologyDescription".to_string(),
+            "includeTopologyDescription".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }

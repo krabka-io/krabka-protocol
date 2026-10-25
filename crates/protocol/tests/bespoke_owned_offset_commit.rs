@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned OffsetCommit wrappers. Relocated from
 // hand-written wrappers.
 
@@ -27,7 +29,7 @@ fn owned_offset_commit_request_min_version_group_id_preserved() {
 #[test]
 fn owned_offset_commit_request_max_version_roundtrips() {
     let req = OffsetCommitRequest {
-        group_id: "test-group".to_string(),
+        group_id: "test-group".to_owned(),
         generation_id_or_member_epoch: -1i32,
         member_id: String::new(),
         group_instance_id: None,

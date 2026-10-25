@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, put_bool, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -42,18 +43,18 @@ impl Encode for DescribeClientQuotasRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.components).len(), flex);
+                put_array_len(buf, (self.components).len(), flex)?;
                 for it in &self.components {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_bool(buf, self.strict);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -62,8 +63,7 @@ impl Encode for DescribeClientQuotasRequest {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.components).len(), flex);
+                let prefix = array_len_prefix_len((self.components).len(), flex);
                 let body: usize = (self.components)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -93,7 +93,7 @@ impl Decode<'_> for DescribeClientQuotasRequest {
         let mut out = Self::default();
         if version >= 0 {
             out.components = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ComponentData::decode(buf, version)?);
@@ -146,9 +146,9 @@ impl Encode for ComponentData {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.entity_type);
+                put_compact_string(buf, &self.entity_type)?;
             } else {
-                let () = put_string(buf, &self.entity_type);
+                put_string(buf, &self.entity_type)?;
             }
         }
         if version >= 0 {
@@ -156,14 +156,14 @@ impl Encode for ComponentData {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.match_.as_deref());
+                put_compact_nullable_string(buf, self.match_.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.match_.as_deref());
+                put_nullable_string(buf, self.match_.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -227,13 +227,13 @@ impl ComponentData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.entity_type = "x".to_string();
+            m.entity_type = "x".to_owned();
         }
         if version >= 0 {
             m.match_type = 1i8;
         }
         if version >= 0 {
-            m.match_ = Some("x".to_string());
+            m.match_ = Some("x".to_owned());
         }
         m
     }
@@ -244,8 +244,8 @@ impl ComponentData {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("components".to_string(), ::serde_json::Value::Array(vec![]));
-    obj.insert("strict".to_string(), ::serde_json::Value::Bool(false));
+    obj.insert("components".to_owned(), ::serde_json::Value::Array(vec![]));
+    obj.insert("strict".to_owned(), ::serde_json::Value::Bool(false));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DescribeClientQuotasRequest {

@@ -62,6 +62,10 @@ pub enum JavaReplacementError {
     /// `$n` where the pattern has fewer than `n` groups.
     #[error("No group {0}")]
     NoGroup(usize),
+    /// A match offset that does not fall on a character boundary of the
+    /// input. The `regex` crate never reports one; Java has no equivalent.
+    #[error("match offset {0} is not a character boundary of the input")]
+    MatchOffset(usize),
 }
 
 /// A pattern compiled for Java's `matches`, `replaceAll` and `replaceFirst`.
@@ -147,15 +151,21 @@ impl JavaPattern {
             let Some(captures) = self.unanchored.captures_at(text, search) else {
                 break;
             };
-            let whole = captures.get(0).expect("group 0 always participates");
-            out.push_str(&text[appended..whole.start()]);
+            let whole = captures.get_match();
+            out.push_str(
+                text.get(appended..whole.start())
+                    .ok_or_else(|| JavaReplacementError::MatchOffset(whole.start()))?,
+            );
             self.expand(&captures, replacement, &mut out)?;
             appended = whole.end();
             replaced += 1;
             // `Matcher.find` resumes at the previous end, one character
             // further when the previous match was empty.
             search = if whole.is_empty() {
-                match text[whole.end()..].chars().next() {
+                let rest = text
+                    .get(whole.end()..)
+                    .ok_or_else(|| JavaReplacementError::MatchOffset(whole.end()))?;
+                match rest.chars().next() {
                     Some(next) => whole.end() + next.len_utf8(),
                     None => break,
                 }
@@ -163,7 +173,10 @@ impl JavaPattern {
                 whole.end()
             };
         }
-        out.push_str(&text[appended..]);
+        out.push_str(
+            text.get(appended..)
+                .ok_or(JavaReplacementError::MatchOffset(appended))?,
+        );
         Ok(out)
     }
 

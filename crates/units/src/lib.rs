@@ -74,6 +74,8 @@
 
 use core::marker::PhantomData;
 
+use uom::si::f64 as si;
+
 pub mod convert;
 pub mod fmt;
 pub mod parse;
@@ -88,14 +90,14 @@ pub use uom;
 /// the byte, so [`ByteSizeExt::bytes_u64`](convert::ByteSizeExt::bytes_u64) is
 /// exact for every value the wire can carry. Construct with [`bytes`],
 /// [`kibibytes`], [`mebibytes`], or [`gibibytes`].
-pub type ByteSize = uom::si::f64::Information;
+pub type ByteSize = si::Information;
 
 /// A byte throughput: a producer quota, a replication rate, a measured
 /// send/receive rate.
 ///
 /// Divide a [`ByteSize`] by a [`Time`] to get one. The `uom` product of two
 /// quantities erases the information *kind*, so the result needs `.into()`.
-pub type ByteRate = uom::si::f64::InformationRate;
+pub type ByteRate = si::InformationRate;
 
 /// An extent of time: a timeout, a retention window, a backoff, a measured
 /// latency.
@@ -104,19 +106,19 @@ pub type ByteRate = uom::si::f64::InformationRate;
 /// [`millis`], [`secs`], [`minutes`], [`hours`], or [`days`], or convert from
 /// [`core::time::Duration`] with
 /// [`TimeExt::from_std`](convert::TimeExt::from_std).
-pub type Time = uom::si::f64::Time;
+pub type Time = si::Time;
 
 /// An event rate: records per second, requests per second, polls per second.
 ///
 /// Distinct from [`ByteRate`], which carries the information dimension. The
 /// reciprocal of a [`Time`] period.
-pub type Frequency = uom::si::f64::Frequency;
+pub type Frequency = si::Frequency;
 
 /// A dimensionless fraction: a fill factor, a sampling probability, a percentage.
 ///
 /// Multiplying a [`ByteSize`] by one of these yields a [`ByteSize`], so scaling a
 /// buffer by a fraction keeps its dimension.
-pub type Ratio = uom::si::f64::Ratio;
+pub type Ratio = si::Ratio;
 
 /// Everything needed to name, build, and unwrap a quantity.
 ///

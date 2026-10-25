@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remove_user_scram_credential_record,
     primitives::{
         fixed::{get_i8, put_i8},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -25,15 +26,10 @@ pub struct RemoveUserScramCredentialRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemoveUserScramCredentialRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remove_user_scram_credential_record::RemoveUserScramCredentialRecord {
-        crate::owned::remove_user_scram_credential_record::RemoveUserScramCredentialRecord {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> remove_user_scram_credential_record::RemoveUserScramCredentialRecord {
+        remove_user_scram_credential_record::RemoveUserScramCredentialRecord {
+            name: (self.name).to_owned(),
             mechanism: (self.mechanism),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -49,9 +45,9 @@ impl Encode for RemoveUserScramCredentialRecord<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -59,7 +55,7 @@ impl Encode for RemoveUserScramCredentialRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

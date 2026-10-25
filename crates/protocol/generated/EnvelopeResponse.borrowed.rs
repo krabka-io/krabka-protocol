@@ -3,9 +3,13 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::envelope_response,
     primitives::{
         fixed::{get_i16, put_i16},
-        string_bytes::{put_compact_nullable_bytes, put_nullable_bytes},
+        string_bytes::{
+            compact_nullable_bytes_len, nullable_bytes_len, put_compact_nullable_bytes,
+            put_nullable_bytes,
+        },
         string_bytes_borrowed::{get_compact_nullable_bytes_borrowed, get_nullable_bytes_borrowed},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
@@ -26,12 +30,9 @@ pub struct EnvelopeResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EnvelopeResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::envelope_response::EnvelopeResponse {
-        crate::owned::envelope_response::EnvelopeResponse {
+    pub fn to_owned(&self) -> envelope_response::EnvelopeResponse {
+        envelope_response::EnvelopeResponse {
             response_data: (self.response_data).map(Bytes::copy_from_slice),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -49,9 +50,9 @@ impl Encode for EnvelopeResponse<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.response_data);
+                put_compact_nullable_bytes(buf, self.response_data)?;
             } else {
-                let () = put_nullable_bytes(buf, self.response_data);
+                put_nullable_bytes(buf, self.response_data)?;
             }
         }
         if version >= 0 {
@@ -59,7 +60,7 @@ impl Encode for EnvelopeResponse<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -67,22 +68,10 @@ impl Encode for EnvelopeResponse<'_> {
         let flex = is_flexible(version);
         let mut n: usize = 0;
         if version >= 0 {
-            n += match self.response_data {
-                None => {
-                    if flex {
-                        1
-                    } else {
-                        4
-                    }
-                }
-                Some(b) => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap())
-                            + b.len()
-                    } else {
-                        4 + b.len()
-                    }
-                }
+            n += if flex {
+                compact_nullable_bytes_len(self.response_data)
+            } else {
+                nullable_bytes_len(self.response_data)
             };
         }
         if version >= 0 {

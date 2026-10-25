@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned Produce wrappers (checks beyond default min/max).
 // Relocated from hand-written wrappers.
 

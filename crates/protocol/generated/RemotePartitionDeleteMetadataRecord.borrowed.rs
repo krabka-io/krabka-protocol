@@ -3,10 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::remote_partition_delete_metadata_record,
     primitives::{
         fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -27,15 +29,11 @@ pub struct RemotePartitionDeleteMetadataRecord<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl RemotePartitionDeleteMetadataRecord<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::remote_partition_delete_metadata_record::RemotePartitionDeleteMetadataRecord
-    {
-        crate::owned::remote_partition_delete_metadata_record::RemotePartitionDeleteMetadataRecord {
+    ) -> remote_partition_delete_metadata_record::RemotePartitionDeleteMetadataRecord {
+        remote_partition_delete_metadata_record::RemotePartitionDeleteMetadataRecord {
             topic_id_partition: (self.topic_id_partition).to_owned(),
             broker_id: (self.broker_id),
             event_timestamp_ms: (self.event_timestamp_ms),
@@ -66,7 +64,7 @@ impl Encode for RemotePartitionDeleteMetadataRecord<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -142,20 +140,15 @@ impl RemotePartitionDeleteMetadataRecord<'_> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicIdPartitionEntry<'a> {
     pub name: &'a str,
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub partition: i32,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicIdPartitionEntry<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::remote_partition_delete_metadata_record::TopicIdPartitionEntry {
-        crate::owned::remote_partition_delete_metadata_record::TopicIdPartitionEntry {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> remote_partition_delete_metadata_record::TopicIdPartitionEntry {
+        remote_partition_delete_metadata_record::TopicIdPartitionEntry {
+            name: (self.name).to_owned(),
             id: (self.id),
             partition: (self.partition),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -167,20 +160,20 @@ impl Encode for TopicIdPartitionEntry<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
         if version >= 0 {
             put_i32(buf, self.partition);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -219,7 +212,7 @@ impl<'de> DecodeBorrow<'de> for TopicIdPartitionEntry<'de> {
             };
         }
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partition = get_i32(buf)?;
@@ -239,7 +232,7 @@ impl TopicIdPartitionEntry<'_> {
             m.name = "x";
         }
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partition = 1i32;

@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, get_compact_nullable_string_owned,
@@ -51,16 +52,16 @@ impl Encode for ShareGroupHeartbeatResponse {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.member_id.as_deref());
+                put_compact_nullable_string(buf, self.member_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.member_id.as_deref());
+                put_nullable_string(buf, self.member_id.as_deref())?;
             }
         }
         if version >= 0 {
@@ -82,7 +83,7 @@ impl Encode for ShareGroupHeartbeatResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -189,10 +190,10 @@ impl ShareGroupHeartbeatResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
-            m.member_id = Some("x".to_string());
+            m.member_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.member_epoch = 1i32;
@@ -217,15 +218,15 @@ impl Encode for Assignment {
         let flex = version >= 0;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_partitions).len(), flex);
+                put_array_len(buf, (self.topic_partitions).len(), flex)?;
                 for it in &self.topic_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -234,10 +235,7 @@ impl Encode for Assignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_partitions).len(), flex);
                 let body: usize = (self.topic_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -258,7 +256,7 @@ impl Decode<'_> for Assignment {
         let mut out = Self::default();
         if version >= 0 {
             out.topic_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::share_group_heartbeat_response::topic_partitions::TopicPartitions::decode(buf, version)?);
@@ -289,12 +287,12 @@ impl Assignment {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("errorMessage".to_string(), ::serde_json::Value::Null);
-    obj.insert("memberId".to_string(), ::serde_json::Value::Null);
-    obj.insert("memberEpoch".to_string(), ::serde_json::json!(0));
-    obj.insert("heartbeatIntervalMs".to_string(), ::serde_json::json!(0));
-    obj.insert("assignment".to_string(), ::serde_json::Value::Null);
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorMessage".to_owned(), ::serde_json::Value::Null);
+    obj.insert("memberId".to_owned(), ::serde_json::Value::Null);
+    obj.insert("memberEpoch".to_owned(), ::serde_json::json!(0));
+    obj.insert("heartbeatIntervalMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("assignment".to_owned(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }

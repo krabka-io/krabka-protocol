@@ -1,5 +1,6 @@
-//! Dispatch enum over the generated KIP-631 record types, keyed by the `KRaft`
-//! metadata record apiKey. That apiKey namespace is distinct from the RPC
+//! Dispatch enum over the generated KIP-631 record types.
+//!
+//! The enum is keyed by the `KRaft` metadata record apiKey. That apiKey namespace is distinct from the RPC
 //! apiKeys. The enum encodes and decodes through the value envelope. Unknown
 //! apiKeys decode to `Unknown`, so a forward-compatible reader can always read
 //! the record.
@@ -256,7 +257,7 @@ mod tests {
     #[test]
     fn feature_level_record_value_roundtrips_through_dispatch() {
         let rec = KraftMetadataRecord::FeatureLevel(FeatureLevelRecord {
-            name: "metadata.version".to_string(),
+            name: "metadata.version".to_owned(),
             feature_level: 25,
             ..Default::default()
         });

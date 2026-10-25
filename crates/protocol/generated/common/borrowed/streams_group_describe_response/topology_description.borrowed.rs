@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_describe_response::topology_description,
+    primitives::array::{array_len_prefix_len, get_array_len, put_array_len},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -14,12 +16,9 @@ pub struct TopologyDescription<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopologyDescription<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::streams_group_describe_response::topology_description::TopologyDescription{
-        crate::owned::common::streams_group_describe_response::topology_description::TopologyDescription {
+    pub fn to_owned(&self) -> topology_description::TopologyDescription {
+        topology_description::TopologyDescription {
             subtopologies: (self.subtopologies).iter().map(super::topology_description_subtopology::TopologyDescriptionSubtopology::to_owned).collect(),
             global_stores: (self.global_stores).iter().map(super::topology_description_global_store::TopologyDescriptionGlobalStore::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -31,23 +30,23 @@ impl Encode for TopologyDescription<'_> {
         let flex = version >= 0;
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.subtopologies).len(), flex);
+                put_array_len(buf, (self.subtopologies).len(), flex)?;
                 for it in &self.subtopologies {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.global_stores).len(), flex);
+                put_array_len(buf, (self.global_stores).len(), flex)?;
                 for it in &self.global_stores {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -56,10 +55,7 @@ impl Encode for TopologyDescription<'_> {
         let mut n: usize = 0;
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.subtopologies).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.subtopologies).len(), flex);
                 let body: usize = (self.subtopologies)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -69,10 +65,7 @@ impl Encode for TopologyDescription<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.global_stores).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.global_stores).len(), flex);
                 let body: usize = (self.global_stores)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -93,7 +86,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescription<'de> {
         let mut out = Self::default();
         if version >= 1 {
             out.subtopologies = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::topology_description_subtopology::TopologyDescriptionSubtopology::decode_borrow(buf, version)?);
@@ -103,7 +96,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescription<'de> {
         }
         if version >= 1 {
             out.global_stores = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::topology_description_global_store::TopologyDescriptionGlobalStore::decode_borrow(buf, version)?);

@@ -3,12 +3,14 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::join_group_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i16, get_i32, put_bool, put_i16, put_i32},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, nullable_string_len, put_bytes,
-            put_compact_bytes, put_compact_nullable_string, put_compact_string,
-            put_nullable_string, put_string, string_len,
+            bytes_len, compact_bytes_len, compact_nullable_string_len, compact_string_len,
+            nullable_string_len, put_bytes, put_compact_bytes, put_compact_nullable_string,
+            put_compact_string, put_nullable_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_bytes_borrowed, get_compact_bytes_borrowed, get_compact_nullable_string_borrowed,
@@ -56,20 +58,17 @@ impl Default for JoinGroupResponse<'_> {
     }
 }
 impl<'a> JoinGroupResponse<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::join_group_response::JoinGroupResponse {
-        crate::owned::join_group_response::JoinGroupResponse {
+    pub fn to_owned(&self) -> join_group_response::JoinGroupResponse {
+        join_group_response::JoinGroupResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             generation_id: (self.generation_id),
-            protocol_type: (self.protocol_type).map(std::string::ToString::to_string),
-            protocol_name: (self.protocol_name).map(std::string::ToString::to_string),
-            leader: (self.leader).to_string(),
+            protocol_type: (self.protocol_type).map(str::to_owned),
+            protocol_name: (self.protocol_name).map(str::to_owned),
+            leader: (self.leader).to_owned(),
             skip_assignment: (self.skip_assignment),
-            member_id: (self.member_id).to_string(),
+            member_id: (self.member_id).to_owned(),
             members: (self.members)
                 .iter()
                 .map(JoinGroupResponseMember::to_owned)
@@ -92,54 +91,78 @@ impl<'a> JoinGroupResponse<'a> {
             put_i32(buf, self.generation_id);
         }
     }
-    fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_3<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 7 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.protocol_type);
+                put_compact_nullable_string(buf, self.protocol_type)?;
             } else {
-                let () = put_nullable_string(buf, self.protocol_type);
+                put_nullable_string(buf, self.protocol_type)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if version >= 7 {
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.protocol_name);
+                    put_compact_nullable_string(buf, self.protocol_name)?;
                 } else {
-                    let () = put_nullable_string(buf, self.protocol_name);
+                    put_nullable_string(buf, self.protocol_name)?;
                 }
             } else {
                 if flex {
-                    let () = put_compact_string(buf, (self.protocol_name).unwrap_or(""));
+                    put_compact_string(buf, (self.protocol_name).unwrap_or(""))?;
                 } else {
-                    let () = put_string(buf, (self.protocol_name).unwrap_or(""));
+                    put_string(buf, (self.protocol_name).unwrap_or(""))?;
                 }
             }
         }
+        Ok(())
     }
-    fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_5<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.leader);
+                put_compact_string(buf, self.leader)?;
             } else {
-                let () = put_string(buf, self.leader);
+                put_string(buf, self.leader)?;
             }
         }
+        Ok(())
     }
     fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 9 {
             put_bool(buf, self.skip_assignment);
         }
     }
-    fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_7<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_8<B: BufMut>(
         &self,
@@ -149,19 +172,25 @@ impl<'a> JoinGroupResponse<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -283,7 +312,7 @@ impl<'a> JoinGroupResponse<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(JoinGroupResponseMember::decode_borrow(buf, version)?);
@@ -317,13 +346,13 @@ impl Encode for JoinGroupResponse<'_> {
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
         self.encode_field_2(buf, version, flex);
-        self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
-        self.encode_field_5(buf, version, flex);
+        self.encode_field_3(buf, version, flex)?;
+        self.encode_field_4(buf, version, flex)?;
+        self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex);
-        self.encode_field_7(buf, version, flex);
+        self.encode_field_7(buf, version, flex)?;
         self.encode_field_8(buf, version, flex)?;
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -379,8 +408,7 @@ impl Encode for JoinGroupResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -461,14 +489,11 @@ pub struct JoinGroupResponseMember<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl JoinGroupResponseMember<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::join_group_response::JoinGroupResponseMember {
-        crate::owned::join_group_response::JoinGroupResponseMember {
-            member_id: (self.member_id).to_string(),
-            group_instance_id: (self.group_instance_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> join_group_response::JoinGroupResponseMember {
+        join_group_response::JoinGroupResponseMember {
+            member_id: (self.member_id).to_owned(),
+            group_instance_id: (self.group_instance_id).map(str::to_owned),
             metadata: Bytes::copy_from_slice(self.metadata),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -479,28 +504,28 @@ impl Encode for JoinGroupResponseMember<'_> {
         let flex = version >= 6;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.member_id);
+                put_compact_string(buf, self.member_id)?;
             } else {
-                let () = put_string(buf, self.member_id);
+                put_string(buf, self.member_id)?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id);
+                put_compact_nullable_string(buf, self.group_instance_id)?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id);
+                put_nullable_string(buf, self.group_instance_id)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.metadata);
+                put_compact_bytes(buf, self.metadata)?;
             } else {
-                let () = put_bytes(buf, self.metadata);
+                put_bytes(buf, self.metadata)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -523,11 +548,9 @@ impl Encode for JoinGroupResponseMember<'_> {
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.metadata).len() + 1).unwrap(),
-                ) + (self.metadata).len()
+                compact_bytes_len(self.metadata)
             } else {
-                4 + (self.metadata).len()
+                bytes_len(self.metadata)
             };
         }
         if flex {

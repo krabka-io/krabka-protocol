@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::find_coordinator_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -52,17 +54,14 @@ impl Default for FindCoordinatorResponse<'_> {
     }
 }
 impl FindCoordinatorResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::find_coordinator_response::FindCoordinatorResponse {
-        crate::owned::find_coordinator_response::FindCoordinatorResponse {
+    pub fn to_owned(&self) -> find_coordinator_response::FindCoordinatorResponse {
+        find_coordinator_response::FindCoordinatorResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
             coordinators: (self.coordinators)
                 .iter()
@@ -89,9 +88,9 @@ impl Encode for FindCoordinatorResponse<'_> {
         }
         if (1..=3).contains(&version) {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if (0..=3).contains(&version) {
@@ -99,9 +98,9 @@ impl Encode for FindCoordinatorResponse<'_> {
         }
         if (0..=3).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if (0..=3).contains(&version) {
@@ -109,15 +108,15 @@ impl Encode for FindCoordinatorResponse<'_> {
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.coordinators).len(), flex);
+                put_array_len(buf, (self.coordinators).len(), flex)?;
                 for it in &self.coordinators {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -152,8 +151,7 @@ impl Encode for FindCoordinatorResponse<'_> {
         }
         if version >= 4 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.coordinators).len(), flex);
+                let prefix = array_len_prefix_len((self.coordinators).len(), flex);
                 let body: usize = (self.coordinators)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -206,7 +204,7 @@ impl<'de> DecodeBorrow<'de> for FindCoordinatorResponse<'de> {
         }
         if version >= 4 {
             out.coordinators = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Coordinator::decode_borrow(buf, version)?);
@@ -273,18 +271,15 @@ impl Default for Coordinator<'_> {
     }
 }
 impl Coordinator<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::find_coordinator_response::Coordinator {
-        crate::owned::find_coordinator_response::Coordinator {
-            key: (self.key).to_string(),
+    pub fn to_owned(&self) -> find_coordinator_response::Coordinator {
+        find_coordinator_response::Coordinator {
+            key: (self.key).to_owned(),
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -294,9 +289,9 @@ impl Encode for Coordinator<'_> {
         let flex = version >= 3;
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, self.key);
+                put_compact_string(buf, self.key)?;
             } else {
-                let () = put_string(buf, self.key);
+                put_string(buf, self.key)?;
             }
         }
         if version >= 4 {
@@ -304,9 +299,9 @@ impl Encode for Coordinator<'_> {
         }
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 4 {
@@ -317,14 +312,14 @@ impl Encode for Coordinator<'_> {
         }
         if version >= 4 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

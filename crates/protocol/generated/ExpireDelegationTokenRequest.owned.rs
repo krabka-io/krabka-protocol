@@ -40,9 +40,9 @@ impl Encode for ExpireDelegationTokenRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.hmac);
+                put_compact_bytes(buf, &self.hmac)?;
             } else {
-                let () = put_bytes(buf, &self.hmac);
+                put_bytes(buf, &self.hmac)?;
             }
         }
         if version >= 0 {
@@ -50,7 +50,7 @@ impl Encode for ExpireDelegationTokenRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -121,10 +121,10 @@ impl ExpireDelegationTokenRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "hmac".to_string(),
+        "hmac".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("expiryTimePeriodMs".to_string(), ::serde_json::json!(0));
+    obj.insert("expiryTimePeriodMs".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for ExpireDelegationTokenRequest {

@@ -1,34 +1,38 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs, io,
+    path::{Path, PathBuf},
+};
 
-use krabka_protocol_codegen::{emit, fmt, ir, name_conv, out::Written, validate};
+use krabka_protocol_codegen::{
+    emit::{self, wrappers::Flavor},
+    fmt, ir, name_conv,
+    out::{WriteError, Written},
+    validate,
+};
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
 
-fn parse_args() -> (PathBuf, PathBuf, Option<String>) {
+/// The command line: `[--namespace NAME] <schemas> <out>`.
+fn parse_args() -> Result<(PathBuf, PathBuf, Option<String>), RunError> {
     let mut positional: Vec<String> = Vec::new();
     let mut namespace: Option<String> = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         if a == "--namespace" {
-            namespace = Some(args.next().expect("--namespace requires a value"));
+            namespace = Some(args.next().ok_or(RunError::Usage)?);
         } else {
             positional.push(a);
         }
     }
-    assert_eq!(
-        positional.len(),
-        2,
-        "usage: codegen [--namespace NAME] <schemas> <out>"
-    );
-    (
-        PathBuf::from(&positional[0]),
-        PathBuf::from(&positional[1]),
-        namespace,
-    )
+    let [schemas, out] = positional.as_slice() else {
+        return Err(RunError::Usage);
+    };
+    Ok((PathBuf::from(schemas), PathBuf::from(out), namespace))
 }
 
 fn main() -> Result<(), RunError> {
-    let (schemas, out, namespace) = parse_args();
+    let (schemas, out, namespace) = parse_args()?;
     let count = run(&schemas, &out, namespace.as_deref())?;
     eprintln!("Emitted {count} message specs.");
     Ok(())
@@ -43,17 +47,23 @@ enum RunError {
     #[error(transparent)]
     Emit(#[from] emit::EmitError),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
     Fmt(#[from] fmt::FmtError),
     #[error(transparent)]
-    Write(#[from] krabka_protocol_codegen::out::WriteError),
+    Write(#[from] WriteError),
     #[error("schemas/VERSION must contain a `sha:` line")]
     MissingSha,
+    #[error("usage: codegen [--namespace NAME] <schemas> <out>")]
+    Usage,
+    #[error("common-struct key `{0}` must be `<message_snake>/<struct_snake>`")]
+    CommonStem(String),
+    #[error("a namespaced output directory `{0}` must sit two levels below the protocol crate")]
+    NamespaceOut(PathBuf),
 }
 
-fn read_schemas_sha(schemas: &std::path::Path) -> Result<String, RunError> {
-    let version_text = std::fs::read_to_string(schemas.join("VERSION"))?;
+fn read_schemas_sha(schemas: &Path) -> Result<String, RunError> {
+    let version_text = fs::read_to_string(schemas.join("VERSION"))?;
     let sha = version_text
         .lines()
         .find_map(|l| l.strip_prefix("sha: "))
@@ -77,28 +87,27 @@ fn protocol_src_from_out(out: &Path) -> PathBuf {
 fn write_wrapper(
     written: &mut Written,
     spec: &ir::MessageSpec,
-    flavor: emit::wrappers::Flavor,
+    flavor: Flavor,
     schemas_version: &str,
     protocol_src: &Path,
     namespace: Option<&str>,
-) -> std::io::Result<()> {
-    use emit::wrappers::Flavor;
+) -> Result<(), RunError> {
     let snake = name_conv::module_name(&spec.name);
-    let body = emit::wrappers::emit(spec, flavor, schemas_version, namespace);
+    let body = emit::wrappers::emit(spec, flavor, schemas_version, namespace)?;
     let dir = protocol_src.join(match flavor {
         Flavor::Owned => "owned",
         Flavor::Borrowed => "borrowed",
     });
-    std::fs::create_dir_all(&dir)?;
+    fs::create_dir_all(&dir)?;
     written.write(dir.join(format!("{snake}.rs")), &body)?;
     Ok(())
 }
 
 /// Split a common-struct emitter key `<message_snake>/<struct_snake>` into its
 /// two segments.
-fn split_common_stem(stem: &str) -> (&str, &str) {
+fn split_common_stem(stem: &str) -> Result<(&str, &str), RunError> {
     stem.split_once('/')
-        .expect("common-struct key must be `<message_snake>/<struct_snake>`")
+        .ok_or_else(|| RunError::CommonStem(stem.to_owned()))
 }
 
 /// Write the `include!` wrapper for one message-scoped common struct at
@@ -113,20 +122,16 @@ fn write_common_wrapper(
     written: &mut Written,
     message_snake: &str,
     struct_snake: &str,
-    flavor: emit::wrappers::Flavor,
+    flavor: Flavor,
     schemas_version: &str,
     message_src_dir: &Path,
     namespace: Option<&str>,
-) -> std::io::Result<()> {
-    use emit::wrappers::Flavor;
+) -> io::Result<()> {
     let suffix = match flavor {
         Flavor::Owned => "owned",
         Flavor::Borrowed => "borrowed",
     };
-    let path_prefix = match namespace {
-        None => String::new(),
-        Some(ns) => format!("{ns}/"),
-    };
+    let path_prefix = namespace.map_or_else(String::new, |ns| format!("{ns}/"));
     let body = format!(
         "{}include!(concat!(\n    env!(\"CARGO_MANIFEST_DIR\"),\n    \"/generated/{path_prefix}common/{flavor_dir}/{message_snake}/{struct_snake}.{suffix}.rs\"\n));\n",
         emit::common::banner(schemas_version),
@@ -147,28 +152,28 @@ fn write_common_wrapper(
 /// `tree` is empty.
 fn write_common_wrapper_tree(
     written: &mut Written,
-    tree: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
-    flavor: emit::wrappers::Flavor,
+    tree: &BTreeMap<String, BTreeSet<String>>,
+    flavor: Flavor,
     schemas_version: &str,
     protocol_src: &Path,
     namespace: Option<&str>,
-) -> std::io::Result<usize> {
+) -> io::Result<usize> {
     if tree.is_empty() {
         return Ok(0);
     }
     let mut count = 0;
     let flavor_doc = match flavor {
-        emit::wrappers::Flavor::Owned => "Owned",
-        emit::wrappers::Flavor::Borrowed => "Borrowed",
+        Flavor::Owned => "Owned",
+        Flavor::Borrowed => "Borrowed",
     };
     let src_common = protocol_src.join(flavor.dir()).join("common");
-    std::fs::create_dir_all(&src_common)?;
+    fs::create_dir_all(&src_common)?;
 
     let mut message_mods: Vec<Ident> = Vec::new();
     for (message_snake, structs) in tree {
         message_mods.push(format_ident!("{message_snake}"));
         let message_dir = src_common.join(message_snake);
-        std::fs::create_dir_all(&message_dir)?;
+        fs::create_dir_all(&message_dir)?;
 
         let mut struct_mods: Vec<Ident> = Vec::new();
         for struct_snake in structs {
@@ -200,16 +205,12 @@ fn write_common_wrapper_tree(
     Ok(count)
 }
 
-fn run(
-    schemas: &std::path::Path,
-    out: &std::path::Path,
-    namespace: Option<&str>,
-) -> Result<usize, RunError> {
+fn run(schemas: &Path, out: &Path, namespace: Option<&str>) -> Result<usize, RunError> {
     let mut written = Written::default();
     let schemas_sha = read_schemas_sha(schemas)?;
     let specs = ir::load_dir(schemas)?;
     validate::validate(&specs)?;
-    std::fs::create_dir_all(out)?;
+    fs::create_dir_all(out)?;
     // Common-struct output directory (owned flavor).
     let common_owned_dir = out.join("common").join("owned");
     let common_borrowed_dir = out.join("common").join("borrowed");
@@ -217,21 +218,19 @@ fn run(
     // Derive the protocol/src directory so we can write wrappers and mod.rs.
     let protocol_src = match namespace {
         None => protocol_src_from_out(out),
+        // `out` is `crates/protocol/generated/<ns>`.
         Some(ns) => out
             .parent()
-            .expect("out must have a parent") // generated/
-            .parent()
-            .expect("out parent must have a parent") // crates/protocol/
+            .and_then(Path::parent)
+            .ok_or_else(|| RunError::NamespaceOut(out.to_path_buf()))?
             .join("src")
             .join(ns),
     };
 
     // Track the message-scoped common structs emitted, as
     // <message_snake> -> {<struct_snake>, ...}, for the nested wrapper modules.
-    let mut all_common_owned =
-        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
-    let mut all_common_borrowed =
-        std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::new();
+    let mut all_common_owned = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut all_common_borrowed = BTreeMap::<String, BTreeSet<String>>::new();
 
     let mut count = 0;
     for s in &specs {
@@ -250,25 +249,25 @@ fn run(
         // stem `<message_snake>/<struct_snake>`; bodies land at
         // `generated/common/<flavor>/<message_snake>/<struct_snake>.<flavor>.rs`.
         for (stem, body) in &owned_em.commons {
-            let (message_snake, struct_snake) = split_common_stem(stem);
+            let (message_snake, struct_snake) = split_common_stem(stem)?;
             let dir = common_owned_dir.join(message_snake);
-            std::fs::create_dir_all(&dir)?;
+            fs::create_dir_all(&dir)?;
             written.write_rs(dir.join(format!("{struct_snake}.owned.rs")), body)?;
             all_common_owned
-                .entry(message_snake.to_string())
+                .entry(message_snake.to_owned())
                 .or_default()
-                .insert(struct_snake.to_string());
+                .insert(struct_snake.to_owned());
             count += 1;
         }
         for (stem, body) in &borrowed_em.commons {
-            let (message_snake, struct_snake) = split_common_stem(stem);
+            let (message_snake, struct_snake) = split_common_stem(stem)?;
             let dir = common_borrowed_dir.join(message_snake);
-            std::fs::create_dir_all(&dir)?;
+            fs::create_dir_all(&dir)?;
             written.write_rs(dir.join(format!("{struct_snake}.borrowed.rs")), body)?;
             all_common_borrowed
-                .entry(message_snake.to_string())
+                .entry(message_snake.to_owned())
                 .or_default()
-                .insert(struct_snake.to_string());
+                .insert(struct_snake.to_owned());
             count += 1;
         }
 
@@ -277,7 +276,7 @@ fn run(
             write_wrapper(
                 &mut written,
                 s,
-                emit::wrappers::Flavor::Owned,
+                Flavor::Owned,
                 &schemas_sha,
                 &protocol_src,
                 namespace,
@@ -285,7 +284,7 @@ fn run(
             write_wrapper(
                 &mut written,
                 s,
-                emit::wrappers::Flavor::Borrowed,
+                Flavor::Borrowed,
                 &schemas_sha,
                 &protocol_src,
                 namespace,
@@ -308,12 +307,12 @@ fn run(
     // but NOT inside a namespace dir — those files reference top-level types and
     // belong only in the root generated/ output.
     if namespace.is_none() {
-        let api_key_src = emit::api_key_enum_quote::emit(&specs, &schemas_sha);
+        let api_key_src = emit::api_key_enum_quote::emit(&specs, &schemas_sha)?;
         written.write_rs(out.join("api_key.rs"), &api_key_src)?;
         count += 1;
 
         // Emit the differential dispatch table for the parameterised sweep test.
-        let diff_table = emit::differential_table::emit(&specs, &schemas_sha);
+        let diff_table = emit::differential_table::emit(&specs, &schemas_sha)?;
         written.write_rs(out.join("differential_table.rs"), &diff_table)?;
         count += 1;
     }
@@ -332,16 +331,16 @@ fn run(
 fn write_module_files(
     written: &mut Written,
     specs: &[ir::MessageSpec],
-    common_owned: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
-    common_borrowed: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    common_owned: &BTreeMap<String, BTreeSet<String>>,
+    common_borrowed: &BTreeMap<String, BTreeSet<String>>,
     schemas_sha: &str,
-    protocol_src: &std::path::Path,
+    protocol_src: &Path,
     namespace: Option<&str>,
 ) -> Result<usize, RunError> {
     let mut count = write_common_wrapper_tree(
         written,
         common_owned,
-        emit::wrappers::Flavor::Owned,
+        Flavor::Owned,
         schemas_sha,
         protocol_src,
         namespace,
@@ -349,7 +348,7 @@ fn write_module_files(
     count += write_common_wrapper_tree(
         written,
         common_borrowed,
-        emit::wrappers::Flavor::Borrowed,
+        Flavor::Borrowed,
         schemas_sha,
         protocol_src,
         namespace,
@@ -357,16 +356,16 @@ fn write_module_files(
     let active: Vec<_> = specs.iter().filter(|spec| should_emit(spec)).collect();
     let owned = emit::mod_rs::emit(
         &active,
-        emit::wrappers::Flavor::Owned,
+        Flavor::Owned,
         schemas_sha,
         !common_owned.is_empty(),
-    );
+    )?;
     let borrowed = emit::mod_rs::emit(
         &active,
-        emit::wrappers::Flavor::Borrowed,
+        Flavor::Borrowed,
         schemas_sha,
         !common_borrowed.is_empty(),
-    );
+    )?;
     written.write(protocol_src.join("owned/mod.rs"), &owned)?;
     written.write(protocol_src.join("borrowed/mod.rs"), &borrowed)?;
     count += 2;

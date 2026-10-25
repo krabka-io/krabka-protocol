@@ -3,10 +3,13 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::initialize_share_group_state_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -27,15 +30,12 @@ pub struct InitializeShareGroupStateRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl InitializeShareGroupStateRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
     pub fn to_owned(
         &self,
-    ) -> crate::owned::initialize_share_group_state_request::InitializeShareGroupStateRequest {
-        crate::owned::initialize_share_group_state_request::InitializeShareGroupStateRequest {
-            group_id: (self.group_id).to_string(),
+    ) -> initialize_share_group_state_request::InitializeShareGroupStateRequest {
+        initialize_share_group_state_request::InitializeShareGroupStateRequest {
+            group_id: (self.group_id).to_owned(),
             topics: (self.topics)
                 .iter()
                 .map(InitializeStateData::to_owned)
@@ -55,22 +55,22 @@ impl Encode for InitializeShareGroupStateRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.group_id);
+                put_compact_string(buf, self.group_id)?;
             } else {
-                let () = put_string(buf, self.group_id);
+                put_string(buf, self.group_id)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,8 +86,7 @@ impl Encode for InitializeShareGroupStateRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -118,7 +117,7 @@ impl<'de> DecodeBorrow<'de> for InitializeShareGroupStateRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(InitializeStateData::decode_borrow(buf, version)?);
@@ -148,19 +147,14 @@ impl InitializeShareGroupStateRequest<'_> {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InitializeStateData {
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<PartitionData>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl InitializeStateData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::initialize_share_group_state_request::InitializeStateData {
-        crate::owned::initialize_share_group_state_request::InitializeStateData {
+    pub fn to_owned(&self) -> initialize_share_group_state_request::InitializeStateData {
+        initialize_share_group_state_request::InitializeStateData {
             topic_id: (self.topic_id),
             partitions: (self.partitions)
                 .iter()
@@ -174,19 +168,19 @@ impl Encode for InitializeStateData {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 0;
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -198,8 +192,7 @@ impl Encode for InitializeStateData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -219,11 +212,11 @@ impl<'de> DecodeBorrow<'de> for InitializeStateData {
         let flex = version >= 0;
         let mut out = Self::default();
         if version >= 0 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -243,7 +236,7 @@ impl InitializeStateData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -259,12 +252,9 @@ pub struct PartitionData {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::initialize_share_group_state_request::PartitionData {
-        crate::owned::initialize_share_group_state_request::PartitionData {
+    pub fn to_owned(&self) -> initialize_share_group_state_request::PartitionData {
+        initialize_share_group_state_request::PartitionData {
             partition: (self.partition),
             state_epoch: (self.state_epoch),
             start_offset: (self.start_offset),
@@ -286,7 +276,7 @@ impl Encode for PartitionData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

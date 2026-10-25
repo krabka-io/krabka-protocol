@@ -11,7 +11,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    emit::common::format_int_literal,
+    emit::{EmitError, common::format_int_literal},
     ir::{FieldSpec, FlexibleVersions, MessageSpec, MessageType, VersionRange},
     name_conv,
     resolve::{Resolution, StructKind},
@@ -41,10 +41,7 @@ pub(crate) fn is_struct_type(t: &str) -> bool {
 /// This function consults `res_map` for common-struct references, which are
 /// `PascalCase` types where `f.fields.is_empty()`, to check whether the
 /// generator gave that common struct a `<'a>`.
-pub(crate) fn needs_lifetime(
-    fields: &[crate::ir::FieldSpec],
-    res_map: &HashMap<String, Resolution>,
-) -> bool {
+pub(crate) fn needs_lifetime(fields: &[FieldSpec], res_map: &HashMap<String, Resolution>) -> bool {
     fields.iter().any(|f| {
         let base = base_type(&f.field_type);
         matches!(base, "string" | "bytes" | "records")  // records borrows via RecordsPayloadBorrowed<'a>
@@ -128,14 +125,14 @@ pub(crate) fn nullable_split_cond(f: &FieldSpec) -> Option<String> {
     let mut parts = Vec::new();
     if need_lower {
         parts.push(if r.min == i16::MAX {
-            "version == i16::MAX".to_string()
+            "version == i16::MAX".to_owned()
         } else {
             format!("version >= {}", r.min)
         });
     }
     if need_upper {
         parts.push(if r.max == i16::MIN {
-            "version == i16::MIN".to_string()
+            "version == i16::MIN".to_owned()
         } else {
             format!("version <= {}", r.max)
         });
@@ -171,7 +168,7 @@ fn has_tagged_fields_needing_owned(
 fn used_field_types_recursive(fields: &[FieldSpec]) -> Vec<String> {
     let mut types: Vec<String> = Vec::new();
     for f in fields {
-        let base = base_type(&f.field_type).to_string();
+        let base = base_type(&f.field_type).to_owned();
         if !types.contains(&base) {
             types.push(base);
         }
@@ -338,8 +335,9 @@ fn resolved_to_owned_path(
             if let Some(without_super) = r.rust_path.strip_prefix("super::common::") {
                 // Message-level context:
                 // rust_path = "super::common::<msg>::<struct>::TypeName"
-                format!("crate::owned::common::{without_super}")
-            } else if let Some(sibling) = r.rust_path.strip_prefix("super::") {
+                return format!("crate::owned::common::{without_super}");
+            }
+            if let Some(sibling) = r.rust_path.strip_prefix("super::") {
                 // Common-struct-level context: rust_path = "super::<struct>::TypeName"
                 // (a sibling common struct of the same message). Recover the
                 // <msg> segment from parent_module = "common::<msg>::<struct>".
@@ -347,11 +345,10 @@ fn resolved_to_owned_path(
                     .strip_prefix("common::")
                     .and_then(|rest| rest.split("::").next())
                     .unwrap_or(parent_module);
-                format!("crate::owned::common::{msg_seg}::{sibling}")
-            } else {
-                // Fallback: use parent_module
-                format!("crate::owned::{parent_module}::{type_name}")
+                return format!("crate::owned::common::{msg_seg}::{sibling}");
             }
+            // Fallback: use parent_module
+            format!("crate::owned::{parent_module}::{type_name}")
         }
         _ => {
             // Inline nested struct — lives in the parent message's owned module.
@@ -362,7 +359,7 @@ fn resolved_to_owned_path(
 
 pub(crate) fn version_cond(r: VersionRange, version_var: &str) -> String {
     if r.min == i16::MIN && r.max == i16::MAX {
-        "true".to_string()
+        "true".to_owned()
     } else if r.min == r.max {
         format!("{version_var} == {}", r.min)
     } else if r.min == i16::MIN {
@@ -636,7 +633,7 @@ pub(crate) fn emit_common_imports(fields: &[FieldSpec], flex_min_val: i16) -> To
 
 // ── constants ──────────────────────────────────────────────────────────────
 
-pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
+pub(crate) fn emit_constants(spec: &MessageSpec) -> Result<TokenStream, EmitError> {
     let min_version = proc_macro2::Literal::i16_unsuffixed(spec.valid_versions.min);
     let max_version = proc_macro2::Literal::i16_unsuffixed(spec.valid_versions.max);
     let flex_minimum = flex_min(spec);
@@ -649,10 +646,10 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
     // Request/Response schemas have an API key; Header/Data schemas do not.
     let api_key_const = match spec.message_type {
         MessageType::Request | MessageType::Response => {
-            let api_key = proc_macro2::Literal::i16_unsuffixed(
-                spec.api_key
-                    .expect("Request/Response must have apiKey in schema"),
-            );
+            let api_key = spec
+                .api_key
+                .map(proc_macro2::Literal::i16_unsuffixed)
+                .ok_or_else(|| EmitError::MissingApiKey(spec.name.clone()))?;
             quote!(pub const API_KEY: i16 = #api_key;)
         }
         // No API_KEY const for framing/data types.
@@ -667,7 +664,7 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
         }
         MessageType::Response | MessageType::Header | MessageType::Data => quote!(),
     };
-    quote! {
+    Ok(quote! {
         #api_key_const
         pub const MIN_VERSION: i16 = #min_version;
         pub const MAX_VERSION: i16 = #max_version;
@@ -677,7 +674,7 @@ pub(crate) fn emit_constants(spec: &MessageSpec) -> TokenStream {
         #[inline]
         #[must_use]
         pub fn is_flexible(version: i16) -> bool { #flex_check }
-    }
+    })
 }
 
 /// Returns a Rust expression for the default value of a borrowed field.
@@ -723,10 +720,9 @@ pub(crate) fn borrowed_default_expr(
     {
         format!("{}::default()", resolution.rust_path)
     } else {
-        match &f.default {
-            Some(v) => scalar_borrowed_default(base, v),
-            None => borrowed_zero(base),
-        }
+        f.default
+            .as_ref()
+            .map_or_else(|| borrowed_zero(base), |v| scalar_borrowed_default(base, v))
     };
 
     if nullable {
@@ -778,69 +774,78 @@ fn borrowed_zero(base: &str) -> String {
     }
 }
 
-pub(crate) fn to_owned_field_expr(schema_type: &str, expr: &str, nullable: bool) -> String {
+/// The expression that converts the borrowed field `expr` to its owned form.
+///
+/// `struct_path` is the borrowed struct type a struct-typed field holds, and
+/// `fallible` says its `to_owned` returns a `Result`. A `records` field's
+/// conversion is always fallible. Every fallible conversion ends in `?`.
+pub(crate) fn to_owned_field_expr(
+    schema_type: &str,
+    expr: &str,
+    nullable: bool,
+    struct_path: Option<&str>,
+    fallible: bool,
+) -> String {
+    // `<path>::to_owned` for a known struct type, a closure otherwise.
+    let struct_to_owned = struct_path.map_or_else(
+        || "|it| it.to_owned()".to_owned(),
+        |path| format!("{path}::to_owned"),
+    );
+    let records_to_owned = "crate::records::RecordsPayloadBorrowed::to_owned";
     if let Some(elem) = schema_type.strip_prefix("[]") {
         let elem_base = base_type(elem);
         if is_struct_type(elem_base) {
+            let collect = if fallible {
+                ".collect::<Result<_, _>>()"
+            } else {
+                ".collect()"
+            };
             if nullable {
+                let transpose = if fallible { ".transpose()?" } else { "" };
                 return format!(
-                    "({expr}).as_ref().map(|v| v.iter().map(|it| it.to_owned()).collect())"
+                    "({expr}).as_ref().map(|v| v.iter().map({struct_to_owned}){collect}){transpose}"
                 );
             }
-            return format!("({expr}).iter().map(|it| it.to_owned()).collect()");
+            let question = if fallible { "?" } else { "" };
+            return format!("({expr}).iter().map({struct_to_owned}){collect}{question}");
         }
         // Primitive arrays — Copy types or string slices
-        match elem {
+        return match elem {
             "string" if nullable => {
-                return format!(
-                    "({expr}).as_ref().map(|v| v.iter().map(|s| s.to_string()).collect())"
-                );
+                format!("({expr}).as_ref().map(|v| v.iter().map(|&s| s.to_owned()).collect())")
             }
-            "string" => {
-                return format!("({expr}).iter().map(|s| s.to_string()).collect()");
-            }
-            "bytes" if nullable => {
-                return format!(
-                    "({expr}).as_ref().map(|v| v.iter().map(|b| Bytes::copy_from_slice(b)).collect())"
-                );
-            }
-            "bytes" => {
-                return format!("({expr}).iter().map(|b| Bytes::copy_from_slice(b)).collect()");
-            }
-            "records" if nullable => {
-                return format!(
-                    "({expr}).as_ref().map(|v| v.iter().map(|rb| rb.to_owned()).collect())"
-                );
-            }
+            "string" => format!("({expr}).iter().map(|&s| s.to_owned()).collect()"),
+            "bytes" if nullable => format!(
+                "({expr}).as_ref().map(|v| v.iter().map(|b| Bytes::copy_from_slice(b)).collect())"
+            ),
+            "bytes" => format!("({expr}).iter().map(|b| Bytes::copy_from_slice(b)).collect()"),
+            "records" if nullable => format!(
+                "({expr}).as_ref().map(|v| v.iter().map({records_to_owned}).collect::<Result<_, _>>()).transpose()?"
+            ),
             "records" => {
-                return format!("({expr}).iter().map(|rb| rb.to_owned()).collect()");
+                format!("({expr}).iter().map({records_to_owned}).collect::<Result<_, _>>()?")
             }
-            _ => {
-                // Copy types (int*, bool, float64, uuid) — owned Vec<T> is the same
-                if nullable {
-                    return format!("({expr}).clone()");
-                }
-                return format!("({expr}).clone()");
-            }
-        }
+            // Copy types (int*, bool, float64, uuid) — owned Vec<T> is the same
+            _ => format!("({expr}).clone()"),
+        };
     }
 
     if is_struct_type(schema_type) {
-        if nullable {
-            return format!("({expr}).as_ref().map(|v| v.to_owned())");
-        }
-        return format!("({expr}).to_owned()");
+        return match (nullable, fallible) {
+            (true, true) => format!("({expr}).as_ref().map({struct_to_owned}).transpose()?"),
+            (true, false) => format!("({expr}).as_ref().map({struct_to_owned})"),
+            (false, true) => format!("({expr}).to_owned()?"),
+            (false, false) => format!("({expr}).to_owned()"),
+        };
     }
 
     match (schema_type, nullable) {
-        ("string", false) => format!("({expr}).to_string()"),
-        ("string", true) => format!("({expr}).map(|s| s.to_string())"),
+        ("string", false) => format!("({expr}).to_owned()"),
+        ("string", true) => format!("({expr}).map(str::to_owned)"),
         ("bytes", false) => format!("Bytes::copy_from_slice({expr})"),
         ("bytes", true) => format!("({expr}).map(Bytes::copy_from_slice)"),
-        ("records", false) => format!("({expr}).to_owned().expect(\"records to_owned\")"),
-        ("records", true) => {
-            format!("({expr}).as_ref().map(|rb| rb.to_owned().expect(\"records to_owned\"))")
-        }
+        ("records", false) => format!("({expr}).to_owned()?"),
+        ("records", true) => format!("({expr}).as_ref().map({records_to_owned}).transpose()?"),
         _ => {
             // Copy types (int*, bool, float64, uuid) — owned is the same; just copy
             format!("({expr})")
@@ -863,30 +868,30 @@ pub(crate) fn encode_call_option_as_non_nullable(schema_type: &str, expr: &str) 
         let elem_base = base_type(elem);
         if is_struct_type(elem_base) {
             return format!(
-                "{{ let v = ({expr}).as_ref().map(Vec::as_slice).unwrap_or(&[]); \
-                 crate::primitives::array::put_array_len(buf, v.len(), flex); \
+                "{{ let v = ({expr}).as_deref().unwrap_or(&[]); \
+                 crate::primitives::array::put_array_len(buf, v.len(), flex)?; \
                  for it in v {{ it.encode(buf, version)?; }} }}"
             );
         }
         return format!(
-            "{{ let v = ({expr}).as_ref().map(Vec::as_slice).unwrap_or(&[]); \
-             crate::primitives::array::put_array_len(buf, v.len(), flex); \
+            "{{ let v = ({expr}).as_deref().unwrap_or(&[]); \
+             crate::primitives::array::put_array_len(buf, v.len(), flex)?; \
              for it in v {{ {inner}; }} }}",
             inner = encode_call(elem, "it", false),
         );
     }
     match schema_type {
         "string" => format!(
-            "if flex {{ let () = put_compact_string(buf, ({expr}).unwrap_or(\"\")); }} \
-             else {{ let () = put_string(buf, ({expr}).unwrap_or(\"\")); }}"
+            "if flex {{ put_compact_string(buf, ({expr}).unwrap_or(\"\"))?; }} \
+             else {{ put_string(buf, ({expr}).unwrap_or(\"\"))?; }}"
         ),
         "uuid" => format!("crate::primitives::uuid::put_uuid(buf, ({expr}).unwrap_or_default())"),
         // `records` can't go through `unwrap_or_default()` (that would move out of
         // `&self`), so match by reference and encode an empty payload for None.
         "records" => format!(
             "match &{expr} {{ \
-                None => {{ let __rb_buf = bytes::BytesMut::new(); if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} }}, \
-                Some(__rb) => {{ let mut __rb_buf = bytes::BytesMut::new(); <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(__rb, &mut __rb_buf, version)?; if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} }} \
+                None => {{ let __rb_buf = bytes::BytesMut::new(); if flex {{ put_compact_bytes(buf, &__rb_buf)?; }} else {{ put_bytes(buf, &__rb_buf)?; }} }}, \
+                Some(__rb) => {{ let mut __rb_buf = bytes::BytesMut::new(); <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(__rb, &mut __rb_buf, version)?; if flex {{ put_compact_bytes(buf, &__rb_buf)?; }} else {{ put_bytes(buf, &__rb_buf)?; }} }} \
             }}"
         ),
         _ => encode_call(schema_type, &format!("({expr}).unwrap_or_default()"), false),
@@ -900,18 +905,18 @@ pub(crate) fn encoded_len_expr_option_as_non_nullable(schema_type: &str, expr: &
         let elem_base = base_type(elem);
         if is_struct_type(elem_base) {
             return format!(
-                "{{ let v = ({expr}).as_ref().map(Vec::as_slice).unwrap_or(&[]); \
+                "{{ let v = ({expr}).as_deref().unwrap_or(&[]); \
                  let prefix = crate::primitives::array::array_len_prefix_len(v.len(), flex); \
                  let body: usize = v.iter().map(|it| it.encoded_len(version)).sum(); \
                  prefix + body }}"
             );
         }
         return format!(
-            "{{ let v = ({expr}).as_ref().map(Vec::as_slice).unwrap_or(&[]); \
+            "{{ let v = ({expr}).as_deref().unwrap_or(&[]); \
              let prefix = crate::primitives::array::array_len_prefix_len(v.len(), flex); \
              let body: usize = v.iter().map(|it| {inner}).sum(); \
              prefix + body }}",
-            inner = encoded_len_expr(elem, "*it", false),
+            inner = encoded_len_expr(elem, array_element(elem), false),
         );
     }
     match schema_type {
@@ -921,10 +926,9 @@ pub(crate) fn encoded_len_expr_option_as_non_nullable(schema_type: &str, expr: &
         ),
         "uuid" => "16".into(),
         "records" => format!(
-            "match &{expr} {{ \
-                None => if flex {{ crate::primitives::string_bytes::compact_bytes_len_from_size(0) }} else {{ 4 }}, \
-                Some(__rb) => {{ let __rb_len = <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(__rb, version); if flex {{ crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len) }} else {{ 4 + __rb_len }} }} \
-            }}"
+            "({expr}).as_ref().map_or_else( \
+                || if flex {{ crate::primitives::string_bytes::compact_bytes_len_from_size(0) }} else {{ 4 }}, \
+                |__rb| {{ let __rb_len = <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(__rb, version); if flex {{ crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len) }} else {{ 4 + __rb_len }} }})"
         ),
         _ => encoded_len_expr(schema_type, &format!("({expr}).unwrap_or_default()"), false),
     }
@@ -957,7 +961,7 @@ pub(crate) fn tagged_is_default_cond(f: &FieldSpec) -> String {
         // null) is a distinct, non-default value here and must still be
         // tag-encoded.
         let inner = if is_array {
-            "Vec::new()".to_string()
+            "Vec::new()".to_owned()
         } else {
             borrowed_zero(base)
         };
@@ -991,14 +995,12 @@ pub(crate) fn owned_encoded_len_expr(schema_type: &str, expr: &str, nullable: bo
             "if flex {{ compact_nullable_string_len({expr}.as_deref()) }} else {{ nullable_string_len({expr}.as_deref()) }}"
         ),
         ("bytes", false) => format!(
-            "if flex {{ crate::primitives::varint::uvarint_len(u32::try_from(({expr}).len() + 1).unwrap()) + ({expr}).len() }} \
-             else {{ 4 + ({expr}).len() }}"
+            "if flex {{ crate::primitives::string_bytes::compact_bytes_len(&{expr}) }} \
+             else {{ crate::primitives::string_bytes::bytes_len(&{expr}) }}"
         ),
         ("bytes", true) => format!(
-            "match {expr}.as_deref() {{ \
-             None => if flex {{ 1 }} else {{ 4 }}, \
-             Some(b) => if flex {{ crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap()) + b.len() }} \
-             else {{ 4 + b.len() }} }}"
+            "if flex {{ crate::primitives::string_bytes::compact_nullable_bytes_len({expr}.as_deref()) }} \
+             else {{ crate::primitives::string_bytes::nullable_bytes_len({expr}.as_deref()) }}"
         ),
         _ => encoded_len_expr(schema_type, expr, nullable),
     }
@@ -1011,16 +1013,16 @@ pub(crate) fn owned_encoded_len_expr(schema_type: &str, expr: &str, nullable: bo
 pub(crate) fn owned_encode_call(schema_type: &str, expr: &str, nullable: bool) -> String {
     match (schema_type, nullable) {
         ("string", false) => format!(
-            "if flex {{ let () = put_compact_string(buf, &{expr}); }} else {{ let () = put_string(buf, &{expr}); }}"
+            "if flex {{ put_compact_string(buf, &{expr})?; }} else {{ put_string(buf, &{expr})?; }}"
         ),
         ("string", true) => format!(
-            "if flex {{ let () = put_compact_nullable_string(buf, {expr}.as_deref()); }} else {{ let () = put_nullable_string(buf, {expr}.as_deref()); }}"
+            "if flex {{ put_compact_nullable_string(buf, {expr}.as_deref())?; }} else {{ put_nullable_string(buf, {expr}.as_deref())?; }}"
         ),
         ("bytes", false) => format!(
-            "if flex {{ let () = put_compact_bytes(buf, &{expr}); }} else {{ let () = put_bytes(buf, &{expr}); }}"
+            "if flex {{ put_compact_bytes(buf, &{expr})?; }} else {{ put_bytes(buf, &{expr})?; }}"
         ),
         ("bytes", true) => format!(
-            "if flex {{ let () = put_compact_nullable_bytes(buf, {expr}.as_deref()); }} else {{ let () = put_nullable_bytes(buf, {expr}.as_deref()); }}"
+            "if flex {{ put_compact_nullable_bytes(buf, {expr}.as_deref())?; }} else {{ put_nullable_bytes(buf, {expr}.as_deref())?; }}"
         ),
         // For non-string/bytes types, fall back to the borrowed encode call.
         _ => encode_call(schema_type, expr, nullable),
@@ -1033,21 +1035,21 @@ pub(crate) fn borrowed_populated_value(
     res_map: &HashMap<String, Resolution>,
     parent_module: &str,
     option: bool,
-) -> String {
+) -> Result<String, EmitError> {
     let base = base_type(&f.field_type);
     let is_array = f.field_type.starts_with("[]");
     let owned = is_tagged(f) && tagged_field_needs_owned(f, res_map);
-    let elem = borrowed_populated_scalar(base, f, res_map, parent_module, owned);
+    let elem = borrowed_populated_scalar(base, f, res_map, parent_module, owned)?;
     let inner = if is_array {
         format!("vec![{elem}]")
     } else {
         elem
     };
-    if option {
+    Ok(if option {
         format!("Some({inner})")
     } else {
         inner
-    }
+    })
 }
 
 fn borrowed_populated_scalar(
@@ -1056,37 +1058,58 @@ fn borrowed_populated_scalar(
     res_map: &HashMap<String, Resolution>,
     parent_module: &str,
     owned: bool,
-) -> String {
-    match base {
-        "bool" => "true".to_string(),
-        "int8" => "1i8".to_string(),
-        "int16" => "1i16".to_string(),
-        "int32" => "1i32".to_string(),
-        "int64" => "1i64".to_string(),
-        "uint16" => "1u16".to_string(),
-        "uint32" => "1u32".to_string(),
-        "float64" => "1.0f64".to_string(),
-        "uuid" => "crate::primitives::uuid::Uuid([1u8; 16])".to_string(),
-        "string" if owned => "\"x\".to_string()".to_string(),
-        "string" => "\"x\"".to_string(),
-        "bytes" if owned => "::bytes::Bytes::from_static(b\"x\")".to_string(),
-        "bytes" => "&b\"x\"[..]".to_string(),
+) -> Result<String, EmitError> {
+    Ok(match base {
+        "bool" => "true".to_owned(),
+        "int8" => "1i8".to_owned(),
+        "int16" => "1i16".to_owned(),
+        "int32" => "1i32".to_owned(),
+        "int64" => "1i64".to_owned(),
+        "uint16" => "1u16".to_owned(),
+        "uint32" => "1u32".to_owned(),
+        "float64" => "1.0f64".to_owned(),
+        "uuid" => "crate::primitives::uuid::Uuid([1u8; 16])".to_owned(),
+        "string" if owned => "\"x\".to_owned()".to_owned(),
+        "string" => "\"x\"".to_owned(),
+        "bytes" if owned => "::bytes::Bytes::from_static(b\"x\")".to_owned(),
+        "bytes" => "&b\"x\"[..]".to_owned(),
         _ if owned => {
             let path = owned_struct_path_for(f, parent_module, res_map)
-                .expect("struct field must resolve");
+                .ok_or_else(|| EmitError::Unresolved(f.name.clone()))?;
             format!("{path}::populated(version)")
         }
         _ => {
             let path = res_map
                 .get(base)
                 .map(|r| r.rust_path.clone())
-                .expect("struct field must resolve");
+                .ok_or_else(|| EmitError::Unresolved(f.name.clone()))?;
             format!("{path}::populated(version)")
         }
-    }
+    })
 }
 
 // ── primitive encode/decode call generators ────────────────────────────────
+
+/// One element `it` of a primitive array, as its encoder or length helper
+/// takes it. `it` is `&T` from iteration: a Copy primitive is passed as `*it`,
+/// and a string or bytes element derefs to the slice the helper takes.
+fn array_element(elem: &str) -> &'static str {
+    if matches!(elem, "string" | "bytes") {
+        "it"
+    } else {
+        "*it"
+    }
+}
+
+/// The statement that encodes one element `it` of a primitive array.
+fn array_element_encode(elem: &str) -> String {
+    let call = encode_call(elem, array_element(elem), false);
+    if call.starts_with("if ") {
+        call
+    } else {
+        format!("{call};")
+    }
+}
 
 pub(crate) fn encode_call(schema_type: &str, expr: &str, nullable: bool) -> String {
     if let Some(elem) = schema_type.strip_prefix("[]") {
@@ -1095,28 +1118,27 @@ pub(crate) fn encode_call(schema_type: &str, expr: &str, nullable: bool) -> Stri
             if nullable {
                 return format!(
                     "{{ let len = ({expr}).as_ref().map(Vec::len); \
-                     crate::primitives::array::put_nullable_array_len(buf, len, flex); \
+                     crate::primitives::array::put_nullable_array_len(buf, len, flex)?; \
                      if let Some(v) = &{expr} {{ for it in v {{ it.encode(buf, version)?; }} }} }}",
                 );
             }
             return format!(
-                "{{ crate::primitives::array::put_array_len(buf, ({expr}).len(), flex); \
+                "{{ crate::primitives::array::put_array_len(buf, ({expr}).len(), flex)?; \
                  for it in &{expr} {{ it.encode(buf, version)?; }} }}",
             );
         }
         if nullable {
             return format!(
                 "{{ let len = ({expr}).as_ref().map(Vec::len); \
-                 crate::primitives::array::put_nullable_array_len(buf, len, flex); \
-                 if let Some(v) = &{expr} {{ for it in v {{ {inner}; }} }} }}",
-                // `it` is `&T` from iteration; for Copy primitives we dereference with `*it`.
-                inner = encode_call(elem, "*it", false),
+                 crate::primitives::array::put_nullable_array_len(buf, len, flex)?; \
+                 if let Some(v) = &{expr} {{ for it in v {{ {inner} }} }} }}",
+                inner = array_element_encode(elem),
             );
         }
         return format!(
-            "{{ crate::primitives::array::put_array_len(buf, ({expr}).len(), flex); \
-             for it in &{expr} {{ {inner}; }} }}",
-            inner = encode_call(elem, "*it", false),
+            "{{ crate::primitives::array::put_array_len(buf, ({expr}).len(), flex)?; \
+             for it in &{expr} {{ {inner} }} }}",
+            inner = array_element_encode(elem),
         );
     }
 
@@ -1144,31 +1166,31 @@ pub(crate) fn encode_call(schema_type: &str, expr: &str, nullable: bool) -> Stri
         ("float64", _) => format!("put_f64(buf, {expr})"),
         ("uuid", _) => format!("crate::primitives::uuid::put_uuid(buf, {expr})"),
         ("string", false) => format!(
-            "if flex {{ let () = put_compact_string(buf, {expr}); }} else {{ let () = put_string(buf, {expr}); }}"
+            "if flex {{ put_compact_string(buf, {expr})?; }} else {{ put_string(buf, {expr})?; }}"
         ),
         ("string", true) => format!(
-            "if flex {{ let () = put_compact_nullable_string(buf, {expr}); }} else {{ let () = put_nullable_string(buf, {expr}); }}"
+            "if flex {{ put_compact_nullable_string(buf, {expr})?; }} else {{ put_nullable_string(buf, {expr})?; }}"
         ),
         ("bytes", false) => format!(
-            "if flex {{ let () = put_compact_bytes(buf, {expr}); }} else {{ let () = put_bytes(buf, {expr}); }}"
+            "if flex {{ put_compact_bytes(buf, {expr})?; }} else {{ put_bytes(buf, {expr})?; }}"
         ),
         ("bytes", true) => format!(
-            "if flex {{ let () = put_compact_nullable_bytes(buf, {expr}); }} else {{ let () = put_nullable_bytes(buf, {expr}); }}"
+            "if flex {{ put_compact_nullable_bytes(buf, {expr})?; }} else {{ put_nullable_bytes(buf, {expr})?; }}"
         ),
         ("records", false) => format!(
             "{{ \
                 let mut __rb_buf = bytes::BytesMut::new(); \
                 <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(&{expr}, &mut __rb_buf, version)?; \
-                if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} \
+                if flex {{ put_compact_bytes(buf, &__rb_buf)?; }} else {{ put_bytes(buf, &__rb_buf)?; }} \
             }}"
         ),
         ("records", true) => format!(
             "match &{expr} {{ \
-                None => if flex {{ let () = put_compact_nullable_bytes(buf, None); }} else {{ let () = put_nullable_bytes(buf, None); }}, \
+                None => if flex {{ put_compact_nullable_bytes(buf, None)?; }} else {{ put_nullable_bytes(buf, None)?; }}, \
                 Some(__rb) => {{ \
                     let mut __rb_buf = bytes::BytesMut::new(); \
                     <crate::records::RecordsPayloadBorrowed as crate::Encode>::encode(__rb, &mut __rb_buf, version)?; \
-                    if flex {{ let () = put_compact_bytes(buf, &__rb_buf); }} else {{ let () = put_bytes(buf, &__rb_buf); }} \
+                    if flex {{ put_compact_bytes(buf, &__rb_buf)?; }} else {{ put_bytes(buf, &__rb_buf)?; }} \
                 }} \
             }}"
         ),
@@ -1195,8 +1217,14 @@ pub(crate) fn encoded_len_expr(schema_type: &str, expr: &str, nullable: bool) ->
             );
         }
         {
-            let inner = encoded_len_expr(elem, "*it", false);
-            let closure_arg = if inner.contains("*it") { "it" } else { "_" };
+            // Use `|_|` when the inner expression is constant (doesn't reference `*it`),
+            // to avoid an unused-variable warning.
+            let closure_arg = if encoded_len_expr(elem, "*it", false).contains("*it") {
+                "it"
+            } else {
+                "_"
+            };
+            let inner = encoded_len_expr(elem, array_element(elem), false);
             if nullable {
                 return format!(
                     "{{ let opt: Option<&Vec<_>> = ({expr}).as_ref(); \
@@ -1235,14 +1263,12 @@ pub(crate) fn encoded_len_expr(schema_type: &str, expr: &str, nullable: bool) ->
             "if flex {{ compact_nullable_string_len({expr}) }} else {{ nullable_string_len({expr}) }}"
         ),
         ("bytes", false) => format!(
-            "if flex {{ crate::primitives::varint::uvarint_len(u32::try_from(({expr}).len() + 1).unwrap()) + ({expr}).len() }} \
-             else {{ 4 + ({expr}).len() }}"
+            "if flex {{ crate::primitives::string_bytes::compact_bytes_len({expr}) }} \
+             else {{ crate::primitives::string_bytes::bytes_len({expr}) }}"
         ),
         ("bytes", true) => format!(
-            "match {expr} {{ \
-             None => if flex {{ 1 }} else {{ 4 }}, \
-             Some(b) => if flex {{ crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap()) + b.len() }} \
-             else {{ 4 + b.len() }} }}"
+            "if flex {{ crate::primitives::string_bytes::compact_nullable_bytes_len({expr}) }} \
+             else {{ crate::primitives::string_bytes::nullable_bytes_len({expr}) }}"
         ),
         ("records", false) => format!(
             "{{ let __rb_len = <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(&({expr}), version); \
@@ -1250,12 +1276,11 @@ pub(crate) fn encoded_len_expr(schema_type: &str, expr: &str, nullable: bool) ->
                else {{ 4 + __rb_len }} }}"
         ),
         ("records", true) => format!(
-            "match &{expr} {{ \
-                None => if flex {{ crate::primitives::varint::uvarint_len(0) }} else {{ 4 }}, \
-                Some(__rb) => {{ let __rb_len = <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(__rb, version); \
+            "({expr}).as_ref().map_or_else( \
+                || if flex {{ crate::primitives::varint::uvarint_len(0) }} else {{ 4 }}, \
+                |__rb| {{ let __rb_len = <crate::records::RecordsPayloadBorrowed as crate::Encode>::encoded_len(__rb, version); \
                     if flex {{ crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len) }} \
-                    else {{ 4 + __rb_len }} }} \
-            }}"
+                    else {{ 4 + __rb_len }} }})"
         ),
         (t, _) => format!("compile_error!(\"unhandled type in encoded_len_expr (borrowed): {t}\")"),
     }
@@ -1494,10 +1519,10 @@ mod tests {
         .unwrap();
         let mut res_map: HashMap<String, Resolution> = HashMap::new();
         res_map.insert(
-            "OwnerStruct".to_string(),
+            "OwnerStruct".to_owned(),
             Resolution {
                 kind: StructKind::Nested,
-                rust_path: "OwnerStruct".to_string(),
+                rust_path: "OwnerStruct".to_owned(),
                 needs_lifetime: false,
             },
         );

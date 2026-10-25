@@ -53,8 +53,8 @@ fn scan_comments(sql: &str) -> Option<SqlCommenterTrace<'_>> {
     let bytes = sql.as_bytes();
     let mut index = 0;
 
-    while index < bytes.len() {
-        match bytes[index] {
+    while let Some(&byte) = bytes.get(index) {
+        match byte {
             b'\'' => index = skip_quoted(bytes, index, b'\'')?,
             b'"' => index = skip_quoted(bytes, index, b'"')?,
             b'$' => match dollar_quote_delimiter(sql, index) {
@@ -62,13 +62,13 @@ fn scan_comments(sql: &str) -> Option<SqlCommenterTrace<'_>> {
                 None => index += 1,
                 Some(delimiter) => {
                     let body = index + delimiter.len();
-                    index = body + sql[body..].find(delimiter)? + delimiter.len();
+                    index = body + sql.get(body..)?.find(delimiter)? + delimiter.len();
                 }
             },
             b'-' if bytes.get(index + 1) == Some(&b'-') => {
                 let start = index + 2;
                 let end = line_comment_end(bytes, start);
-                if let Some(found) = read_comment(&sql[start..end]) {
+                if let Some(found) = read_comment(sql.get(start..end)?) {
                     return Some(found);
                 }
                 index = end;
@@ -78,7 +78,7 @@ fn scan_comments(sql: &str) -> Option<SqlCommenterTrace<'_>> {
                 if !closed {
                     return None;
                 }
-                if let Some(found) = read_comment(&sql[index + 2..end - 2]) {
+                if let Some(found) = read_comment(sql.get(index + 2..end - 2)?) {
                     return Some(found);
                 }
                 index = end;
@@ -115,12 +115,14 @@ fn find_field<'a>(content: &'a str, key: &str) -> Option<&'a str> {
     let bytes = content.as_bytes();
     let mut from = 0;
 
-    while let Some(offset) = content[from..].find(key) {
+    while let Some(offset) = content.get(from..).and_then(|rest| rest.find(key)) {
         let start = from + offset;
         let end = start + key.len();
-        if (start == 0 || !is_identifier_byte(bytes[start - 1]))
-            && let Some(value) = read_value(content, end)
-        {
+        let preceded_by_identifier = start
+            .checked_sub(1)
+            .and_then(|before| bytes.get(before))
+            .is_some_and(|&byte| is_identifier_byte(byte));
+        if !preceded_by_identifier && let Some(value) = read_value(content, end) {
             return Some(value);
         }
         from = end;
@@ -143,20 +145,23 @@ fn read_value(content: &str, index: usize) -> Option<&str> {
 
     if bytes.get(cursor) == Some(&b'\'') {
         let start = cursor + 1;
-        let end = start + content[start..].find('\'')?;
-        return Some(&content[start..end]);
+        let end = start + content.get(start..)?.find('\'')?;
+        return content.get(start..end);
     }
 
     let start = cursor;
     let mut end = cursor;
-    while end < bytes.len() && !is_value_terminator(bytes[end]) {
+    while bytes
+        .get(end)
+        .is_some_and(|&byte| !is_value_terminator(byte))
+    {
         end += 1;
     }
-    (end > start).then(|| &content[start..end])
+    content.get(start..end).filter(|value| !value.is_empty())
 }
 
 fn skip_spaces(bytes: &[u8], mut index: usize) -> usize {
-    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
         index += 1;
     }
     index
@@ -177,8 +182,8 @@ fn is_value_terminator(byte: u8) -> bool {
 /// remains is not statement structure.
 fn skip_quoted(bytes: &[u8], mut index: usize, quote: u8) -> Option<usize> {
     index += 1;
-    while index < bytes.len() {
-        if bytes[index] != quote {
+    while let Some(&byte) = bytes.get(index) {
+        if byte != quote {
             index += 1;
         } else if bytes.get(index + 1) == Some(&quote) {
             index += 2;
@@ -200,14 +205,18 @@ fn dollar_quote_delimiter(sql: &str, index: usize) -> Option<&str> {
     if bytes.get(end).is_some_and(u8::is_ascii_digit) {
         return None;
     }
-    while end < bytes.len() && is_identifier_byte(bytes[end]) {
+    while bytes.get(end).is_some_and(|&byte| is_identifier_byte(byte)) {
         end += 1;
     }
-    (bytes.get(end) == Some(&b'$')).then(|| &sql[index..=end])
+    if bytes.get(end) == Some(&b'$') {
+        sql.get(index..=end)
+    } else {
+        None
+    }
 }
 
 fn line_comment_end(bytes: &[u8], mut index: usize) -> usize {
-    while index < bytes.len() && bytes[index] != b'\n' {
+    while bytes.get(index).is_some_and(|&byte| byte != b'\n') {
         index += 1;
     }
     index
@@ -222,11 +231,11 @@ fn block_comment_end(bytes: &[u8], index: usize) -> (usize, bool) {
     let mut depth = 1usize;
     let mut cursor = index + 2;
 
-    while cursor < bytes.len() {
-        if bytes[cursor] == b'/' && bytes.get(cursor + 1) == Some(&b'*') {
+    while let Some(&byte) = bytes.get(cursor) {
+        if byte == b'/' && bytes.get(cursor + 1) == Some(&b'*') {
             depth += 1;
             cursor += 2;
-        } else if bytes[cursor] == b'*' && bytes.get(cursor + 1) == Some(&b'/') {
+        } else if byte == b'*' && bytes.get(cursor + 1) == Some(&b'/') {
             depth -= 1;
             cursor += 2;
             if depth == 0 {

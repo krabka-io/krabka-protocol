@@ -3,6 +3,7 @@
 //! The curated snapshots cover the vendored `InitProducerIdRequest`. Those
 //! tests read the schema directory and shell out to rustfmt, so they run only
 //! under Cargo. These tests run anywhere, under Cargo and Bazel.
+#![cfg(test)]
 
 use assert2::assert;
 use krabka_protocol_codegen::{

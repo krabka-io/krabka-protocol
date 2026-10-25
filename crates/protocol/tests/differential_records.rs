@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 mod support;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use krabka_compression::CompressionType;
 use krabka_protocol::records::{Record, RecordBatch, TimestampType};
-use proptest::prelude::*;
+use proptest::{collection, option, prelude::*};
 use serde_json::{Value, json};
 use support::oracle;
 
@@ -49,14 +51,10 @@ fn batch_to_json(b: &RecordBatch) -> Value {
     })
 }
 
-fn arb_record_payload() -> impl Strategy<Value = (Option<bytes::Bytes>, Option<bytes::Bytes>)> {
+fn arb_record_payload() -> impl Strategy<Value = (Option<Bytes>, Option<Bytes>)> {
     (
-        proptest::option::of(
-            proptest::collection::vec(any::<u8>(), 0..=256).prop_map(bytes::Bytes::from),
-        ),
-        proptest::option::of(
-            proptest::collection::vec(any::<u8>(), 0..=1024).prop_map(bytes::Bytes::from),
-        ),
+        option::of(collection::vec(any::<u8>(), 0..=256).prop_map(Bytes::from)),
+        option::of(collection::vec(any::<u8>(), 0..=1024).prop_map(Bytes::from)),
     )
 }
 
@@ -70,7 +68,7 @@ fn arb_batch(codec: CompressionType) -> impl Strategy<Value = RecordBatch> {
     //    offsets (baseOffset + offsetDelta must be distinct and ascending).
     //    We enforce this by assigning offsets as 0, 1, 2, ... (delta per position).
     (
-        proptest::collection::vec(arb_record_payload(), 1..=6),
+        collection::vec(arb_record_payload(), 1..=6),
         (0i64..1_000_000_000), // base_timestamp (non-negative)
         (0i64..1_000_000),     // per-record timestamp_delta (non-negative)
     )
@@ -103,22 +101,19 @@ macro_rules! diff_test {
         #[test]
         #[ignore = "requires JVM oracle"]
         fn $name() {
-            let oracle_cell = std::cell::RefCell::new(oracle::shared());
             proptest!(|(b in arb_batch($codec))| {
-                let mut o = oracle_cell.borrow_mut();
-
                 // Rust encodes; JVM decodes; structural equality on the JSON projection
                 let mut rust_bytes = BytesMut::new();
-                b.encode(&mut rust_bytes).unwrap();
-                let jvm_decoded = o.record_batch_decode(&rust_bytes);
+                b.encode_batch(&mut rust_bytes).unwrap();
+                let jvm_decoded = oracle::shared().record_batch_decode(&rust_bytes);
                 let expected = batch_to_json(&b);
                 // Compare records arrays (the JVM's full JSON has more fields we don't care about)
                 prop_assert_eq!(&jvm_decoded["records"], &expected["records"]);
 
                 // JVM encodes; Rust decodes; round-trip back to Rust batch
-                let jvm_bytes = o.record_batch_encode(&expected);
+                let jvm_bytes = oracle::shared().record_batch_encode(&expected);
                 let mut cur: &[u8] = &jvm_bytes[..];
-                let decoded = RecordBatch::decode(&mut cur).unwrap();
+                let decoded = RecordBatch::decode_batch(&mut cur).unwrap();
                 let project = |records: &[Record]| {
                     records
                         .iter()

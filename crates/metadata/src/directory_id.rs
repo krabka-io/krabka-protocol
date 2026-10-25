@@ -9,17 +9,20 @@
 use uuid::Uuid;
 
 /// `DirectoryId.MIGRATING`, `Uuid(0, 0)`: the replica already lives in some
-/// log directory, but nobody recorded which. Kafka reads a partition record
-/// with no directories (every record before `3.7-IV2`) as all `MIGRATING`,
-/// and its controller places a new replica on a broker that registered no
-/// log-dir ids, or on any broker below `3.7-IV2`, as `MIGRATING`.
+/// log directory, but nobody recorded which.
+///
+/// Kafka reads a partition record with no directories (every record before
+/// `3.7-IV2`) as all `MIGRATING`, and its controller places a new replica on a
+/// broker that registered no log-dir ids, or on any broker below `3.7-IV2`, as
+/// `MIGRATING`.
 pub const MIGRATING: Uuid = Uuid::from_u64_pair(0, 0);
 
 /// `DirectoryId.UNASSIGNED`, `Uuid(0, 1)`: a new replica that no log directory
-/// hosts yet. Kafka's controller places a replica on a broker with more than
-/// one log directory, or on a broker it has no registration for, as
-/// `UNASSIGNED`, and the broker's `AssignReplicasToDirs` later names the
-/// directory.
+/// hosts yet.
+///
+/// Kafka's controller places a replica on a broker with more than one log
+/// directory, or on a broker it has no registration for, as `UNASSIGNED`, and
+/// the broker's `AssignReplicasToDirs` later names the directory.
 pub const UNASSIGNED: Uuid = Uuid::from_u64_pair(0, 1);
 
 /// `DirectoryId.LOST`, `Uuid(0, 2)`: the replica's directory is offline and

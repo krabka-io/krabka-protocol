@@ -13,7 +13,7 @@ use rcgen::{
     Issuer, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, SanType,
 };
 use thiserror::Error;
-use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{Duration, OffsetDateTime, error::Format, format_description::well_known::Rfc3339};
 
 #[derive(Debug, Error)]
 pub enum CaError {
@@ -22,7 +22,7 @@ pub enum CaError {
     #[error("time math overflow")]
     TimeOverflow,
     #[error("time format: {0}")]
-    TimeFormat(#[from] time::error::Format),
+    TimeFormat(#[from] Format),
 }
 
 /// Self-signed clients-CA material.
@@ -247,10 +247,10 @@ pub fn issue_broker_cert(
     params.subject_alt_names = all_sans
         .iter()
         .map(|s| match s {
-            SubjectAltName::Dns(d) => SanType::DnsName(d.parse().expect("valid Ia5String")),
-            SubjectAltName::Ip(ip) => SanType::IpAddress(*ip),
+            SubjectAltName::Dns(d) => d.parse().map(SanType::DnsName),
+            SubjectAltName::Ip(ip) => Ok(SanType::IpAddress(*ip)),
         })
-        .collect();
+        .collect::<Result<_, rcgen::Error>>()?;
 
     let leaf = params.signed_by(&leaf_key, &ca_issuer)?;
     let not_after_str = not_after.format(&Rfc3339)?;
@@ -315,7 +315,10 @@ pub fn issue_user_cert(
 mod tests {
 
     use rustls::pki_types::{CertificateDer, pem::PemObject};
-    use x509_parser::prelude::{FromDer, X509Certificate};
+    use x509_parser::{
+        extensions::GeneralName,
+        prelude::{FromDer, X509Certificate},
+    };
 
     use super::*;
 
@@ -456,12 +459,12 @@ mod tests {
         let general_names: Vec<_> = san_ext.value.general_names.iter().collect();
         assert2::assert!(general_names.iter().any(|gn| matches!(
             gn,
-            x509_parser::extensions::GeneralName::DNSName(s) if *s == "c1-broker-0"
+            GeneralName::DNSName(s) if *s == "c1-broker-0"
         )));
         assert2::assert!(
             general_names
                 .iter()
-                .any(|gn| matches!(gn, x509_parser::extensions::GeneralName::IPAddress(_)))
+                .any(|gn| matches!(gn, GeneralName::IPAddress(_)))
         );
     }
 
@@ -496,7 +499,7 @@ mod tests {
             .general_names
             .iter()
             .filter_map(|gn| match gn {
-                x509_parser::extensions::GeneralName::DNSName(name) => Some(*name),
+                GeneralName::DNSName(name) => Some(*name),
                 _ => None,
             })
             .collect();

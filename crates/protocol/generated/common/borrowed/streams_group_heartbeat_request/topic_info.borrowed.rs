@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_heartbeat_request::topic_info,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -19,15 +21,10 @@ pub struct TopicInfo<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicInfo<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_heartbeat_request::topic_info::TopicInfo {
-        crate::owned::common::streams_group_heartbeat_request::topic_info::TopicInfo {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> topic_info::TopicInfo {
+        topic_info::TopicInfo {
+            name: (self.name).to_owned(),
             partitions: (self.partitions),
             replication_factor: (self.replication_factor),
             topic_configs: (self.topic_configs)
@@ -43,9 +40,9 @@ impl Encode for TopicInfo<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -56,15 +53,15 @@ impl Encode for TopicInfo<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_configs).len(), flex);
+                put_array_len(buf, (self.topic_configs).len(), flex)?;
                 for it in &self.topic_configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,10 +83,7 @@ impl Encode for TopicInfo<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_configs).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_configs).len(), flex);
                 let body: usize = (self.topic_configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -123,7 +117,7 @@ impl<'de> DecodeBorrow<'de> for TopicInfo<'de> {
         }
         if version >= 0 {
             out.topic_configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::key_value::KeyValue::decode_borrow(buf, version)?);

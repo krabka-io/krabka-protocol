@@ -1,6 +1,9 @@
 //! A serialisable W3C trace context that fits inside an existing payload.
 
-use std::str::FromStr as _;
+use std::{
+    ops::Range,
+    str::{FromStr as _, from_utf8},
+};
 
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 use serde::{Deserialize, Serialize};
@@ -12,9 +15,9 @@ use crate::propagation::{TRACEPARENT, TRACESTATE, current_trace_headers, set_rem
 /// Byte length of a version-`00` `traceparent`: `00-` + 32 + `-` + 16 + `-` + 2.
 const TRACEPARENT_LEN: usize = 55;
 /// Byte offsets of the three `-` separators in a version-`00` `traceparent`.
-const TRACE_ID_RANGE: std::ops::Range<usize> = 3..35;
-const SPAN_ID_RANGE: std::ops::Range<usize> = 36..52;
-const FLAGS_RANGE: std::ops::Range<usize> = 53..55;
+const TRACE_ID_RANGE: Range<usize> = 3..35;
+const SPAN_ID_RANGE: Range<usize> = 36..52;
+const FLAGS_RANGE: Range<usize> = 53..55;
 
 /// W3C caps `tracestate` at 512 bytes and 32 list members. Krabka drops a
 /// larger value and does not forward it, so a client cannot use `tracestate`
@@ -150,7 +153,7 @@ impl TraceCarrier {
             } else {
                 continue;
             };
-            if let Ok(text) = std::str::from_utf8(value.as_ref()) {
+            if let Ok(text) = from_utf8(value.as_ref()) {
                 *target = Some(text.to_owned());
             }
         }
@@ -239,16 +242,21 @@ pub fn parse_traceparent(value: &str) -> Result<SpanContext, TraceContextError> 
     if bytes.len() != TRACEPARENT_LEN {
         return Err(TraceContextError::Length(bytes.len()));
     }
-    if &bytes[0..2] != b"00" {
+    // The length check above puts every range below in bounds.
+    let field = |range: Range<usize>| bytes.get(range).ok_or(TraceContextError::Malformed);
+    if field(0..2)? != b"00" {
         return Err(TraceContextError::UnsupportedVersion);
     }
-    if bytes[2] != b'-' || bytes[35] != b'-' || bytes[52] != b'-' {
+    if [2, 35, 52]
+        .into_iter()
+        .any(|separator| bytes.get(separator) != Some(&b'-'))
+    {
         return Err(TraceContextError::Malformed);
     }
 
-    let trace_id = &bytes[TRACE_ID_RANGE];
-    let span_id = &bytes[SPAN_ID_RANGE];
-    let flags = &bytes[FLAGS_RANGE];
+    let trace_id = field(TRACE_ID_RANGE)?;
+    let span_id = field(SPAN_ID_RANGE)?;
+    let flags = field(FLAGS_RANGE)?;
     if !is_lower_hex(trace_id) || !is_lower_hex(span_id) || !is_lower_hex(flags) {
         return Err(TraceContextError::Malformed);
     }
@@ -261,12 +269,13 @@ pub fn parse_traceparent(value: &str) -> Result<SpanContext, TraceContextError> 
 
     // Every byte is validated lower-hex of the exact expected width, so the
     // three conversions below cannot fail.
+    let text = |range: Range<usize>| value.get(range).ok_or(TraceContextError::Malformed);
     let trace_id =
-        TraceId::from_hex(&value[TRACE_ID_RANGE]).map_err(|_| TraceContextError::Malformed)?;
+        TraceId::from_hex(text(TRACE_ID_RANGE)?).map_err(|_| TraceContextError::Malformed)?;
     let span_id =
-        SpanId::from_hex(&value[SPAN_ID_RANGE]).map_err(|_| TraceContextError::Malformed)?;
+        SpanId::from_hex(text(SPAN_ID_RANGE)?).map_err(|_| TraceContextError::Malformed)?;
     let flags =
-        u8::from_str_radix(&value[FLAGS_RANGE], 16).map_err(|_| TraceContextError::Malformed)?;
+        u8::from_str_radix(text(FLAGS_RANGE)?, 16).map_err(|_| TraceContextError::Malformed)?;
 
     Ok(SpanContext::new(
         trace_id,

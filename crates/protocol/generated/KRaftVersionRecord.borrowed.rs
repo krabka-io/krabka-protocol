@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::k_raft_version_record,
     primitives::fixed::{get_i16, put_i16},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -21,12 +22,9 @@ pub struct KRaftVersionRecord {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl KRaftVersionRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::k_raft_version_record::KRaftVersionRecord {
-        crate::owned::k_raft_version_record::KRaftVersionRecord {
+    pub fn to_owned(&self) -> k_raft_version_record::KRaftVersionRecord {
+        k_raft_version_record::KRaftVersionRecord {
             version: (self.version),
             k_raft_version: (self.k_raft_version),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -49,7 +47,7 @@ impl Encode for KRaftVersionRecord {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

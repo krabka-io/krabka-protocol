@@ -7,6 +7,7 @@
 //! rustls does not consult webpki-roots.
 
 use std::{
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -17,7 +18,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum JwksTrustError {
     #[error("read {0}: {1}")]
-    Io(PathBuf, std::io::Error),
+    Io(PathBuf, io::Error),
     #[error("no certificates in {0}")]
     Empty(PathBuf),
     #[error("rustls add cert: {0}")]
@@ -39,9 +40,9 @@ pub fn build_client_config_from_pem(
     path: &Path,
 ) -> Result<Arc<rustls::ClientConfig>, JwksTrustError> {
     let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(path)
-        .map_err(|e| JwksTrustError::Io(path.into(), std::io::Error::other(e.to_string())))?
+        .map_err(|e| JwksTrustError::Io(path.into(), io::Error::other(e.to_string())))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| JwksTrustError::Io(path.into(), std::io::Error::other(e.to_string())))?;
+        .map_err(|e| JwksTrustError::Io(path.into(), io::Error::other(e.to_string())))?;
     if certs.is_empty() {
         return Err(JwksTrustError::Empty(path.into()));
     }
@@ -60,12 +61,14 @@ pub fn build_client_config_from_pem(
 mod tests {
     use std::{fs::File, io::Write};
 
+    use rustls::crypto::ring::default_provider;
+
     use super::*;
 
     fn install_provider() {
         // rustls requires an explicit CryptoProvider when no default feature
         // is compiled in. Mirrors the pattern in tls.rs.
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = default_provider().install_default();
     }
 
     fn dev_cert_pem() -> &'static str {

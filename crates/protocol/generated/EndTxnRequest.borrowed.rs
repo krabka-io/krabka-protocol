@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::end_txn_request,
     primitives::{
         fixed::{get_bool, get_i16, get_i64, put_bool, put_i16, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -29,13 +30,10 @@ pub struct EndTxnRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl EndTxnRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::end_txn_request::EndTxnRequest {
-        crate::owned::end_txn_request::EndTxnRequest {
-            transactional_id: (self.transactional_id).to_string(),
+    pub fn to_owned(&self) -> end_txn_request::EndTxnRequest {
+        end_txn_request::EndTxnRequest {
+            transactional_id: (self.transactional_id).to_owned(),
             producer_id: (self.producer_id),
             producer_epoch: (self.producer_epoch),
             committed: (self.committed),
@@ -54,9 +52,9 @@ impl Encode for EndTxnRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.transactional_id);
+                put_compact_string(buf, self.transactional_id)?;
             } else {
-                let () = put_string(buf, self.transactional_id);
+                put_string(buf, self.transactional_id)?;
             }
         }
         if version >= 0 {
@@ -70,7 +68,7 @@ impl Encode for EndTxnRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

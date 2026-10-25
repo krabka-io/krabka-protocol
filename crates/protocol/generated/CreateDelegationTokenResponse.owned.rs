@@ -44,41 +44,65 @@ impl CreateDelegationTokenResponse {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal_type);
+                put_compact_string(buf, &self.principal_type)?;
             } else {
-                let () = put_string(buf, &self.principal_type);
+                put_string(buf, &self.principal_type)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal_name);
+                put_compact_string(buf, &self.principal_name)?;
             } else {
-                let () = put_string(buf, &self.principal_name);
+                put_string(buf, &self.principal_name)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_3<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.token_requester_principal_type);
+                put_compact_string(buf, &self.token_requester_principal_type)?;
             } else {
-                let () = put_string(buf, &self.token_requester_principal_type);
+                put_string(buf, &self.token_requester_principal_type)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.token_requester_principal_name);
+                put_compact_string(buf, &self.token_requester_principal_name)?;
             } else {
-                let () = put_string(buf, &self.token_requester_principal_name);
+                put_string(buf, &self.token_requester_principal_name)?;
             }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -95,34 +119,52 @@ impl CreateDelegationTokenResponse {
             put_i64(buf, self.max_timestamp_ms);
         }
     }
-    fn encode_field_8<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_8<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.token_id);
+                put_compact_string(buf, &self.token_id)?;
             } else {
-                let () = put_string(buf, &self.token_id);
+                put_string(buf, &self.token_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_9<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_9<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.hmac);
+                put_compact_bytes(buf, &self.hmac)?;
             } else {
-                let () = put_bytes(buf, &self.hmac);
+                put_bytes(buf, &self.hmac)?;
             }
         }
+        Ok(())
     }
     fn encode_field_10<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i32(buf, self.throttle_time_ms);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -291,17 +333,17 @@ impl Encode for CreateDelegationTokenResponse {
         }
         let flex = is_flexible(version);
         self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
-        self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_1(buf, version, flex)?;
+        self.encode_field_2(buf, version, flex)?;
+        self.encode_field_3(buf, version, flex)?;
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_field_8(buf, version, flex);
-        self.encode_field_9(buf, version, flex);
+        self.encode_field_8(buf, version, flex)?;
+        self.encode_field_9(buf, version, flex)?;
         self.encode_field_10(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -405,16 +447,16 @@ impl CreateDelegationTokenResponse {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.principal_type = "x".to_string();
+            m.principal_type = "x".to_owned();
         }
         if version >= 0 {
-            m.principal_name = "x".to_string();
+            m.principal_name = "x".to_owned();
         }
         if version >= 3 {
-            m.token_requester_principal_type = "x".to_string();
+            m.token_requester_principal_type = "x".to_owned();
         }
         if version >= 3 {
-            m.token_requester_principal_name = "x".to_string();
+            m.token_requester_principal_name = "x".to_owned();
         }
         if version >= 0 {
             m.issue_timestamp_ms = 1i64;
@@ -426,7 +468,7 @@ impl CreateDelegationTokenResponse {
             m.max_timestamp_ms = 1i64;
         }
         if version >= 0 {
-            m.token_id = "x".to_string();
+            m.token_id = "x".to_owned();
         }
         if version >= 0 {
             m.hmac = ::bytes::Bytes::from_static(b"x");
@@ -443,38 +485,38 @@ impl CreateDelegationTokenResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "principalType".to_string(),
+        "principalType".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "principalName".to_string(),
+        "principalName".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     if version >= 3 {
         obj.insert(
-            "tokenRequesterPrincipalType".to_string(),
+            "tokenRequesterPrincipalType".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version >= 3 {
         obj.insert(
-            "tokenRequesterPrincipalName".to_string(),
+            "tokenRequesterPrincipalName".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
-    obj.insert("issueTimestampMs".to_string(), ::serde_json::json!(0));
-    obj.insert("expiryTimestampMs".to_string(), ::serde_json::json!(0));
-    obj.insert("maxTimestampMs".to_string(), ::serde_json::json!(0));
+    obj.insert("issueTimestampMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("expiryTimestampMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("maxTimestampMs".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "tokenId".to_string(),
+        "tokenId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "hmac".to_string(),
+        "hmac".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

@@ -39,9 +39,9 @@ impl Encode for EnvelopeResponse {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.response_data.as_deref());
+                put_compact_nullable_bytes(buf, self.response_data.as_deref())?;
             } else {
-                let () = put_nullable_bytes(buf, self.response_data.as_deref());
+                put_nullable_bytes(buf, self.response_data.as_deref())?;
             }
         }
         if version >= 0 {
@@ -49,7 +49,7 @@ impl Encode for EnvelopeResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -119,7 +119,7 @@ impl EnvelopeResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("responseData".to_string(), ::serde_json::Value::Null);
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("responseData".to_owned(), ::serde_json::Value::Null);
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

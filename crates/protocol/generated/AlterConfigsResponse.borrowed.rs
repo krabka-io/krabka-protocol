@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::alter_configs_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,12 +35,9 @@ pub struct AlterConfigsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AlterConfigsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_configs_response::AlterConfigsResponse {
-        crate::owned::alter_configs_response::AlterConfigsResponse {
+    pub fn to_owned(&self) -> alter_configs_response::AlterConfigsResponse {
+        alter_configs_response::AlterConfigsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             responses: (self.responses)
                 .iter()
@@ -62,15 +61,15 @@ impl Encode for AlterConfigsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.responses).len(), flex);
+                put_array_len(buf, (self.responses).len(), flex)?;
                 for it in &self.responses {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,8 +81,7 @@ impl Encode for AlterConfigsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.responses).len(), flex);
+                let prefix = array_len_prefix_len((self.responses).len(), flex);
                 let body: usize = (self.responses)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -113,7 +111,7 @@ impl<'de> DecodeBorrow<'de> for AlterConfigsResponse<'de> {
         }
         if version >= 0 {
             out.responses = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AlterConfigsResourceResponse::decode_borrow(buf, version)?);
@@ -161,16 +159,13 @@ impl Default for AlterConfigsResourceResponse<'_> {
     }
 }
 impl AlterConfigsResourceResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::alter_configs_response::AlterConfigsResourceResponse {
-        crate::owned::alter_configs_response::AlterConfigsResourceResponse {
+    pub fn to_owned(&self) -> alter_configs_response::AlterConfigsResourceResponse {
+        alter_configs_response::AlterConfigsResourceResponse {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -183,9 +178,9 @@ impl Encode for AlterConfigsResourceResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
@@ -193,14 +188,14 @@ impl Encode for AlterConfigsResourceResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

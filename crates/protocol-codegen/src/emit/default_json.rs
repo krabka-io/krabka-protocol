@@ -10,81 +10,80 @@
 //! is actually nullable. The JVM converter therefore never rejects the
 //! input.
 
-use std::{fmt::Write as FmtWrite, str::FromStr};
-
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
-    emit::common::format_int_literal,
+    emit::{
+        EmitError,
+        common::{format_int_literal, parse_tokens, uses_ident, validate},
+    },
     ir::{FieldSpec, MessageSpec, VersionRange},
 };
 
 /// Emit the `default_json(version: i16)` function body for the given message.
 /// The output is plain Rust source, and the caller appends it to the
 /// per-message owned module body.
-#[must_use]
-/// # Panics
-/// Panics if the validated schema model cannot be represented as the expected Rust syntax tree.
-pub fn emit_default_json(spec: &MessageSpec) -> String {
-    let field_stmts = fields_stmts_tokens(&spec.fields);
+///
+/// # Errors
+/// Returns an error when the emitted function is not valid Rust, which is an
+/// emitter bug.
+pub fn emit_default_json(spec: &MessageSpec) -> Result<String, EmitError> {
+    let field_stmts = fields_stmts_tokens(&spec.fields)?;
+    // A message whose fields hold at every version never reads `version`, and
+    // one with no fields never inserts into `obj`.
+    let version = if uses_ident(&field_stmts, "version") {
+        quote!(version)
+    } else {
+        quote!(_version)
+    };
+    let mut_kw = if field_stmts.is_empty() {
+        quote!()
+    } else {
+        quote!(mut)
+    };
 
     let tokens = quote! {
         #[doc = " Default JSON payload matching `Self::default()` for JVM oracle differential testing."]
         #[doc = " Only includes fields valid for the given version."]
         #[must_use]
         #[allow(unused_comparisons)]
-        pub fn default_json(version: i16) -> ::serde_json::Value {
-            let mut obj = ::serde_json::Map::new();
+        pub fn default_json(#version: i16) -> ::serde_json::Value {
+            let #mut_kw obj = ::serde_json::Map::new();
             #field_stmts
             ::serde_json::Value::Object(obj)
         }
     };
 
     // Validate at generation time — a parse failure is a generator bug.
-    let _validate: syn::Item =
-        syn::parse2(tokens.clone()).expect("generated default_json fn must be valid Rust");
+    validate::<syn::Item>(&tokens, "default_json fn")?;
 
-    tokens.to_string()
+    Ok(tokens.to_string())
 }
 
 /// Build a `TokenStream` of `obj.insert(...)` statements for each field, with
 /// version range checks as guards.
-fn fields_stmts_tokens(fields: &[FieldSpec]) -> TokenStream {
-    let stmts: Vec<TokenStream> = fields
+fn fields_stmts_tokens(fields: &[FieldSpec]) -> Result<TokenStream, EmitError> {
+    let stmts = fields
         .iter()
         .map(|f| {
             let key = json_field_name(&f.name);
-            let field_cond = version_cond(f.versions);
-            let val_expr_str = json_value_expr_versioned(f);
-            let val_tokens = parse_expr(&val_expr_str);
-
-            match field_cond.as_deref() {
-                None => {
-                    // Always valid.
-                    quote! {
-                        obj.insert(#key.to_string(), #val_tokens);
-                    }
+            let val_tokens = parse_tokens(&json_value_expr_versioned(f))?;
+            let insert = quote!(obj.insert(#key.to_owned(), #val_tokens););
+            // A field valid at every version needs no guard.
+            let Some(cond) = version_cond(f.versions) else {
+                return Ok(insert);
+            };
+            let cond_tokens = parse_tokens(&cond)?;
+            Ok(quote! {
+                if #cond_tokens {
+                    #insert
                 }
-                Some(cond) => {
-                    let cond_tokens = parse_expr(cond);
-                    quote! {
-                        if #cond_tokens {
-                            obj.insert(#key.to_string(), #val_tokens);
-                        }
-                    }
-                }
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, EmitError>>()?;
 
-    quote! { #(#stmts)* }
-}
-
-/// Parse an emitter-produced Rust fragment into tokens. The fragment came from
-/// a trusted generator, so a lex error is a generator bug and not bad input.
-fn parse_expr(s: &str) -> TokenStream {
-    TokenStream::from_str(s).expect("leaf generator produced an unlexable fragment")
+    Ok(quote! { #(#stmts)* })
 }
 
 /// Return the condition string for a version range, or None if always valid.
@@ -95,8 +94,10 @@ fn version_cond(vr: VersionRange) -> Option<String> {
         Some(format!("version >= {}", vr.min))
     } else if vr.min == 0 {
         Some(format!("version <= {}", vr.max))
+    } else if vr.min == vr.max {
+        Some(format!("version == {}", vr.min))
     } else {
-        Some(format!("version >= {} && version <= {}", vr.min, vr.max))
+        Some(format!("({}..={}).contains(&version)", vr.min, vr.max))
     }
 }
 
@@ -142,7 +143,7 @@ pub(crate) fn json_value_expr_versioned(f: &FieldSpec) -> String {
             // Split: nullable in some versions, not in others.
             // Emit: if <nullable_cond> { Null } else { type_zero }
             let zero = if is_array {
-                "::serde_json::Value::Array(vec![])".to_string()
+                "::serde_json::Value::Array(vec![])".to_owned()
             } else {
                 type_zero_expr(&f.field_type, f)
             };
@@ -162,10 +163,10 @@ pub(crate) fn json_value_expr_versioned(f: &FieldSpec) -> String {
         return "::serde_json::Value::Array(vec![])".into();
     }
 
-    match &f.default {
-        Some(v) => scalar_value_expr(&f.field_type, v, f),
-        None => type_zero_expr(&f.field_type, f),
-    }
+    f.default.as_ref().map_or_else(
+        || type_zero_expr(&f.field_type, f),
+        |v| scalar_value_expr(&f.field_type, v, f),
+    )
 }
 
 /// Convert a schema `default` annotation to a Rust expression that produces a
@@ -179,17 +180,11 @@ fn scalar_value_expr(field_type: &str, val: &serde_json::Value, f: &FieldSpec) -
         serde_json::Value::String(s) if is_numeric_type(base) => {
             // Convert hex string defaults (e.g. "0x7fffffff") to decimal.
             let trimmed = s.trim();
-            let decimal = if let Some(hex_str) = trimmed
+            let decimal = trimmed
                 .strip_prefix("0x")
                 .or_else(|| trimmed.strip_prefix("0X"))
-            {
-                match i64::from_str_radix(hex_str, 16) {
-                    Ok(n) => n.to_string(),
-                    Err(_) => trimmed.to_string(),
-                }
-            } else {
-                trimmed.to_string()
-            };
+                .and_then(|hex_str| i64::from_str_radix(hex_str, 16).ok())
+                .map_or_else(|| trimmed.to_owned(), |n| n.to_string());
             // Produce a json! Number value.
             let literal = if base == "float64" {
                 decimal
@@ -209,8 +204,11 @@ fn scalar_value_expr(field_type: &str, val: &serde_json::Value, f: &FieldSpec) -
 
         serde_json::Value::String(s) if base == "string" => {
             // Escape the string for embedding in Rust source.
+            if s.is_empty() {
+                return "::serde_json::Value::String(String::new())".into();
+            }
             let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("::serde_json::Value::String(\"{escaped}\".to_string())")
+            format!("::serde_json::Value::String(\"{escaped}\".to_owned())")
         }
 
         serde_json::Value::Number(n) => {
@@ -245,7 +243,7 @@ fn type_zero_expr(field_type: &str, f: &FieldSpec) -> String {
             // Kafka's *DataJsonConverter encodes Uuid as base64 (22 chars),
             // not the standard hyphen UUID format. The zero UUID in base64 is
             // "AAAAAAAAAAAAAAAAAAAAAA" (16 zero bytes, no padding needed).
-            "::serde_json::Value::String(\"AAAAAAAAAAAAAAAAAAAAAA\".to_string())".into()
+            "::serde_json::Value::String(\"AAAAAAAAAAAAAAAAAAAAAA\".to_owned())".into()
         }
         _ => {
             if f.fields.is_empty() {
@@ -265,28 +263,29 @@ fn type_zero_expr(field_type: &str, f: &FieldSpec) -> String {
 /// field's guard. If this causes problems for specific complex schemas, fix it
 /// at the per-field level.
 fn emit_nested_struct_expr(fields: &[FieldSpec]) -> String {
-    let mut s = String::new();
-    s.push_str("{ let mut m = ::serde_json::Map::new(); ");
-    for f in fields {
-        let key = json_field_name(&f.name);
-        let val = json_value_expr_versioned(f);
-        write!(s, "m.insert(\"{key}\".to_string(), {val}); ").unwrap();
-    }
-    s.push_str("::serde_json::Value::Object(m) }");
-    s
+    let inserts = fields
+        .iter()
+        .map(|f| {
+            let key = json_field_name(&f.name);
+            let val = json_value_expr_versioned(f);
+            format!("m.insert(\"{key}\".to_owned(), {val}); ")
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    format!("{{ let mut m = ::serde_json::Map::new(); {inserts}::serde_json::Value::Object(m) }}")
 }
 
 /// Convert a Kafka schema field name in `PascalCase`, such as
-/// `TransactionalId`, to the JSON key the JVM's `*DataJsonConverter` uses. That
-/// key is `camelCase`, such as `transactionalId`, with the first character in
-/// lower case.
+/// `TransactionalId`, to the JSON key the JVM's `*DataJsonConverter` uses.
+///
+/// That key is `camelCase`, such as `transactionalId`, with the first
+/// character in lower case.
 #[must_use]
 pub fn json_field_name(name: &str) -> String {
     let mut chars = name.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_lowercase().collect::<String>() + chars.as_str(),
-    }
+    chars.next().map_or_else(String::new, |c| {
+        c.to_lowercase().collect::<String>() + chars.as_str()
+    })
 }
 
 fn base_type(t: &str) -> &str {

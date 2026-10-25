@@ -4,12 +4,14 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -28,7 +30,7 @@ pub struct OffsetCommitValue {
     pub metadata: String,
     pub commit_timestamp: i64,
     pub expire_timestamp: i64,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for OffsetCommitValue {
@@ -39,7 +41,7 @@ impl Default for OffsetCommitValue {
             metadata: String::new(),
             commit_timestamp: 0i64,
             expire_timestamp: -1i64,
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
@@ -60,9 +62,9 @@ impl Encode for OffsetCommitValue {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.metadata);
+                put_compact_string(buf, &self.metadata)?;
             } else {
-                let () = put_string(buf, &self.metadata);
+                put_string(buf, &self.metadata)?;
             }
         }
         if version >= 0 {
@@ -73,14 +75,14 @@ impl Encode for OffsetCommitValue {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.topic_id)) {
+            if !(is_default(&self.topic_id)) {
                 let payload = encode_to_bytes(16, |b| {
-                    crate::primitives::uuid::put_uuid(b, self.topic_id);
+                    put_uuid(b, self.topic_id);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -108,7 +110,7 @@ impl Encode for OffsetCommitValue {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.topic_id)) {
+            if !(is_default(&self.topic_id)) {
                 known_pairs.push((0, 16));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -150,7 +152,7 @@ impl Decode<'_> for OffsetCommitValue {
                 0 => {
                     tag_topic_id = Some({
                         let b: &mut &[u8] = payload;
-                        crate::primitives::uuid::get_uuid(b)?
+                        get_uuid(b)?
                     });
                     Ok(true)
                 }
@@ -175,7 +177,7 @@ impl OffsetCommitValue {
             m.leader_epoch = 1i32;
         }
         if version >= 0 {
-            m.metadata = "x".to_string();
+            m.metadata = "x".to_owned();
         }
         if version >= 0 {
             m.commit_timestamp = 1i64;
@@ -184,7 +186,7 @@ impl OffsetCommitValue {
             m.expire_timestamp = 1i64;
         }
         if version >= 4 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -195,22 +197,22 @@ impl OffsetCommitValue {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("offset".to_string(), ::serde_json::json!(0));
+    obj.insert("offset".to_owned(), ::serde_json::json!(0));
     if version >= 3 {
-        obj.insert("leaderEpoch".to_string(), ::serde_json::json!(-1));
+        obj.insert("leaderEpoch".to_owned(), ::serde_json::json!(-1));
     }
     obj.insert(
-        "metadata".to_string(),
+        "metadata".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("commitTimestamp".to_string(), ::serde_json::json!(0));
+    obj.insert("commitTimestamp".to_owned(), ::serde_json::json!(0));
     if version == 1 {
-        obj.insert("expireTimestamp".to_string(), ::serde_json::json!(-1));
+        obj.insert("expireTimestamp".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 4 {
         obj.insert(
-            "topicId".to_string(),
-            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+            "topicId".to_owned(),
+            ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
         );
     }
     ::serde_json::Value::Object(obj)
@@ -220,7 +222,7 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
 #[must_use]
 pub fn tagged_fixture() -> OffsetCommitValue {
     OffsetCommitValue {
-        topic_id: crate::primitives::uuid::Uuid([1u8; 16]),
+        topic_id: Uuid([1u8; 16]),
         ..OffsetCommitValue::default()
     }
 }
@@ -229,22 +231,22 @@ pub fn tagged_fixture() -> OffsetCommitValue {
 #[must_use]
 pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("offset".to_string(), ::serde_json::json!(0));
+    m.insert("offset".to_owned(), ::serde_json::json!(0));
     if version >= 3 {
-        m.insert("leaderEpoch".to_string(), ::serde_json::json!(-1));
+        m.insert("leaderEpoch".to_owned(), ::serde_json::json!(-1));
     }
     m.insert(
-        "metadata".to_string(),
+        "metadata".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    m.insert("commitTimestamp".to_string(), ::serde_json::json!(0));
+    m.insert("commitTimestamp".to_owned(), ::serde_json::json!(0));
     if version == 1 {
-        m.insert("expireTimestamp".to_string(), ::serde_json::json!(-1));
+        m.insert("expireTimestamp".to_owned(), ::serde_json::json!(-1));
     }
     if version == 4 {
         m.insert(
-            "topicId".to_string(),
-            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string()),
+            "topicId".to_owned(),
+            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_owned()),
         );
     }
     ::serde_json::Value::Object(m)

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sasl_handshake_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, put_i16},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -25,17 +27,11 @@ pub struct SaslHandshakeResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SaslHandshakeResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sasl_handshake_response::SaslHandshakeResponse {
-        crate::owned::sasl_handshake_response::SaslHandshakeResponse {
+    pub fn to_owned(&self) -> sasl_handshake_response::SaslHandshakeResponse {
+        sasl_handshake_response::SaslHandshakeResponse {
             error_code: (self.error_code),
-            mechanisms: (self.mechanisms)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+            mechanisms: (self.mechanisms).iter().map(|&s| s.to_owned()).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -54,15 +50,15 @@ impl Encode for SaslHandshakeResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.mechanisms).len(), flex);
+                put_array_len(buf, (self.mechanisms).len(), flex)?;
                 for it in &self.mechanisms {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -74,8 +70,7 @@ impl Encode for SaslHandshakeResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.mechanisms).len(), flex);
+                let prefix = array_len_prefix_len((self.mechanisms).len(), flex);
                 let body: usize = (self.mechanisms)
                     .iter()
                     .map(|it| {
@@ -107,7 +102,7 @@ impl<'de> DecodeBorrow<'de> for SaslHandshakeResponse<'de> {
         }
         if version >= 0 {
             out.mechanisms = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

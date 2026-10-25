@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -66,9 +67,9 @@ impl Encode for FindCoordinatorResponse {
         }
         if (1..=3).contains(&version) {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if (0..=3).contains(&version) {
@@ -76,9 +77,9 @@ impl Encode for FindCoordinatorResponse {
         }
         if (0..=3).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if (0..=3).contains(&version) {
@@ -86,15 +87,15 @@ impl Encode for FindCoordinatorResponse {
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.coordinators).len(), flex);
+                put_array_len(buf, (self.coordinators).len(), flex)?;
                 for it in &self.coordinators {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -129,8 +130,7 @@ impl Encode for FindCoordinatorResponse {
         }
         if version >= 4 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.coordinators).len(), flex);
+                let prefix = array_len_prefix_len((self.coordinators).len(), flex);
                 let body: usize = (self.coordinators)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -183,7 +183,7 @@ impl Decode<'_> for FindCoordinatorResponse {
         }
         if version >= 4 {
             out.coordinators = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Coordinator::decode(buf, version)?);
@@ -209,13 +209,13 @@ impl FindCoordinatorResponse {
             m.error_code = 1i16;
         }
         if (1..=3).contains(&version) {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if (0..=3).contains(&version) {
             m.node_id = 1i32;
         }
         if (0..=3).contains(&version) {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if (0..=3).contains(&version) {
             m.port = 1i32;
@@ -254,9 +254,9 @@ impl Encode for Coordinator {
         let flex = version >= 3;
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, &self.key);
+                put_compact_string(buf, &self.key)?;
             } else {
-                let () = put_string(buf, &self.key);
+                put_string(buf, &self.key)?;
             }
         }
         if version >= 4 {
@@ -264,9 +264,9 @@ impl Encode for Coordinator {
         }
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 4 {
@@ -277,14 +277,14 @@ impl Encode for Coordinator {
         }
         if version >= 4 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -374,13 +374,13 @@ impl Coordinator {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 4 {
-            m.key = "x".to_string();
+            m.key = "x".to_owned();
         }
         if version >= 4 {
             m.node_id = 1i32;
         }
         if version >= 4 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 4 {
             m.port = 1i32;
@@ -389,7 +389,7 @@ impl Coordinator {
             m.error_code = 1i16;
         }
         if version >= 4 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         m
     }
@@ -401,32 +401,32 @@ impl Coordinator {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
     if version <= 3 {
-        obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+        obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     }
     if (1..=3).contains(&version) {
         obj.insert(
-            "errorMessage".to_string(),
+            "errorMessage".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version <= 3 {
-        obj.insert("nodeId".to_string(), ::serde_json::json!(0));
+        obj.insert("nodeId".to_owned(), ::serde_json::json!(0));
     }
     if version <= 3 {
         obj.insert(
-            "host".to_string(),
+            "host".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version <= 3 {
-        obj.insert("port".to_string(), ::serde_json::json!(0));
+        obj.insert("port".to_owned(), ::serde_json::json!(0));
     }
     if version >= 4 {
         obj.insert(
-            "coordinators".to_string(),
+            "coordinators".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }

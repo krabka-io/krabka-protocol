@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for borrowed DescribeGroups wrappers. The hand-written tests
 // checked .groups.len() which the generated min/max test doesn't assert on.
 // Relocated from hand-written wrappers.

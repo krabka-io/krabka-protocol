@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::create_partitions_request,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, get_i32, put_bool, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -28,12 +33,9 @@ pub struct CreatePartitionsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl CreatePartitionsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::create_partitions_request::CreatePartitionsRequest {
-        crate::owned::create_partitions_request::CreatePartitionsRequest {
+    pub fn to_owned(&self) -> create_partitions_request::CreatePartitionsRequest {
+        create_partitions_request::CreatePartitionsRequest {
             topics: (self.topics)
                 .iter()
                 .map(CreatePartitionsTopic::to_owned)
@@ -55,11 +57,11 @@ impl Encode for CreatePartitionsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.timeout_ms);
@@ -69,7 +71,7 @@ impl Encode for CreatePartitionsRequest<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -78,8 +80,7 @@ impl Encode for CreatePartitionsRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -109,7 +110,7 @@ impl<'de> DecodeBorrow<'de> for CreatePartitionsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(CreatePartitionsTopic::decode_borrow(buf, version)?);
@@ -164,13 +165,10 @@ impl Default for CreatePartitionsTopic<'_> {
     }
 }
 impl CreatePartitionsTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::create_partitions_request::CreatePartitionsTopic {
-        crate::owned::create_partitions_request::CreatePartitionsTopic {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> create_partitions_request::CreatePartitionsTopic {
+        create_partitions_request::CreatePartitionsTopic {
+            name: (self.name).to_owned(),
             count: (self.count),
             assignments: (self.assignments)
                 .as_ref()
@@ -184,9 +182,9 @@ impl Encode for CreatePartitionsTopic<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -195,17 +193,17 @@ impl Encode for CreatePartitionsTopic<'_> {
         if version >= 0 {
             {
                 let len = (self.assignments).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.assignments {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -225,10 +223,7 @@ impl Encode for CreatePartitionsTopic<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.assignments).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -257,7 +252,7 @@ impl<'de> DecodeBorrow<'de> for CreatePartitionsTopic<'de> {
         }
         if version >= 0 {
             out.assignments = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -299,12 +294,9 @@ pub struct CreatePartitionsAssignment {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl CreatePartitionsAssignment {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::create_partitions_request::CreatePartitionsAssignment {
-        crate::owned::create_partitions_request::CreatePartitionsAssignment {
+    pub fn to_owned(&self) -> create_partitions_request::CreatePartitionsAssignment {
+        create_partitions_request::CreatePartitionsAssignment {
             broker_ids: (self.broker_ids).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -315,15 +307,15 @@ impl Encode for CreatePartitionsAssignment {
         let flex = version >= 2;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.broker_ids).len(), flex);
+                put_array_len(buf, (self.broker_ids).len(), flex)?;
                 for it in &self.broker_ids {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -332,8 +324,7 @@ impl Encode for CreatePartitionsAssignment {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.broker_ids).len(), flex);
+                let prefix = array_len_prefix_len((self.broker_ids).len(), flex);
                 let body: usize = (self.broker_ids).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -351,7 +342,7 @@ impl<'de> DecodeBorrow<'de> for CreatePartitionsAssignment {
         let mut out = Self::default();
         if version >= 0 {
             out.broker_ids = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

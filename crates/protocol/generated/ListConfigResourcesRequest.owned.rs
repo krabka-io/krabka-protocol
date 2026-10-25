@@ -4,7 +4,10 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_i8, put_i8},
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        fixed::{get_i8, put_i8},
+    },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 74;
@@ -33,15 +36,15 @@ impl Encode for ListConfigResourcesRequest {
         let flex = is_flexible(version);
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.resource_types).len(), flex);
+                put_array_len(buf, (self.resource_types).len(), flex)?;
                 for it in &self.resource_types {
                     put_i8(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -50,10 +53,7 @@ impl Encode for ListConfigResourcesRequest {
         let mut n: usize = 0;
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.resource_types).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.resource_types).len(), flex);
                 let body: usize = (self.resource_types).iter().map(|_| 1).sum();
                 prefix + body
             };
@@ -77,7 +77,7 @@ impl Decode<'_> for ListConfigResourcesRequest {
         let mut out = Self::default();
         if version >= 1 {
             out.resource_types = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i8(buf)?);
@@ -110,7 +110,7 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
         obj.insert(
-            "resourceTypes".to_string(),
+            "resourceTypes".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }

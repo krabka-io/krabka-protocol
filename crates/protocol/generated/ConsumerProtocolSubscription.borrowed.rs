@@ -3,12 +3,15 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::consumer_protocol_subscription,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
-            compact_nullable_string_len, compact_string_len, nullable_string_len,
-            put_compact_nullable_bytes, put_compact_nullable_string, put_compact_string,
-            put_nullable_bytes, put_nullable_string, put_string, string_len,
+            compact_nullable_bytes_len, compact_nullable_string_len, compact_string_len,
+            nullable_bytes_len, nullable_string_len, put_compact_nullable_bytes,
+            put_compact_nullable_string, put_compact_string, put_nullable_bytes,
+            put_nullable_string, put_string, string_len,
         },
         string_bytes_borrowed::{
             get_compact_nullable_bytes_borrowed, get_compact_nullable_string_borrowed,
@@ -47,25 +50,17 @@ impl Default for ConsumerProtocolSubscription<'_> {
     }
 }
 impl ConsumerProtocolSubscription<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::consumer_protocol_subscription::ConsumerProtocolSubscription {
-        crate::owned::consumer_protocol_subscription::ConsumerProtocolSubscription {
-            topics: (self.topics)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> consumer_protocol_subscription::ConsumerProtocolSubscription {
+        consumer_protocol_subscription::ConsumerProtocolSubscription {
+            topics: (self.topics).iter().map(|&s| s.to_owned()).collect(),
             user_data: (self.user_data).map(Bytes::copy_from_slice),
             owned_partitions: (self.owned_partitions)
                 .iter()
                 .map(TopicPartition::to_owned)
                 .collect(),
             generation_id: (self.generation_id),
-            rack_id: (self.rack_id).map(std::string::ToString::to_string),
+            rack_id: (self.rack_id).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -80,39 +75,39 @@ impl Encode for ConsumerProtocolSubscription<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.user_data);
+                put_compact_nullable_bytes(buf, self.user_data)?;
             } else {
-                let () = put_nullable_bytes(buf, self.user_data);
+                put_nullable_bytes(buf, self.user_data)?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.owned_partitions).len(), flex);
+                put_array_len(buf, (self.owned_partitions).len(), flex)?;
                 for it in &self.owned_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 2 {
             put_i32(buf, self.generation_id);
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack_id);
+                put_compact_nullable_string(buf, self.rack_id)?;
             } else {
-                let () = put_nullable_string(buf, self.rack_id);
+                put_nullable_string(buf, self.rack_id)?;
             }
         }
         Ok(())
@@ -122,8 +117,7 @@ impl Encode for ConsumerProtocolSubscription<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics)
                     .iter()
                     .map(|it| {
@@ -138,30 +132,15 @@ impl Encode for ConsumerProtocolSubscription<'_> {
             };
         }
         if version >= 0 {
-            n += match self.user_data {
-                None => {
-                    if flex {
-                        1
-                    } else {
-                        4
-                    }
-                }
-                Some(b) => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap())
-                            + b.len()
-                    } else {
-                        4 + b.len()
-                    }
-                }
+            n += if flex {
+                compact_nullable_bytes_len(self.user_data)
+            } else {
+                nullable_bytes_len(self.user_data)
             };
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.owned_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.owned_partitions).len(), flex);
                 let body: usize = (self.owned_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -193,7 +172,7 @@ impl<'de> DecodeBorrow<'de> for ConsumerProtocolSubscription<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -214,7 +193,7 @@ impl<'de> DecodeBorrow<'de> for ConsumerProtocolSubscription<'de> {
         }
         if version >= 1 {
             out.owned_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicPartition::decode_borrow(buf, version)?);
@@ -265,13 +244,10 @@ pub struct TopicPartition<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicPartition<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::consumer_protocol_subscription::TopicPartition {
-        crate::owned::consumer_protocol_subscription::TopicPartition {
-            topic: (self.topic).to_string(),
+    pub fn to_owned(&self) -> consumer_protocol_subscription::TopicPartition {
+        consumer_protocol_subscription::TopicPartition {
+            topic: (self.topic).to_owned(),
             partitions: (self.partitions).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -282,18 +258,18 @@ impl Encode for TopicPartition<'_> {
         let flex = version == i16::MAX;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.topic);
+                put_compact_string(buf, self.topic)?;
             } else {
-                let () = put_string(buf, self.topic);
+                put_string(buf, self.topic)?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -309,8 +285,7 @@ impl Encode for TopicPartition<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -331,7 +306,7 @@ impl<'de> DecodeBorrow<'de> for TopicPartition<'de> {
         }
         if version >= 1 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::add_offsets_to_txn_response,
     primitives::fixed::{get_i16, get_i32, put_i16, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -22,12 +23,9 @@ pub struct AddOffsetsToTxnResponse {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl AddOffsetsToTxnResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::add_offsets_to_txn_response::AddOffsetsToTxnResponse {
-        crate::owned::add_offsets_to_txn_response::AddOffsetsToTxnResponse {
+    pub fn to_owned(&self) -> add_offsets_to_txn_response::AddOffsetsToTxnResponse {
+        add_offsets_to_txn_response::AddOffsetsToTxnResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -51,7 +49,7 @@ impl Encode for AddOffsetsToTxnResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

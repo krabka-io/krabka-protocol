@@ -1,4 +1,9 @@
-use std::path::PathBuf;
+#![cfg(test)]
+
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use assert2::{assert, check};
 use krabka_protocol_codegen::{emit, emit::EmittedMessage, fmt, ir, resolve};
@@ -39,20 +44,20 @@ fn snap_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots")
 }
 
-fn check(snap_path: &std::path::Path, generated: &str) {
+fn check(snap_path: &Path, generated: &str) {
     // The quote-based emitters return single-line token text; rustfmt is the
     // canonical secondary pass (same as the regeneration binary applies), so
     // snapshots stay readable and mirror the committed generated form.
     let generated = fmt::rustfmt(generated)
         .unwrap_or_else(|e| panic!("rustfmt failed for {}: {e}", snap_path.display()));
-    if std::env::var("UPDATE_SNAPSHOTS").is_ok() {
+    if env::var("UPDATE_SNAPSHOTS").is_ok() {
         if let Some(parent) = snap_path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            fs::create_dir_all(parent).unwrap();
         }
-        std::fs::write(snap_path, &generated).unwrap();
+        fs::write(snap_path, &generated).unwrap();
         return;
     }
-    let expected = std::fs::read_to_string(snap_path).unwrap_or_else(|_| {
+    let expected = fs::read_to_string(snap_path).unwrap_or_else(|_| {
         panic!(
             "snapshot file not found: {}; run with UPDATE_SNAPSHOTS=1 to create it",
             snap_path.display()
@@ -93,8 +98,8 @@ fn common_structs_are_message_scoped() {
     let share_map = resolve::resolve_message(share).unwrap();
     let streams_map = resolve::resolve_message(streams).unwrap();
 
-    let share_path = &share_map.get("Assignment").unwrap().rust_path;
-    let streams_path = &streams_map.get("Assignment").unwrap().rust_path;
+    let share_path = &share_map["Assignment"].rust_path;
+    let streams_path = &streams_map["Assignment"].rust_path;
 
     check!(
         share_path != streams_path,

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_producers_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -26,12 +28,9 @@ pub struct DescribeProducersRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeProducersRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_producers_request::DescribeProducersRequest {
-        crate::owned::describe_producers_request::DescribeProducersRequest {
+    pub fn to_owned(&self) -> describe_producers_request::DescribeProducersRequest {
+        describe_producers_request::DescribeProducersRequest {
             topics: (self.topics).iter().map(TopicRequest::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -48,15 +47,15 @@ impl Encode for DescribeProducersRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -65,8 +64,7 @@ impl Encode for DescribeProducersRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -90,7 +88,7 @@ impl<'de> DecodeBorrow<'de> for DescribeProducersRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicRequest::decode_borrow(buf, version)?);
@@ -122,13 +120,10 @@ pub struct TopicRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_producers_request::TopicRequest {
-        crate::owned::describe_producers_request::TopicRequest {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> describe_producers_request::TopicRequest {
+        describe_producers_request::TopicRequest {
+            name: (self.name).to_owned(),
             partition_indexes: (self.partition_indexes).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -139,22 +134,22 @@ impl Encode for TopicRequest<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_indexes).len(), flex);
+                put_array_len(buf, (self.partition_indexes).len(), flex)?;
                 for it in &self.partition_indexes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -170,10 +165,7 @@ impl Encode for TopicRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_indexes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_indexes).len(), flex);
                 let body: usize = (self.partition_indexes).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -198,7 +190,7 @@ impl<'de> DecodeBorrow<'de> for TopicRequest<'de> {
         }
         if version >= 0 {
             out.partition_indexes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

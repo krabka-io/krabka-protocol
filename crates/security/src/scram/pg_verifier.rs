@@ -55,6 +55,9 @@ pub enum ScramError {
         /// Actual decoded byte length.
         actual: usize,
     },
+    /// The system random number generator could not produce a salt.
+    #[error("system random number generator unavailable")]
+    RandomUnavailable,
 }
 
 impl PgScramVerifier {
@@ -62,14 +65,16 @@ impl PgScramVerifier {
     ///
     /// # Errors
     ///
-    /// Returns [`ScramError::InvalidIterations`] when `iterations` is zero.
+    /// Returns [`ScramError::InvalidIterations`] when `iterations` is zero,
+    /// and [`ScramError::RandomUnavailable`] when the system RNG cannot
+    /// produce a salt.
     pub fn generate(password: &str, iterations: u32) -> Result<Self, ScramError> {
         if iterations == 0 {
             return Err(ScramError::InvalidIterations);
         }
 
         let credential =
-            hash_scram_password(password.as_bytes(), SaslMechanism::ScramSha256, iterations);
+            hash_scram_password(password.as_bytes(), SaslMechanism::ScramSha256, iterations)?;
         Ok(Self::from_sha256_credential(credential))
     }
 
@@ -246,6 +251,8 @@ fn require_key_len(field: &'static str, key: &[u8]) -> Result<(), ScramError> {
 
 #[cfg(test)]
 mod tests {
+    use std::process;
+
     use assert2::{assert, check};
 
     use super::*;
@@ -254,7 +261,7 @@ mod tests {
     const FIXED_SALT: &[u8] = b"0123456789abcdef";
 
     fn fixture_password() -> String {
-        std::process::id().to_string()
+        process::id().to_string()
     }
 
     /// The password `PostgreSQL` 18 hashed to produce the golden verifier below.
@@ -387,9 +394,9 @@ mod tests {
         let password = fixture_password();
         let verifier = PgScramVerifier::generate(&password, 4096).expect("fresh verifier");
         let credential = ScramCredential::from(&verifier);
-        let server = ScramServerExchange::new("alice".to_string(), credential);
+        let server = ScramServerExchange::new("alice".to_owned(), credential);
         let client = ScramClientExchange::new(
-            "alice".to_string(),
+            "alice".to_owned(),
             password.into_bytes(),
             SaslMechanism::ScramSha256,
         );

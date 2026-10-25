@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::list_groups_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -26,20 +28,11 @@ pub struct ListGroupsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListGroupsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_groups_request::ListGroupsRequest {
-        crate::owned::list_groups_request::ListGroupsRequest {
-            states_filter: (self.states_filter)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
-            types_filter: (self.types_filter)
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+    pub fn to_owned(&self) -> list_groups_request::ListGroupsRequest {
+        list_groups_request::ListGroupsRequest {
+            states_filter: (self.states_filter).iter().map(|&s| s.to_owned()).collect(),
+            types_filter: (self.types_filter).iter().map(|&s| s.to_owned()).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -55,31 +48,31 @@ impl Encode for ListGroupsRequest<'_> {
         let flex = is_flexible(version);
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.states_filter).len(), flex);
+                put_array_len(buf, (self.states_filter).len(), flex)?;
                 for it in &self.states_filter {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 5 {
             {
-                crate::primitives::array::put_array_len(buf, (self.types_filter).len(), flex);
+                put_array_len(buf, (self.types_filter).len(), flex)?;
                 for it in &self.types_filter {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -88,10 +81,7 @@ impl Encode for ListGroupsRequest<'_> {
         let mut n: usize = 0;
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.states_filter).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.states_filter).len(), flex);
                 let body: usize = (self.states_filter)
                     .iter()
                     .map(|it| {
@@ -107,8 +97,7 @@ impl Encode for ListGroupsRequest<'_> {
         }
         if version >= 5 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.types_filter).len(), flex);
+                let prefix = array_len_prefix_len((self.types_filter).len(), flex);
                 let body: usize = (self.types_filter)
                     .iter()
                     .map(|it| {
@@ -141,7 +130,7 @@ impl<'de> DecodeBorrow<'de> for ListGroupsRequest<'de> {
         let mut out = Self::default();
         if version >= 4 {
             out.states_filter = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -155,7 +144,7 @@ impl<'de> DecodeBorrow<'de> for ListGroupsRequest<'de> {
         }
         if version >= 5 {
             out.types_filter = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

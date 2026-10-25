@@ -4,13 +4,17 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_i64, get_u16, put_i16, put_i32, put_i64, put_u16},
         string_bytes::{
-            compact_string_len, get_bytes_owned, get_compact_bytes_owned, get_compact_string_owned,
-            get_string_owned, put_compact_string, put_string, string_len,
+            compact_bytes_len_from_size, compact_string_len, get_bytes_owned,
+            get_compact_bytes_owned, get_compact_string_owned, get_string_owned,
+            put_compact_string, put_string, string_len,
         },
     },
+    records::RecordsPayload,
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 59;
@@ -47,21 +51,18 @@ impl Encode for FetchSnapshotResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.node_endpoints).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                         let body: usize = (self.node_endpoints)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -70,21 +71,17 @@ impl Encode for FetchSnapshotResponse {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.node_endpoints).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.node_endpoints).len(), flex)?;
                             for it in &self.node_endpoints {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -99,20 +96,16 @@ impl Encode for FetchSnapshotResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if version >= 1 && !(is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.node_endpoints).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                     let body: usize = (self.node_endpoints)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -143,7 +136,7 @@ impl Decode<'_> for FetchSnapshotResponse {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicSnapshot::decode(buf, version)?);
@@ -158,7 +151,7 @@ impl Decode<'_> for FetchSnapshotResponse {
                     tag_node_endpoints = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
                                 v.push(NodeEndpoint::decode(b, version)?);
@@ -209,22 +202,22 @@ impl Encode for TopicSnapshot {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -240,8 +233,7 @@ impl Encode for TopicSnapshot {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -269,7 +261,7 @@ impl Decode<'_> for TopicSnapshot {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionSnapshot::decode(buf, version)?);
@@ -289,7 +281,7 @@ impl TopicSnapshot {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![PartitionSnapshot::populated(version)];
@@ -304,7 +296,7 @@ pub struct PartitionSnapshot {
     pub snapshot_id: SnapshotId,
     pub size: i64,
     pub position: i64,
-    pub unaligned_records: crate::records::RecordsPayload,
+    pub unaligned_records: RecordsPayload,
     pub current_leader: LeaderIdAndEpoch,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -332,14 +324,14 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 let payload = encode_to_bytes(self.current_leader.encoded_len(version), |b| {
                     self.current_leader.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -363,12 +355,12 @@ impl Encode for PartitionSnapshot {
         }
         if version >= 0 {
             n += {
-                let __rb_len = <crate::records::RecordsPayload as crate::Encode>::encoded_len(
+                let __rb_len = <RecordsPayload as crate::Encode>::encoded_len(
                     &self.unaligned_records,
                     version,
                 );
                 if flex {
-                    crate::primitives::string_bytes::compact_bytes_len_from_size(__rb_len)
+                    compact_bytes_len_from_size(__rb_len)
                 } else {
                     4 + __rb_len
                 }
@@ -376,7 +368,7 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.current_leader)) {
+            if !(is_default(&self.current_leader)) {
                 known_pairs.push((0, self.current_leader.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -410,7 +402,7 @@ impl Decode<'_> for PartitionSnapshot {
                 } else {
                     get_bytes_owned(buf)?
                 };
-                crate::records::RecordsPayload::from_fetch_bytes(__rb_bytes)?
+                RecordsPayload::from_fetch_bytes(__rb_bytes)?
             };
         }
         if flex {
@@ -475,7 +467,7 @@ impl Encode for SnapshotId {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -542,7 +534,7 @@ impl Encode for LeaderIdAndEpoch {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -607,9 +599,9 @@ impl Encode for NodeEndpoint {
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 1 {
@@ -617,7 +609,7 @@ impl Encode for NodeEndpoint {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -676,7 +668,7 @@ impl NodeEndpoint {
             m.node_id = 1i32;
         }
         if version >= 1 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 1 {
             m.port = 1u16;
@@ -690,12 +682,12 @@ impl NodeEndpoint {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 1 {
         obj.insert(
-            "nodeEndpoints".to_string(),
+            "nodeEndpoints".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
@@ -719,7 +711,7 @@ pub fn tagged_fixture() -> FetchSnapshotResponse {
         }],
         node_endpoints: vec![NodeEndpoint {
             node_id: 1i32,
-            host: "x".to_string(),
+            host: "x".to_owned(),
             port: 1u16,
             ..NodeEndpoint::default()
         }],
@@ -731,38 +723,38 @@ pub fn tagged_fixture() -> FetchSnapshotResponse {
 #[must_use]
 pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    m.insert("errorCode".to_string(), ::serde_json::json!(0));
+    m.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    m.insert("errorCode".to_owned(), ::serde_json::json!(0));
     m.insert(
-        "topics".to_string(),
+        "topics".to_owned(),
         ::serde_json::Value::Array(vec![{
             let mut m = ::serde_json::Map::new();
             m.insert(
-                "name".to_string(),
+                "name".to_owned(),
                 ::serde_json::Value::String(String::new()),
             );
             m.insert(
-                "partitions".to_string(),
+                "partitions".to_owned(),
                 ::serde_json::Value::Array(vec![{
                     let mut m = ::serde_json::Map::new();
-                    m.insert("index".to_string(), ::serde_json::json!(0));
-                    m.insert("errorCode".to_string(), ::serde_json::json!(0));
-                    m.insert("snapshotId".to_string(), {
+                    m.insert("index".to_owned(), ::serde_json::json!(0));
+                    m.insert("errorCode".to_owned(), ::serde_json::json!(0));
+                    m.insert("snapshotId".to_owned(), {
                         let mut m = ::serde_json::Map::new();
-                        m.insert("endOffset".to_string(), ::serde_json::json!(0));
-                        m.insert("epoch".to_string(), ::serde_json::json!(0));
+                        m.insert("endOffset".to_owned(), ::serde_json::json!(0));
+                        m.insert("epoch".to_owned(), ::serde_json::json!(0));
                         ::serde_json::Value::Object(m)
                     });
-                    m.insert("currentLeader".to_string(), {
+                    m.insert("currentLeader".to_owned(), {
                         let mut m = ::serde_json::Map::new();
-                        m.insert("leaderId".to_string(), ::serde_json::json!(1));
-                        m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+                        m.insert("leaderId".to_owned(), ::serde_json::json!(1));
+                        m.insert("leaderEpoch".to_owned(), ::serde_json::json!(1));
                         ::serde_json::Value::Object(m)
                     });
-                    m.insert("size".to_string(), ::serde_json::json!(0));
-                    m.insert("position".to_string(), ::serde_json::json!(0));
+                    m.insert("size".to_owned(), ::serde_json::json!(0));
+                    m.insert("position".to_owned(), ::serde_json::json!(0));
                     m.insert(
-                        "unalignedRecords".to_string(),
+                        "unalignedRecords".to_owned(),
                         ::serde_json::Value::String(String::new()),
                     );
                     ::serde_json::Value::Object(m)
@@ -773,15 +765,15 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     );
     if version == 1 {
         m.insert(
-            "nodeEndpoints".to_string(),
+            "nodeEndpoints".to_owned(),
             ::serde_json::Value::Array(vec![{
                 let mut m = ::serde_json::Map::new();
-                m.insert("nodeId".to_string(), ::serde_json::json!(1));
+                m.insert("nodeId".to_owned(), ::serde_json::json!(1));
                 m.insert(
-                    "host".to_string(),
-                    ::serde_json::Value::String("x".to_string()),
+                    "host".to_owned(),
+                    ::serde_json::Value::String("x".to_owned()),
                 );
-                m.insert("port".to_string(), ::serde_json::json!(1));
+                m.insert("port".to_owned(), ::serde_json::json!(1));
                 ::serde_json::Value::Object(m)
             }]),
         );

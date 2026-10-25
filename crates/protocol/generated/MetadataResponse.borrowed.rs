@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::metadata_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i16, get_i32, put_bool, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -52,18 +55,15 @@ impl Default for MetadataResponse<'_> {
     }
 }
 impl MetadataResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_response::MetadataResponse {
-        crate::owned::metadata_response::MetadataResponse {
+    pub fn to_owned(&self) -> metadata_response::MetadataResponse {
+        metadata_response::MetadataResponse {
             throttle_time_ms: (self.throttle_time_ms),
             brokers: (self.brokers)
                 .iter()
                 .map(MetadataResponseBroker::to_owned)
                 .collect(),
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+            cluster_id: (self.cluster_id).map(str::to_owned),
             controller_id: (self.controller_id),
             topics: (self.topics)
                 .iter()
@@ -89,17 +89,17 @@ impl Encode for MetadataResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.brokers).len(), flex);
+                put_array_len(buf, (self.brokers).len(), flex)?;
                 for it in &self.brokers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 2 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 1 {
@@ -107,11 +107,11 @@ impl Encode for MetadataResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if (8..=10).contains(&version) {
             put_i32(buf, self.cluster_authorized_operations);
@@ -121,7 +121,7 @@ impl Encode for MetadataResponse<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -133,8 +133,7 @@ impl Encode for MetadataResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.brokers).len(), flex);
+                let prefix = array_len_prefix_len((self.brokers).len(), flex);
                 let body: usize = (self.brokers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -154,8 +153,7 @@ impl Encode for MetadataResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -188,7 +186,7 @@ impl<'de> DecodeBorrow<'de> for MetadataResponse<'de> {
         }
         if version >= 0 {
             out.brokers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MetadataResponseBroker::decode_borrow(buf, version)?);
@@ -208,7 +206,7 @@ impl<'de> DecodeBorrow<'de> for MetadataResponse<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MetadataResponseTopic::decode_borrow(buf, version)?);
@@ -266,16 +264,13 @@ pub struct MetadataResponseBroker<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl MetadataResponseBroker<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_response::MetadataResponseBroker {
-        crate::owned::metadata_response::MetadataResponseBroker {
+    pub fn to_owned(&self) -> metadata_response::MetadataResponseBroker {
+        metadata_response::MetadataResponseBroker {
             node_id: (self.node_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
-            rack: (self.rack).map(std::string::ToString::to_string),
+            rack: (self.rack).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -288,9 +283,9 @@ impl Encode for MetadataResponseBroker<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -298,14 +293,14 @@ impl Encode for MetadataResponseBroker<'_> {
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack);
+                put_compact_nullable_string(buf, self.rack)?;
             } else {
-                let () = put_nullable_string(buf, self.rack);
+                put_nullable_string(buf, self.rack)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -393,7 +388,7 @@ impl MetadataResponseBroker<'_> {
 pub struct MetadataResponseTopic<'a> {
     pub error_code: i16,
     pub name: Option<&'a str>,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub is_internal: bool,
     pub partitions: Vec<MetadataResponsePartition>,
     pub topic_authorized_operations: i32,
@@ -404,7 +399,7 @@ impl Default for MetadataResponseTopic<'_> {
         Self {
             error_code: 0i16,
             name: Some(""),
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             is_internal: false,
             partitions: Vec::new(),
             topic_authorized_operations: -2_147_483_648i32,
@@ -413,14 +408,11 @@ impl Default for MetadataResponseTopic<'_> {
     }
 }
 impl MetadataResponseTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_response::MetadataResponseTopic {
-        crate::owned::metadata_response::MetadataResponseTopic {
+    pub fn to_owned(&self) -> metadata_response::MetadataResponseTopic {
+        metadata_response::MetadataResponseTopic {
             error_code: (self.error_code),
-            name: (self.name).map(std::string::ToString::to_string),
+            name: (self.name).map(str::to_owned),
             topic_id: (self.topic_id),
             is_internal: (self.is_internal),
             partitions: (self.partitions)
@@ -441,38 +433,38 @@ impl Encode for MetadataResponseTopic<'_> {
         if version >= 0 {
             if version >= 12 {
                 if flex {
-                    let () = put_compact_nullable_string(buf, self.name);
+                    put_compact_nullable_string(buf, self.name)?;
                 } else {
-                    let () = put_nullable_string(buf, self.name);
+                    put_nullable_string(buf, self.name)?;
                 }
             } else {
                 if flex {
-                    let () = put_compact_string(buf, (self.name).unwrap_or(""));
+                    put_compact_string(buf, (self.name).unwrap_or(""))?;
                 } else {
-                    let () = put_string(buf, (self.name).unwrap_or(""));
+                    put_string(buf, (self.name).unwrap_or(""))?;
                 }
             }
         }
         if version >= 10 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 1 {
             put_bool(buf, self.is_internal);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 8 {
             put_i32(buf, self.topic_authorized_operations);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -505,8 +497,7 @@ impl Encode for MetadataResponseTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -547,14 +538,14 @@ impl<'de> DecodeBorrow<'de> for MetadataResponseTopic<'de> {
             };
         }
         if version >= 10 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 1 {
             out.is_internal = get_bool(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MetadataResponsePartition::decode_borrow(buf, version)?);
@@ -583,7 +574,7 @@ impl MetadataResponseTopic<'_> {
             m.name = Some("x");
         }
         if version >= 10 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 1 {
             m.is_internal = true;
@@ -623,12 +614,9 @@ impl Default for MetadataResponsePartition {
     }
 }
 impl MetadataResponsePartition {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::metadata_response::MetadataResponsePartition {
-        crate::owned::metadata_response::MetadataResponsePartition {
+    pub fn to_owned(&self) -> metadata_response::MetadataResponsePartition {
+        metadata_response::MetadataResponsePartition {
             error_code: (self.error_code),
             partition_index: (self.partition_index),
             leader_id: (self.leader_id),
@@ -657,31 +645,31 @@ impl Encode for MetadataResponsePartition {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.replica_nodes).len(), flex);
+                put_array_len(buf, (self.replica_nodes).len(), flex)?;
                 for it in &self.replica_nodes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.isr_nodes).len(), flex);
+                put_array_len(buf, (self.isr_nodes).len(), flex)?;
                 for it in &self.isr_nodes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if version >= 5 {
             {
-                crate::primitives::array::put_array_len(buf, (self.offline_replicas).len(), flex);
+                put_array_len(buf, (self.offline_replicas).len(), flex)?;
                 for it in &self.offline_replicas {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -702,28 +690,21 @@ impl Encode for MetadataResponsePartition {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.replica_nodes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.replica_nodes).len(), flex);
                 let body: usize = (self.replica_nodes).iter().map(|_| 4).sum();
                 prefix + body
             };
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.isr_nodes).len(), flex);
+                let prefix = array_len_prefix_len((self.isr_nodes).len(), flex);
                 let body: usize = (self.isr_nodes).iter().map(|_| 4).sum();
                 prefix + body
             };
         }
         if version >= 5 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.offline_replicas).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.offline_replicas).len(), flex);
                 let body: usize = (self.offline_replicas).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -753,7 +734,7 @@ impl<'de> DecodeBorrow<'de> for MetadataResponsePartition {
         }
         if version >= 0 {
             out.replica_nodes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -763,7 +744,7 @@ impl<'de> DecodeBorrow<'de> for MetadataResponsePartition {
         }
         if version >= 0 {
             out.isr_nodes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -773,7 +754,7 @@ impl<'de> DecodeBorrow<'de> for MetadataResponsePartition {
         }
         if version >= 5 {
             out.offline_replicas = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

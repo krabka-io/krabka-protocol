@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -48,15 +49,15 @@ impl Encode for LeaveGroupResponse {
         }
         if version >= 3 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -71,8 +72,7 @@ impl Encode for LeaveGroupResponse {
         }
         if version >= 3 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -105,7 +105,7 @@ impl Decode<'_> for LeaveGroupResponse {
         }
         if version >= 3 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MemberResponse::decode(buf, version)?);
@@ -158,16 +158,16 @@ impl Encode for MemberResponse {
         let flex = version >= 4;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.member_id);
+                put_compact_string(buf, &self.member_id)?;
             } else {
-                let () = put_string(buf, &self.member_id);
+                put_string(buf, &self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id.as_deref());
+                put_compact_nullable_string(buf, self.group_instance_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id.as_deref());
+                put_nullable_string(buf, self.group_instance_id.as_deref())?;
             }
         }
         if version >= 3 {
@@ -175,7 +175,7 @@ impl Encode for MemberResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -239,10 +239,10 @@ impl MemberResponse {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 3 {
-            m.member_id = "x".to_string();
+            m.member_id = "x".to_owned();
         }
         if version >= 3 {
-            m.group_instance_id = Some("x".to_string());
+            m.group_instance_id = Some("x".to_owned());
         }
         if version >= 3 {
             m.error_code = 1i16;
@@ -257,11 +257,11 @@ impl MemberResponse {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 1 {
-        obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+        obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     }
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     if version >= 3 {
-        obj.insert("members".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("members".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     ::serde_json::Value::Object(obj)
 }

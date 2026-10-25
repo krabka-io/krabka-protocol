@@ -1,7 +1,8 @@
 //! Map a schema field type string to a Rust type expression.
 
-/// Owned-flavor Rust type for a schema type. `nullable` and `is_struct_ref`
-/// shape the wrapping. The caller must resolve struct references and pass them
+/// Owned-flavor Rust type for a schema type.
+///
+/// `nullable` and `is_struct_ref` shape the wrapping. The caller must resolve struct references and pass them
 /// in as `is_struct_ref = true`, together with the resolved Rust path, for
 /// example `"super::common::ProduceTopic"`.
 #[must_use]

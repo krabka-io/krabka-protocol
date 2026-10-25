@@ -1,20 +1,21 @@
-//! KIP-778 `metadata.version` feature-level model. The canonical
-//! string<->integer-level table, mirrored byte-for-byte from upstream
-//! Kafka's `MetadataVersion` enum over the range Krabka advertises
+//! KIP-778 `metadata.version` feature-level model.
+//!
+//! The canonical string<->integer-level table, mirrored byte-for-byte from
+//! upstream Kafka's `MetadataVersion` enum over the range Krabka advertises
 //! (`[METADATA_VERSION_MIN, METADATA_VERSION_MAX]`). JVM clients call
-//! `MetadataVersion.fromFeatureLevel(N)` and throw on any level their
-//! enum does not know, so the levels and `X.Y-IVn` names here MUST match
-//! upstream exactly. Verify against `MetadataVersion.java` in Kafka's
-//! `server-common` module on trunk before editing: levels are never reused, so
-//! the table must carry every level up to [`METADATA_VERSION_MAX`], reserved
-//! ones included.
+//! `MetadataVersion.fromFeatureLevel(N)` and throw on any level their enum does
+//! not know, so the levels and `X.Y-IVn` names here MUST match upstream
+//! exactly. Verify against `MetadataVersion.java` in Kafka's `server-common`
+//! module on trunk before editing: levels are never reused, so the table must
+//! carry every level up to [`METADATA_VERSION_MAX`], reserved ones included.
 
 /// The `metadata.version` feature name (KIP-584 / KIP-778).
 pub const METADATA_VERSION_FEATURE: &str = "metadata.version";
 
-/// Krabka registration-only marker for KIP-1155 downgrade support. The KIP is
-/// still under discussion and has not assigned its promised capability
-/// `metadata.version` level, so this must not extend the canonical
+/// Krabka registration-only marker for KIP-1155 downgrade support.
+///
+/// The KIP is still under discussion and has not assigned its promised
+/// capability `metadata.version` level, so this must not extend the canonical
 /// metadata-version range or appear in `ApiVersions`. It is carried only in
 /// broker/controller registration feature maps; pre-KIP JVM nodes omit it.
 pub const METADATA_DOWNGRADE_CAPABILITY_FEATURE: &str = "krabka.metadata.downgrade";
@@ -28,8 +29,10 @@ pub const KRAFT_VERSION_FEATURE: &str = "kraft.version";
 /// Minimum supported `share.version` level: `0` (feature disabled).
 pub const SHARE_VERSION_MIN: i16 = 0;
 /// Maximum supported `share.version` level: `2`, trunk's `ShareVersion.SV_2`
-/// (KIP-1191 dead-letter queues). Kafka 4.3.1 stops at `1` (KIP-932 GA); a node
-/// caps itself there unless it supports unstable feature versions.
+/// (KIP-1191 dead-letter queues).
+///
+/// Kafka 4.3.1 stops at `1` (KIP-932 GA); a node caps itself there unless it
+/// supports unstable feature versions.
 pub const SHARE_VERSION_MAX: i16 = 2;
 
 /// The `eligible.leader.replicas.version` feature name (KIP-966). Gates the
@@ -61,16 +64,19 @@ pub const METADATA_VERSION_MAX: i16 = 34;
 pub const SCRAM_MIN_LEVEL: i16 = 11;
 /// Level at which `KRaft` gained delegation tokens (`3.6-IV2`).
 pub const DELEGATION_TOKEN_MIN_LEVEL: i16 = 14;
-/// Lowest level that supports controller registrations (`3.7-IV0`). Online
-/// downgrades cannot cross this boundary because the active controller needs
-/// those registrations to verify every quorum member supports the target.
+/// Lowest level that supports controller registrations (`3.7-IV0`).
+///
+/// Online downgrades cannot cross this boundary because the active controller
+/// needs those registrations to verify every quorum member supports the target.
 pub const ONLINE_DOWNGRADE_MIN_LEVEL: i16 = 15;
 /// Level at which partition directory assignments became part of the `KRaft`
 /// metadata records (`3.7-IV2`, KIP-858).
 pub const DIRECTORY_ASSIGNMENT_MIN_LEVEL: i16 = 17;
 /// Level at which partition records gained KIP-966 eligible-leader fields
-/// (`4.0-IV1`). It selects the record version Kafka readers expect, and it is
-/// what [`crate::feature::ElrVersionFeature`] depends on at level 1.
+/// (`4.0-IV1`).
+///
+/// It selects the record version Kafka readers expect, and it is what
+/// [`crate::feature::ElrVersionFeature`] depends on at level 1.
 pub const ELR_MIN_LEVEL: i16 = 23;
 /// Level at which `ELRV_1` becomes the bootstrap default (`4.1-IV0`,
 /// `EligibleLeaderReplicasVersion.ELRV_1`'s bootstrap metadata version).
@@ -302,10 +308,11 @@ pub fn from_feature_level(level: i16) -> Option<MetadataVersion> {
     TABLE.iter().copied().find(|m| m.level == level)
 }
 
-/// Resolve a version string to a level. The function accepts both the exact
-/// `X.Y-IVn` form and the short `X.Y` form. The short form resolves to the
-/// highest level within that minor, which matches
-/// `MetadataVersion.fromVersionString`.
+/// Resolve a version string to a level.
+///
+/// The function accepts both the exact `X.Y-IVn` form and the short `X.Y` form.
+/// The short form resolves to the highest level within that minor, which
+/// matches `MetadataVersion.fromVersionString`.
 #[must_use]
 pub fn from_version_string(s: &str) -> Option<MetadataVersion> {
     let s = s.trim();
@@ -326,8 +333,10 @@ pub fn is_supported_level(level: i16) -> bool {
 }
 
 /// Kafka's `didMetadataChange` flag for `level`, or `None` for a level outside
-/// the supported table. Levels up to `4.3-IV0` (30) follow Kafka 4.3.1, and
-/// `4.4-IV0` (31) to `4.5-IV0` (34) follow Kafka trunk.
+/// the supported table.
+///
+/// Levels up to `4.3-IV0` (30) follow Kafka 4.3.1, and `4.4-IV0` (31) to
+/// `4.5-IV0` (34) follow Kafka trunk.
 #[must_use]
 pub fn did_metadata_change(level: i16) -> Option<bool> {
     from_feature_level(level).map(MetadataVersion::did_metadata_change)

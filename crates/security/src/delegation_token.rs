@@ -1,9 +1,10 @@
 //! KIP-48 delegation token primitives: the HMAC and a secret-key wrapper that
 //! keeps the bytes out of Debug.
 
+use std::fmt;
+
 use bytes::Bytes;
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha512;
+use ring::hmac;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct SecretBytes(Bytes);
@@ -27,26 +28,22 @@ impl SecretBytes {
     }
 }
 
-impl std::fmt::Debug for SecretBytes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SecretBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SecretBytes(<{} bytes redacted>)", self.0.len())
     }
 }
 
-/// A delegation token's HMAC: `HmacSHA512` over the token id's UTF-8 bytes,
-/// keyed with the secret key's bytes, as Kafka's
+/// A delegation token's HMAC: `HmacSHA512` over the token id's UTF-8 bytes.
+///
+/// The HMAC is keyed with the secret key's bytes, as Kafka's
 /// `DelegationTokenManager.createHmac` computes it. The result is 64 bytes,
-/// and its base64 is the SCRAM password a client authenticates with.
-///
-/// # Panics
-///
-/// Never: HMAC accepts a key of any length.
+/// and its base64 is the SCRAM password a client authenticates with. HMAC
+/// accepts a key of any length, so this cannot fail.
 #[must_use]
 pub fn compute_token_hmac(secret_key: &[u8], token_id: &str) -> Vec<u8> {
-    let mut mac =
-        <Hmac<Sha512>>::new_from_slice(secret_key).expect("HMAC-SHA-512 accepts any key length");
-    mac.update(token_id.as_bytes());
-    mac.finalize().into_bytes().to_vec()
+    let key = hmac::Key::new(hmac::HMAC_SHA512, secret_key);
+    hmac::sign(&key, token_id.as_bytes()).as_ref().to_vec()
 }
 
 #[cfg(test)]

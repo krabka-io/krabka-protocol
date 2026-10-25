@@ -3,9 +3,12 @@
 //!
 //! The emitter uses this classification to compute the Rust type path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::ir::{FieldSpec, MessageSpec};
+use crate::{
+    ir::{FieldSpec, MessageSpec},
+    name_conv,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StructKind {
@@ -64,10 +67,10 @@ fn walk(fields: &[FieldSpec], map: &mut HashMap<String, Resolution>) {
             let type_name = base_type(&f.field_type);
             let nl = fields_need_lifetime(&f.fields);
             map.insert(
-                type_name.to_string(),
+                type_name.to_owned(),
                 Resolution {
                     kind: StructKind::Nested,
-                    rust_path: type_name.to_string(),
+                    rust_path: type_name.to_owned(),
                     needs_lifetime: nl,
                 },
             );
@@ -86,8 +89,8 @@ fn check(
         let base = base_type(&f.field_type);
         if is_struct_type(base) && !map.contains_key(base) {
             return Err(ResolveError::Unknown {
-                message: message.to_string(),
-                type_name: base.to_string(),
+                message: message.to_owned(),
+                type_name: base.to_owned(),
             });
         }
         check(&f.fields, map, message)?;
@@ -100,7 +103,7 @@ fn check(
 /// This function runs a simple fixpoint over the set of common struct names.
 fn common_struct_needs_lifetime(
     cs_fields: &[FieldSpec],
-    common_names_needing_lifetime: &std::collections::HashSet<String>,
+    common_names_needing_lifetime: &HashSet<String>,
 ) -> bool {
     cs_fields.iter().any(|f| {
         let base = base_type(&f.field_type);
@@ -124,7 +127,7 @@ pub fn resolve_message(spec: &MessageSpec) -> Result<HashMap<String, Resolution>
     // Start with those that directly have string/bytes/records fields, then
     // expand transitively (a common struct that references a lifetime-bearing
     // common struct also needs '<'a>').
-    let mut cs_needing_lt: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut cs_needing_lt = HashSet::new();
     let mut changed = true;
     while changed {
         changed = false;
@@ -149,9 +152,9 @@ pub fn resolve_message(spec: &MessageSpec) -> Result<HashMap<String, Resolution>
     // never collide. The wrapper module nests as
     // `src/{flavor}/common/<message_snake>/<struct_snake>.rs`, so the path from a
     // message file is `super::common::<message_snake>::<struct_snake>::TypeName`.
-    let message_snake = crate::name_conv::module_name(&spec.name);
+    let message_snake = name_conv::module_name(&spec.name);
     for cs in &spec.common_structs {
-        let snake = crate::name_conv::module_name(&cs.name);
+        let snake = name_conv::module_name(&cs.name);
         map.insert(
             cs.name.clone(),
             Resolution {

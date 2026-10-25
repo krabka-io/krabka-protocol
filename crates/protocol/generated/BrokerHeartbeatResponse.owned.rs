@@ -63,7 +63,7 @@ impl Encode for BrokerHeartbeatResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -152,12 +152,12 @@ impl BrokerHeartbeatResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("isCaughtUp".to_string(), ::serde_json::Value::Bool(false));
-    obj.insert("isFenced".to_string(), ::serde_json::Value::Bool(true));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("isCaughtUp".to_owned(), ::serde_json::Value::Bool(false));
+    obj.insert("isFenced".to_owned(), ::serde_json::Value::Bool(true));
     obj.insert(
-        "shouldShutDown".to_string(),
+        "shouldShutDown".to_owned(),
         ::serde_json::Value::Bool(false),
     );
     ::serde_json::Value::Object(obj)

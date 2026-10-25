@@ -7,6 +7,11 @@
 
 use bytes::{Buf, BufMut};
 
+#[cfg(test)]
+use crate::krabka::{
+    barrier::{CUT_STATUS_COMPLETE, CUT_STATUS_PARTIAL},
+    test_support::sample_tagged_fields,
+};
 use crate::{
     Decode, Encode, ProtocolError, ProtocolRequest, UnknownTaggedFields,
     krabka::{
@@ -74,10 +79,10 @@ impl Default for ListBarrierCutsRequest {
 impl Encode for ListBarrierCutsRequest {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
-        put_compact_string(buf, &self.group);
+        put_compact_string(buf, &self.group)?;
         put_i64(buf, self.from_epoch);
         put_i32(buf, self.max_results);
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -122,9 +127,9 @@ pub struct BarrierCut {
     /// Milliseconds since the Unix epoch, at the moment the coordinator
     /// published the cut.
     pub completed_at: i64,
-    /// [`CUT_STATUS_COMPLETE`](crate::krabka::barrier::CUT_STATUS_COMPLETE)
+    /// [`CUT_STATUS_COMPLETE`](CUT_STATUS_COMPLETE)
     /// when every partition took a marker, and
-    /// [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) when
+    /// [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) when
     /// at least one partition did not.
     pub status: i8,
     /// Cut offsets, grouped by topic.
@@ -144,7 +149,7 @@ impl Encode for BarrierCut {
         put_i8(buf, self.status);
         encode_array(buf, &self.topics, version)?;
         encode_array(buf, &self.missing, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -194,9 +199,9 @@ impl Encode for ListBarrierCutsResponse {
         check_version(API_KEY, version, MIN_VERSION, MAX_VERSION)?;
         put_i32(buf, self.throttle_time_ms);
         put_i16(buf, self.error_code);
-        put_compact_nullable_string(buf, self.error_message.as_deref());
+        put_compact_nullable_string(buf, self.error_message.as_deref())?;
         encode_array(buf, &self.cuts, version)?;
-        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields);
+        write_unknown_tagged_fields(buf, &self.unknown_tagged_fields)?;
         Ok(())
     }
 
@@ -227,10 +232,10 @@ impl ListBarrierCutsRequest {
     /// Builds a request with every field set, for the round-trip tests.
     fn populated() -> Self {
         Self {
-            group: "orders".to_string(),
+            group: "orders".to_owned(),
             from_epoch: 12,
             max_results: 100,
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }
@@ -248,7 +253,7 @@ impl ListBarrierCutsResponse {
                     epoch: 12,
                     triggered_at: 1_724_500_000_000,
                     completed_at: 1_724_500_000_120,
-                    status: crate::krabka::barrier::CUT_STATUS_COMPLETE,
+                    status: CUT_STATUS_COMPLETE,
                     topics: super::test_support::sample_cut_topics(),
                     missing: Vec::new(),
                     unknown_tagged_fields: UnknownTaggedFields::default(),
@@ -257,13 +262,13 @@ impl ListBarrierCutsResponse {
                     epoch: 13,
                     triggered_at: 1_724_500_060_000,
                     completed_at: 1_724_500_090_000,
-                    status: crate::krabka::barrier::CUT_STATUS_PARTIAL,
+                    status: CUT_STATUS_PARTIAL,
                     topics: super::test_support::sample_cut_topics(),
                     missing: super::test_support::sample_missing_partitions(),
-                    unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+                    unknown_tagged_fields: sample_tagged_fields(),
                 },
             ],
-            unknown_tagged_fields: crate::krabka::test_support::sample_tagged_fields(),
+            unknown_tagged_fields: sample_tagged_fields(),
         }
     }
 }

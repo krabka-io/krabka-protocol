@@ -3,6 +3,8 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::share_group_describe_response::assignment,
+    primitives::array::{array_len_prefix_len, get_array_len, put_array_len},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -11,14 +13,9 @@ pub struct Assignment<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Assignment<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::share_group_describe_response::assignment::Assignment {
-        crate::owned::common::share_group_describe_response::assignment::Assignment {
+    pub fn to_owned(&self) -> assignment::Assignment {
+        assignment::Assignment {
             topic_partitions: (self.topic_partitions)
                 .iter()
                 .map(super::topic_partitions::TopicPartitions::to_owned)
@@ -32,15 +29,15 @@ impl Encode for Assignment<'_> {
         let flex = version >= 0;
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_partitions).len(), flex);
+                put_array_len(buf, (self.topic_partitions).len(), flex)?;
                 for it in &self.topic_partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -49,10 +46,7 @@ impl Encode for Assignment<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_partitions).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_partitions).len(), flex);
                 let body: usize = (self.topic_partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -73,7 +67,7 @@ impl<'de> DecodeBorrow<'de> for Assignment<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topic_partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::topic_partitions::TopicPartitions::decode_borrow(

@@ -193,7 +193,7 @@ fn first_accepted(mut next: impl FnMut() -> Uuid, rejected: fn(KafkaUuid) -> boo
 
 fn has_hyphenated_shape(input: &str) -> bool {
     let bytes = input.as_bytes();
-    bytes.len() == 36 && [8, 13, 18, 23].iter().all(|&i| bytes[i] == b'-')
+    bytes.len() == 36 && [8, 13, 18, 23].iter().all(|&i| bytes.get(i) == Some(&b'-'))
 }
 
 impl fmt::Display for KafkaUuid {
@@ -396,8 +396,7 @@ fn java_url_decode(src: &[u8]) -> Result<Vec<u8>, KafkaUuidError> {
     let mut bits = 0u32;
     let mut shift_to = 18i32;
     let mut sp = 0;
-    while sp < src.len() {
-        let byte = src[sp];
+    while let Some(&byte) = src.get(sp) {
         sp += 1;
         if let Some(value) = url_value(byte) {
             bits |= value << shift_to;
@@ -414,9 +413,9 @@ fn java_url_decode(src: &[u8]) -> Result<Vec<u8>, KafkaUuidError> {
         }
         // `=` ends the data. Only `xx==` and `xxx=` are complete units.
         let second_pad_missing = shift_to == 6
-            && (sp == src.len() || {
+            && src.get(sp).is_none_or(|&next| {
                 sp += 1;
-                src[sp - 1] != b'='
+                next != b'='
             });
         if second_pad_missing || shift_to == 18 {
             return Err(KafkaUuidError::WrongEndingUnit);

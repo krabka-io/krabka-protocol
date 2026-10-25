@@ -16,13 +16,13 @@ pub struct RequestPrefix {
 /// `api_key: i16, api_version: i16, correlation_id: i32`.
 #[must_use]
 pub fn parse_request_prefix(body: &[u8]) -> Option<RequestPrefix> {
-    if body.len() < 8 {
+    let [k0, k1, v0, v1, c0, c1, c2, c3, ..] = *body else {
         return None;
-    }
+    };
     Some(RequestPrefix {
-        api_key: ApiKey(i16::from_be_bytes([body[0], body[1]])),
-        api_version: ApiVersion(i16::from_be_bytes([body[2], body[3]])),
-        correlation_id: i32::from_be_bytes([body[4], body[5], body[6], body[7]]),
+        api_key: ApiKey(i16::from_be_bytes([k0, k1])),
+        api_version: ApiVersion(i16::from_be_bytes([v0, v1])),
+        correlation_id: i32::from_be_bytes([c0, c1, c2, c3]),
     })
 }
 
@@ -30,13 +30,10 @@ pub fn parse_request_prefix(body: &[u8]) -> Option<RequestPrefix> {
 /// header. This is true for flexible and non-flexible responses alike.
 #[must_use]
 pub fn read_correlation_id(body: &[u8]) -> Option<i32> {
-    if body.len() < 4 {
-        return None;
-    }
-    Some(i32::from_be_bytes([body[0], body[1], body[2], body[3]]))
+    body.first_chunk().copied().map(i32::from_be_bytes)
 }
 
-/// Per-connection map from a correlation id to the (api_key, api_version) of
+/// Per-connection map from a correlation id to the (`api_key`, `api_version`) of
 /// the request that carried it. The relay uses the map to classify the
 /// responses.
 #[derive(Default)]

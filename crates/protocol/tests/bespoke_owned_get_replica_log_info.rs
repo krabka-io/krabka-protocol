@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the owned GetReplicaLogInfo wrappers. GetReplicaLogInfo is
 // a krabka-internal RPC (api_key 1020, in the krabka-private range) excluded
 // from the JVM differential sweep, so its generated codecs need direct
@@ -59,7 +61,7 @@ fn populated_response() -> GetReplicaLogInfoResponse {
                     current_leader_epoch: 3,
                     log_end_offset: 0,
                     error_code: 9,
-                    error_message: Some("not leader".to_string()),
+                    error_message: Some("not leader".to_owned()),
                     ..Default::default()
                 },
             ],

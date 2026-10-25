@@ -1,6 +1,8 @@
+#![cfg(test)]
+
 use std::{
     collections::BTreeSet,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -38,12 +40,12 @@ struct Meta {
 /// was compiled in.
 fn corpus_dir() -> PathBuf {
     let (Ok(srcdir), Ok(workspace), Ok(package)) = (
-        std::env::var("TEST_SRCDIR"),
-        std::env::var("TEST_WORKSPACE"),
-        std::env::var("FIXTURE_ROOT"),
+        env::var("TEST_SRCDIR"),
+        env::var("TEST_WORKSPACE"),
+        env::var("FIXTURE_ROOT"),
     ) else {
         return PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
+            env::var("CARGO_MANIFEST_DIR").expect("cargo exports CARGO_MANIFEST_DIR to tests"),
         )
         .join("tests/corpus");
     };
@@ -83,10 +85,10 @@ fn corpus_covers_all_pairs() {
         assert2::assert!(have.insert((meta.api_key, meta.version, is_request)));
     }
     let missing: Vec<_> = want.difference(&have).collect();
-    assert2::assert!(missing.is_empty());
+    assert2::assert!(missing == Vec::<&(i16, i16, bool)>::new());
     // Reverse: no stale entry for a pair that is no longer a valid CASES
     // request/response (e.g. an out-of-range version left behind after a
     // schema-pin bump).
     let stale: Vec<_> = have.difference(&want).collect();
-    assert2::assert!(stale.is_empty());
+    assert2::assert!(stale == Vec::<&(i16, i16, bool)>::new());
 }

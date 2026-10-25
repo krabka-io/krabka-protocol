@@ -5,6 +5,10 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_bool, get_i32, put_bool, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +16,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -55,16 +60,16 @@ impl Encode for OffsetFetchRequest {
         let flex = is_flexible(version);
         if (0..=7).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if (0..=7).contains(&version) {
             if version >= 2 {
                 {
                     let len = (self.topics).as_ref().map(Vec::len);
-                    crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                    put_nullable_array_len(buf, len, flex)?;
                     if let Some(v) = &self.topics {
                         for it in v {
                             it.encode(buf, version)?;
@@ -74,7 +79,7 @@ impl Encode for OffsetFetchRequest {
             } else {
                 {
                     let v = (self.topics).as_deref().unwrap_or(&[]);
-                    crate::primitives::array::put_array_len(buf, v.len(), flex);
+                    put_array_len(buf, v.len(), flex)?;
                     for it in v {
                         it.encode(buf, version)?;
                     }
@@ -83,18 +88,18 @@ impl Encode for OffsetFetchRequest {
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.groups).len(), flex);
+                put_array_len(buf, (self.groups).len(), flex)?;
                 for it in &self.groups {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 7 {
             put_bool(buf, self.require_stable);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -112,10 +117,7 @@ impl Encode for OffsetFetchRequest {
             n += if version >= 2 {
                 {
                     let opt: Option<&Vec<_>> = (self.topics).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize =
                         opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                     prefix + body
@@ -123,7 +125,7 @@ impl Encode for OffsetFetchRequest {
             } else {
                 {
                     let v = (self.topics).as_deref().unwrap_or(&[]);
-                    let prefix = crate::primitives::array::array_len_prefix_len(v.len(), flex);
+                    let prefix = array_len_prefix_len(v.len(), flex);
                     let body: usize = v.iter().map(|it| it.encoded_len(version)).sum();
                     prefix + body
                 }
@@ -131,8 +133,7 @@ impl Encode for OffsetFetchRequest {
         }
         if version >= 8 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.groups).len(), flex);
+                let prefix = array_len_prefix_len((self.groups).len(), flex);
                 let body: usize = (self.groups).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -167,7 +168,7 @@ impl Decode<'_> for OffsetFetchRequest {
         if (0..=7).contains(&version) {
             out.topics = if version >= 2 {
                 {
-                    let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                    let opt = get_nullable_array_len(buf, flex)?;
                     match opt {
                         None => None,
                         Some(n) => {
@@ -181,7 +182,7 @@ impl Decode<'_> for OffsetFetchRequest {
                 }
             } else {
                 Some({
-                    let n = crate::primitives::array::get_array_len(buf, flex)?;
+                    let n = get_array_len(buf, flex)?;
                     let mut v = Vec::with_capacity(n);
                     for _ in 0..n {
                         v.push(OffsetFetchRequestTopic::decode(buf, version)?);
@@ -192,7 +193,7 @@ impl Decode<'_> for OffsetFetchRequest {
         }
         if version >= 8 {
             out.groups = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(OffsetFetchRequestGroup::decode(buf, version)?);
@@ -215,7 +216,7 @@ impl OffsetFetchRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=7).contains(&version) {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if (0..=7).contains(&version) {
             m.topics = Some(vec![OffsetFetchRequestTopic::populated(version)]);
@@ -240,22 +241,22 @@ impl Encode for OffsetFetchRequestTopic {
         let flex = version >= 6;
         if (0..=7).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if (0..=7).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_indexes).len(), flex);
+                put_array_len(buf, (self.partition_indexes).len(), flex)?;
                 for it in &self.partition_indexes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -271,10 +272,7 @@ impl Encode for OffsetFetchRequestTopic {
         }
         if (0..=7).contains(&version) {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_indexes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_indexes).len(), flex);
                 let body: usize = (self.partition_indexes).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -299,7 +297,7 @@ impl Decode<'_> for OffsetFetchRequestTopic {
         }
         if (0..=7).contains(&version) {
             out.partition_indexes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -319,7 +317,7 @@ impl OffsetFetchRequestTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=7).contains(&version) {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if (0..=7).contains(&version) {
             m.partition_indexes = vec![1i32];
@@ -351,16 +349,16 @@ impl Encode for OffsetFetchRequestGroup {
         let flex = version >= 6;
         if version >= 8 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if version >= 9 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.member_id.as_deref());
+                put_compact_nullable_string(buf, self.member_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.member_id.as_deref());
+                put_nullable_string(buf, self.member_id.as_deref())?;
             }
         }
         if version >= 9 {
@@ -369,17 +367,17 @@ impl Encode for OffsetFetchRequestGroup {
         if version >= 8 {
             {
                 let len = (self.topics).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.topics {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -406,10 +404,7 @@ impl Encode for OffsetFetchRequestGroup {
         if version >= 8 {
             n += {
                 let opt: Option<&Vec<_>> = (self.topics).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -445,7 +440,7 @@ impl Decode<'_> for OffsetFetchRequestGroup {
         }
         if version >= 8 {
             out.topics = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -470,10 +465,10 @@ impl OffsetFetchRequestGroup {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 8 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if version >= 9 {
-            m.member_id = Some("x".to_string());
+            m.member_id = Some("x".to_owned());
         }
         if version >= 9 {
             m.member_epoch = 1i32;
@@ -487,7 +482,7 @@ impl OffsetFetchRequestGroup {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OffsetFetchRequestTopics {
     pub name: String,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partition_indexes: Vec<i32>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -496,25 +491,25 @@ impl Encode for OffsetFetchRequestTopics {
         let flex = version >= 6;
         if (8..=9).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 10 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 8 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partition_indexes).len(), flex);
+                put_array_len(buf, (self.partition_indexes).len(), flex)?;
                 for it in &self.partition_indexes {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -533,10 +528,7 @@ impl Encode for OffsetFetchRequestTopics {
         }
         if version >= 8 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.partition_indexes).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.partition_indexes).len(), flex);
                 let body: usize = (self.partition_indexes).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -560,11 +552,11 @@ impl Decode<'_> for OffsetFetchRequestTopics {
             };
         }
         if version >= 10 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 8 {
             out.partition_indexes = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -584,10 +576,10 @@ impl OffsetFetchRequestTopics {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (8..=9).contains(&version) {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 10 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 8 {
             m.partition_indexes = vec![1i32];
@@ -603,21 +595,18 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version <= 7 {
         obj.insert(
-            "groupId".to_string(),
+            "groupId".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version <= 7 {
-        obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     if version >= 8 {
-        obj.insert("groups".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("groups".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     if version >= 7 {
-        obj.insert(
-            "requireStable".to_string(),
-            ::serde_json::Value::Bool(false),
-        );
+        obj.insert("requireStable".to_owned(), ::serde_json::Value::Bool(false));
     }
     ::serde_json::Value::Object(obj)
 }

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for borrowed ApiVersionsRequest: the to_owned conversion test
 // and the specific-values roundtrip. Relocated from the hand-written wrapper
 // wrapper.

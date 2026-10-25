@@ -28,7 +28,7 @@ impl Encode for NoOpRecord {
         let flex = is_flexible(version);
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

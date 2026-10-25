@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_describe_response::topology_description_node,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, put_i8},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -28,18 +30,15 @@ pub struct TopologyDescriptionNode<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopologyDescriptionNode<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::common::streams_group_describe_response::topology_description_node::TopologyDescriptionNode{
-        crate::owned::common::streams_group_describe_response::topology_description_node::TopologyDescriptionNode {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> topology_description_node::TopologyDescriptionNode {
+        topology_description_node::TopologyDescriptionNode {
+            name: (self.name).to_owned(),
             node_type: (self.node_type),
-            source_topics: (self.source_topics).iter().map(std::string::ToString::to_string).collect(),
-            sink_topic: (self.sink_topic).map(std::string::ToString::to_string),
-            stores: (self.stores).iter().map(std::string::ToString::to_string).collect(),
-            successors: (self.successors).iter().map(std::string::ToString::to_string).collect(),
+            source_topics: (self.source_topics).iter().map(|&s| s.to_owned()).collect(),
+            sink_topic: (self.sink_topic).map(str::to_owned),
+            stores: (self.stores).iter().map(|&s| s.to_owned()).collect(),
+            successors: (self.successors).iter().map(|&s| s.to_owned()).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -49,9 +48,9 @@ impl Encode for TopologyDescriptionNode<'_> {
         let flex = version >= 0;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 1 {
@@ -59,50 +58,50 @@ impl Encode for TopologyDescriptionNode<'_> {
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.source_topics).len(), flex);
+                put_array_len(buf, (self.source_topics).len(), flex)?;
                 for it in &self.source_topics {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.sink_topic);
+                put_compact_nullable_string(buf, self.sink_topic)?;
             } else {
-                let () = put_nullable_string(buf, self.sink_topic);
+                put_nullable_string(buf, self.sink_topic)?;
             }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.stores).len(), flex);
+                put_array_len(buf, (self.stores).len(), flex)?;
                 for it in &self.stores {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.successors).len(), flex);
+                put_array_len(buf, (self.successors).len(), flex)?;
                 for it in &self.successors {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -121,10 +120,7 @@ impl Encode for TopologyDescriptionNode<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.source_topics).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.source_topics).len(), flex);
                 let body: usize = (self.source_topics)
                     .iter()
                     .map(|it| {
@@ -147,8 +143,7 @@ impl Encode for TopologyDescriptionNode<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.stores).len(), flex);
+                let prefix = array_len_prefix_len((self.stores).len(), flex);
                 let body: usize = (self.stores)
                     .iter()
                     .map(|it| {
@@ -164,8 +159,7 @@ impl Encode for TopologyDescriptionNode<'_> {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.successors).len(), flex);
+                let prefix = array_len_prefix_len((self.successors).len(), flex);
                 let body: usize = (self.successors)
                     .iter()
                     .map(|it| {
@@ -202,7 +196,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescriptionNode<'de> {
         }
         if version >= 1 {
             out.source_topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -223,7 +217,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescriptionNode<'de> {
         }
         if version >= 1 {
             out.stores = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -237,7 +231,7 @@ impl<'de> DecodeBorrow<'de> for TopologyDescriptionNode<'de> {
         }
         if version >= 1 {
             out.successors = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {

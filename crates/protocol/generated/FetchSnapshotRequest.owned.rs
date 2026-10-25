@@ -4,7 +4,9 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +14,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -61,11 +64,11 @@ impl Encode for FetchSnapshotRequest {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
@@ -78,16 +81,16 @@ impl Encode for FetchSnapshotRequest {
                     },
                     |b| {
                         if flex {
-                            let () = put_compact_nullable_string(b, self.cluster_id.as_deref());
+                            put_compact_nullable_string(b, self.cluster_id.as_deref())?;
                         } else {
-                            let () = put_nullable_string(b, self.cluster_id.as_deref());
+                            put_nullable_string(b, self.cluster_id.as_deref())?;
                         }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -102,8 +105,7 @@ impl Encode for FetchSnapshotRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -143,7 +145,7 @@ impl Decode<'_> for FetchSnapshotRequest {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicSnapshot::decode(buf, version)?);
@@ -189,7 +191,7 @@ impl FetchSnapshotRequest {
             m.topics = vec![TopicSnapshot::populated(version)];
         }
         if version >= 0 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         m
     }
@@ -205,22 +207,22 @@ impl Encode for TopicSnapshot {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -236,8 +238,7 @@ impl Encode for TopicSnapshot {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -265,7 +266,7 @@ impl Decode<'_> for TopicSnapshot {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionSnapshot::decode(buf, version)?);
@@ -285,7 +286,7 @@ impl TopicSnapshot {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![PartitionSnapshot::populated(version)];
@@ -299,7 +300,7 @@ pub struct PartitionSnapshot {
     pub current_leader_epoch: i32,
     pub snapshot_id: SnapshotId,
     pub position: i64,
-    pub replica_directory_id: crate::primitives::uuid::Uuid,
+    pub replica_directory_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for PartitionSnapshot {
@@ -319,14 +320,14 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(is_default(&self.replica_directory_id)) {
                 let payload = encode_to_bytes(16, |b| {
-                    crate::primitives::uuid::put_uuid(b, self.replica_directory_id);
+                    put_uuid(b, self.replica_directory_id);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -347,7 +348,7 @@ impl Encode for PartitionSnapshot {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 1 && !(is_default(&self.replica_directory_id)) {
                 known_pairs.push((0, 16));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -377,7 +378,7 @@ impl Decode<'_> for PartitionSnapshot {
                 0 if version >= 1 => {
                     tag_replica_directory_id = Some({
                         let b: &mut &[u8] = payload;
-                        crate::primitives::uuid::get_uuid(b)?
+                        get_uuid(b)?
                     });
                     Ok(true)
                 }
@@ -409,7 +410,7 @@ impl PartitionSnapshot {
             m.position = 1i64;
         }
         if version >= 1 {
-            m.replica_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.replica_directory_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -431,7 +432,7 @@ impl Encode for SnapshotId {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -487,10 +488,10 @@ impl SnapshotId {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
-    obj.insert("replicaId".to_string(), ::serde_json::json!(-1));
-    obj.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("clusterId".to_owned(), ::serde_json::Value::Null);
+    obj.insert("replicaId".to_owned(), ::serde_json::json!(-1));
+    obj.insert("maxBytes".to_owned(), ::serde_json::json!(2_147_483_647));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }
 /// A message with a non-default value in every tagged field, at every depth, for
@@ -498,10 +499,10 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
 #[must_use]
 pub fn tagged_fixture() -> FetchSnapshotRequest {
     FetchSnapshotRequest {
-        cluster_id: Some("x".to_string()),
+        cluster_id: Some("x".to_owned()),
         topics: vec![TopicSnapshot {
             partitions: vec![PartitionSnapshot {
-                replica_directory_id: crate::primitives::uuid::Uuid([1u8; 16]),
+                replica_directory_id: Uuid([1u8; 16]),
                 ..PartitionSnapshot::default()
             }],
             ..TopicSnapshot::default()
@@ -515,36 +516,36 @@ pub fn tagged_fixture() -> FetchSnapshotRequest {
 pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
     m.insert(
-        "clusterId".to_string(),
-        ::serde_json::Value::String("x".to_string()),
+        "clusterId".to_owned(),
+        ::serde_json::Value::String("x".to_owned()),
     );
-    m.insert("replicaId".to_string(), ::serde_json::json!(-1));
-    m.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
+    m.insert("replicaId".to_owned(), ::serde_json::json!(-1));
+    m.insert("maxBytes".to_owned(), ::serde_json::json!(2_147_483_647));
     m.insert(
-        "topics".to_string(),
+        "topics".to_owned(),
         ::serde_json::Value::Array(vec![{
             let mut m = ::serde_json::Map::new();
             m.insert(
-                "name".to_string(),
+                "name".to_owned(),
                 ::serde_json::Value::String(String::new()),
             );
             m.insert(
-                "partitions".to_string(),
+                "partitions".to_owned(),
                 ::serde_json::Value::Array(vec![{
                     let mut m = ::serde_json::Map::new();
-                    m.insert("partition".to_string(), ::serde_json::json!(0));
-                    m.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(0));
-                    m.insert("snapshotId".to_string(), {
+                    m.insert("partition".to_owned(), ::serde_json::json!(0));
+                    m.insert("currentLeaderEpoch".to_owned(), ::serde_json::json!(0));
+                    m.insert("snapshotId".to_owned(), {
                         let mut m = ::serde_json::Map::new();
-                        m.insert("endOffset".to_string(), ::serde_json::json!(0));
-                        m.insert("epoch".to_string(), ::serde_json::json!(0));
+                        m.insert("endOffset".to_owned(), ::serde_json::json!(0));
+                        m.insert("epoch".to_owned(), ::serde_json::json!(0));
                         ::serde_json::Value::Object(m)
                     });
-                    m.insert("position".to_string(), ::serde_json::json!(0));
+                    m.insert("position".to_owned(), ::serde_json::json!(0));
                     if version == 1 {
                         m.insert(
-                            "replicaDirectoryId".to_string(),
-                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string()),
+                            "replicaDirectoryId".to_owned(),
+                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_owned()),
                         );
                     }
                     ::serde_json::Value::Object(m)

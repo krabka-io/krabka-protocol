@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::update_features_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -46,15 +48,12 @@ impl Default for UpdateFeaturesResponse<'_> {
     }
 }
 impl UpdateFeaturesResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_features_response::UpdateFeaturesResponse {
-        crate::owned::update_features_response::UpdateFeaturesResponse {
+    pub fn to_owned(&self) -> update_features_response::UpdateFeaturesResponse {
+        update_features_response::UpdateFeaturesResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             results: (self.results)
                 .iter()
                 .map(UpdatableFeatureResult::to_owned)
@@ -80,22 +79,22 @@ impl Encode for UpdateFeaturesResponse<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if (0..=1).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.results).len(), flex);
+                put_array_len(buf, (self.results).len(), flex)?;
                 for it in &self.results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -117,8 +116,7 @@ impl Encode for UpdateFeaturesResponse<'_> {
         }
         if (0..=1).contains(&version) {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.results).len(), flex);
+                let prefix = array_len_prefix_len((self.results).len(), flex);
                 let body: usize = (self.results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -158,7 +156,7 @@ impl<'de> DecodeBorrow<'de> for UpdateFeaturesResponse<'de> {
         }
         if (0..=1).contains(&version) {
             out.results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(UpdatableFeatureResult::decode_borrow(buf, version)?);
@@ -210,15 +208,12 @@ impl Default for UpdatableFeatureResult<'_> {
     }
 }
 impl UpdatableFeatureResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::update_features_response::UpdatableFeatureResult {
-        crate::owned::update_features_response::UpdatableFeatureResult {
-            feature: (self.feature).to_string(),
+    pub fn to_owned(&self) -> update_features_response::UpdatableFeatureResult {
+        update_features_response::UpdatableFeatureResult {
+            feature: (self.feature).to_owned(),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -228,9 +223,9 @@ impl Encode for UpdatableFeatureResult<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.feature);
+                put_compact_string(buf, self.feature)?;
             } else {
-                let () = put_string(buf, self.feature);
+                put_string(buf, self.feature)?;
             }
         }
         if version >= 0 {
@@ -238,14 +233,14 @@ impl Encode for UpdatableFeatureResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

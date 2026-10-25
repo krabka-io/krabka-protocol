@@ -3,7 +3,12 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_log_dirs_request,
     primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
         fixed::{get_i32, put_i32},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -34,12 +39,9 @@ impl Default for DescribeLogDirsRequest<'_> {
     }
 }
 impl DescribeLogDirsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_log_dirs_request::DescribeLogDirsRequest {
-        crate::owned::describe_log_dirs_request::DescribeLogDirsRequest {
+    pub fn to_owned(&self) -> describe_log_dirs_request::DescribeLogDirsRequest {
+        describe_log_dirs_request::DescribeLogDirsRequest {
             topics: (self.topics)
                 .as_ref()
                 .map(|v| v.iter().map(DescribableLogDirTopic::to_owned).collect()),
@@ -59,17 +61,17 @@ impl Encode for DescribeLogDirsRequest<'_> {
         if version >= 0 {
             {
                 let len = (self.topics).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.topics {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -79,10 +81,7 @@ impl Encode for DescribeLogDirsRequest<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.topics).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -107,7 +106,7 @@ impl<'de> DecodeBorrow<'de> for DescribeLogDirsRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.topics = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -144,13 +143,10 @@ pub struct DescribableLogDirTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribableLogDirTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_log_dirs_request::DescribableLogDirTopic {
-        crate::owned::describe_log_dirs_request::DescribableLogDirTopic {
-            topic: (self.topic).to_string(),
+    pub fn to_owned(&self) -> describe_log_dirs_request::DescribableLogDirTopic {
+        describe_log_dirs_request::DescribableLogDirTopic {
+            topic: (self.topic).to_owned(),
             partitions: (self.partitions).clone(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -161,22 +157,22 @@ impl Encode for DescribableLogDirTopic<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic);
+                put_compact_string(buf, self.topic)?;
             } else {
-                let () = put_string(buf, self.topic);
+                put_string(buf, self.topic)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -192,8 +188,7 @@ impl Encode for DescribableLogDirTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -218,7 +213,7 @@ impl<'de> DecodeBorrow<'de> for DescribableLogDirTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);

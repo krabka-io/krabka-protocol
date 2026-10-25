@@ -14,14 +14,10 @@ use crate::{
 /// # Errors
 ///
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_string_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de str, ProtocolError> {
-    let len = get_i16(buf)?;
-    if len < 0 {
+    let Ok(n) = usize::try_from(get_i16(buf)?) else {
         return Err(ProtocolError::InvalidValue("non-nullable STRING was null"));
-    }
-    let n = usize::try_from(len).expect("non-negative string length must fit in usize");
+    };
     if buf.len() < n {
         return Err(ProtocolError::UnexpectedEof {
             needed: n - buf.len(),
@@ -29,7 +25,7 @@ pub fn get_string_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de str, Protoco
     }
     let (head, tail) = buf.split_at(n);
     *buf = tail;
-    std::str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)
+    str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)
 }
 
 /// Decode a nullable, non-flexible `STRING` that borrows from the input buffer.
@@ -37,16 +33,13 @@ pub fn get_string_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de str, Protoco
 /// # Errors
 ///
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_nullable_string_borrowed<'de>(
     buf: &mut &'de [u8],
 ) -> Result<Option<&'de str>, ProtocolError> {
-    let len = get_i16(buf)?;
-    if len < 0 {
+    // A negative length is null.
+    let Ok(n) = usize::try_from(get_i16(buf)?) else {
         return Ok(None);
-    }
-    let n = usize::try_from(len).expect("non-negative string length must fit in usize");
+    };
     if buf.len() < n {
         return Err(ProtocolError::UnexpectedEof {
             needed: n - buf.len(),
@@ -55,7 +48,7 @@ pub fn get_nullable_string_borrowed<'de>(
     let (head, tail) = buf.split_at(n);
     *buf = tail;
     Ok(Some(
-        std::str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)?,
+        str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)?,
     ))
 }
 
@@ -81,7 +74,7 @@ pub fn get_compact_string_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de str,
     }
     let (head, tail) = buf.split_at(n);
     *buf = tail;
-    std::str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)
+    str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)
 }
 
 /// # Errors
@@ -102,7 +95,7 @@ pub fn get_compact_nullable_string_borrowed<'de>(
     let (head, tail) = buf.split_at(n);
     *buf = tail;
     Ok(Some(
-        std::str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)?,
+        str::from_utf8(head).map_err(ProtocolError::InvalidUtf8)?,
     ))
 }
 
@@ -114,14 +107,10 @@ pub fn get_compact_nullable_string_borrowed<'de>(
 /// # Errors
 ///
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_bytes_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de [u8], ProtocolError> {
-    let len = get_i32(buf)?;
-    if len < 0 {
+    let Ok(n) = usize::try_from(get_i32(buf)?) else {
         return Err(ProtocolError::InvalidValue("non-nullable BYTES was null"));
-    }
-    let n = usize::try_from(len).expect("non-negative bytes length must fit in usize");
+    };
     if buf.len() < n {
         return Err(ProtocolError::UnexpectedEof {
             needed: n - buf.len(),
@@ -137,16 +126,13 @@ pub fn get_bytes_borrowed<'de>(buf: &mut &'de [u8]) -> Result<&'de [u8], Protoco
 /// # Errors
 ///
 /// Returns the underlying protocol error when input is truncated, contains an invalid length or tag, or cannot be encoded for the selected version.
-/// # Panics
-/// Panics if a value previously validated by the protocol type no longer satisfies its encoded-length or field-range invariant.
 pub fn get_nullable_bytes_borrowed<'de>(
     buf: &mut &'de [u8],
 ) -> Result<Option<&'de [u8]>, ProtocolError> {
-    let len = get_i32(buf)?;
-    if len < 0 {
+    // A negative length is null.
+    let Ok(n) = usize::try_from(get_i32(buf)?) else {
         return Ok(None);
-    }
-    let n = usize::try_from(len).expect("non-negative bytes length must fit in usize");
+    };
     if buf.len() < n {
         return Err(ProtocolError::UnexpectedEof {
             needed: n - buf.len(),

@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::no_op_record,
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
 pub const MIN_VERSION: i16 = 0;
@@ -18,12 +19,9 @@ pub struct NoOpRecord {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl NoOpRecord {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::no_op_record::NoOpRecord {
-        crate::owned::no_op_record::NoOpRecord {
+    pub fn to_owned(&self) -> no_op_record::NoOpRecord {
+        no_op_record::NoOpRecord {
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -38,7 +36,7 @@ impl Encode for NoOpRecord {
         let flex = is_flexible(version);
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

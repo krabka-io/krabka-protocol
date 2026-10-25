@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::MetadataImage;
+use crate::{MetadataImage, group_version, krabka_version, metadata_version, transaction_version};
 
 /// One versioned cluster feature (KIP-584).
 pub trait Feature: Sync {
@@ -51,28 +51,27 @@ pub struct MetadataVersionFeature;
 
 impl Feature for MetadataVersionFeature {
     fn name(&self) -> &'static str {
-        crate::metadata_version::METADATA_VERSION_FEATURE
+        metadata_version::METADATA_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::metadata_version::METADATA_VERSION_MIN,
-            crate::metadata_version::METADATA_VERSION_MAX,
+            metadata_version::METADATA_VERSION_MIN,
+            metadata_version::METADATA_VERSION_MAX,
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
         // For metadata.version the release string IS the metadata.version, so
         // the default is the bootstrap level itself, clamped into range.
         bootstrap_mv.clamp(
-            crate::metadata_version::METADATA_VERSION_MIN,
-            crate::metadata_version::METADATA_VERSION_MAX,
+            metadata_version::METADATA_VERSION_MIN,
+            metadata_version::METADATA_VERSION_MAX,
         )
     }
     fn min_required_floor(&self, image: &MetadataImage) -> i16 {
         image.min_required_metadata_version()
     }
     fn level_name(&self, level: i16) -> Option<&'static str> {
-        crate::metadata_version::from_feature_level(level)
-            .map(crate::metadata_version::MetadataVersion::ivn)
+        metadata_version::from_feature_level(level).map(metadata_version::MetadataVersion::ivn)
     }
 }
 
@@ -82,19 +81,19 @@ pub struct GroupVersionFeature;
 
 impl Feature for GroupVersionFeature {
     fn name(&self) -> &'static str {
-        crate::group_version::GROUP_VERSION_FEATURE
+        group_version::GROUP_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::group_version::GROUP_VERSION_MIN,
-            crate::group_version::GROUP_VERSION_MAX,
+            group_version::GROUP_VERSION_MIN,
+            group_version::GROUP_VERSION_MAX,
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
-        if bootstrap_mv >= crate::group_version::GROUP_VERSION_GA_METADATA_LEVEL {
-            crate::group_version::GROUP_VERSION_MAX
+        if bootstrap_mv >= group_version::GROUP_VERSION_GA_METADATA_LEVEL {
+            group_version::GROUP_VERSION_MAX
         } else {
-            crate::group_version::GROUP_VERSION_MIN
+            group_version::GROUP_VERSION_MIN
         }
     }
     // min_required_floor: inherits the default (supported min). Next-gen group
@@ -113,12 +112,12 @@ pub struct TransactionVersionFeature;
 
 impl Feature for TransactionVersionFeature {
     fn name(&self) -> &'static str {
-        crate::transaction_version::TRANSACTION_VERSION_FEATURE
+        transaction_version::TRANSACTION_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::transaction_version::TRANSACTION_VERSION_MIN,
-            crate::transaction_version::TRANSACTION_VERSION_MAX,
+            transaction_version::TRANSACTION_VERSION_MIN,
+            transaction_version::TRANSACTION_VERSION_MAX,
         )
     }
     // The TV_1 tier is retained as an explicit (currently coincident) threshold
@@ -148,12 +147,12 @@ pub struct ShareVersionFeature;
 
 impl Feature for ShareVersionFeature {
     fn name(&self) -> &'static str {
-        crate::metadata_version::SHARE_VERSION_FEATURE
+        metadata_version::SHARE_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::metadata_version::SHARE_VERSION_MIN,
-            crate::metadata_version::SHARE_VERSION_MAX,
+            metadata_version::SHARE_VERSION_MIN,
+            metadata_version::SHARE_VERSION_MAX,
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
@@ -163,7 +162,7 @@ impl Feature for ShareVersionFeature {
         match bootstrap_mv {
             level if level >= SHARE_VERSION_2_DEFAULT_METADATA_LEVEL => 2,
             level if level >= SHARE_VERSION_DEFAULT_METADATA_LEVEL => 1,
-            _ => crate::metadata_version::SHARE_VERSION_MIN,
+            _ => metadata_version::SHARE_VERSION_MIN,
         }
     }
     // dependencies + min_required_floor: inherit the empty/supported-min defaults.
@@ -178,19 +177,19 @@ pub struct StreamsVersionFeature;
 
 impl Feature for StreamsVersionFeature {
     fn name(&self) -> &'static str {
-        crate::metadata_version::STREAMS_VERSION_FEATURE
+        metadata_version::STREAMS_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::metadata_version::STREAMS_VERSION_MIN,
-            crate::metadata_version::STREAMS_VERSION_MAX,
+            metadata_version::STREAMS_VERSION_MIN,
+            metadata_version::STREAMS_VERSION_MAX,
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
-        if bootstrap_mv >= crate::metadata_version::STREAMS_VERSION_DEFAULT_METADATA_LEVEL {
-            crate::metadata_version::STREAMS_VERSION_MAX
+        if bootstrap_mv >= metadata_version::STREAMS_VERSION_DEFAULT_METADATA_LEVEL {
+            metadata_version::STREAMS_VERSION_MAX
         } else {
-            crate::metadata_version::STREAMS_VERSION_MIN
+            metadata_version::STREAMS_VERSION_MIN
         }
     }
     // dependencies + min_required_floor: inherit the empty/supported-min
@@ -214,26 +213,26 @@ pub struct ElrVersionFeature;
 
 impl Feature for ElrVersionFeature {
     fn name(&self) -> &'static str {
-        crate::metadata_version::ELR_VERSION_FEATURE
+        metadata_version::ELR_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::metadata_version::ELR_VERSION_MIN,
-            crate::metadata_version::ELR_VERSION_MAX,
+            metadata_version::ELR_VERSION_MIN,
+            metadata_version::ELR_VERSION_MAX,
         )
     }
     fn default_level(&self, bootstrap_mv: i16) -> i16 {
-        if bootstrap_mv >= crate::metadata_version::ELR_DEFAULT_METADATA_LEVEL {
-            crate::metadata_version::ELR_VERSION_MAX
+        if bootstrap_mv >= metadata_version::ELR_DEFAULT_METADATA_LEVEL {
+            metadata_version::ELR_VERSION_MAX
         } else {
-            crate::metadata_version::ELR_VERSION_MIN
+            metadata_version::ELR_VERSION_MIN
         }
     }
     fn dependencies(&self, level: i16) -> &'static [(&'static str, i16)] {
         if level >= 1 {
             const ELRV_1_DEPENDENCIES: &[(&str, i16)] = &[(
-                crate::metadata_version::METADATA_VERSION_FEATURE,
-                crate::metadata_version::ELR_MIN_LEVEL,
+                metadata_version::METADATA_VERSION_FEATURE,
+                metadata_version::ELR_MIN_LEVEL,
             )];
             ELRV_1_DEPENDENCIES
         } else {
@@ -251,7 +250,7 @@ pub struct KRaftVersionFeature;
 
 impl Feature for KRaftVersionFeature {
     fn name(&self) -> &'static str {
-        crate::metadata_version::KRAFT_VERSION_FEATURE
+        metadata_version::KRAFT_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (0, 1)
@@ -270,16 +269,16 @@ pub struct KrabkaVersionFeature;
 
 impl Feature for KrabkaVersionFeature {
     fn name(&self) -> &'static str {
-        crate::krabka_version::KRABKA_VERSION_FEATURE
+        krabka_version::KRABKA_VERSION_FEATURE
     }
     fn supported_range(&self) -> (i16, i16) {
         (
-            crate::krabka_version::KRABKA_VERSION_MIN,
-            crate::krabka_version::KRABKA_VERSION_MAX,
+            krabka_version::KRABKA_VERSION_MIN,
+            krabka_version::KRABKA_VERSION_MAX,
         )
     }
     fn default_level(&self, _bootstrap_mv: i16) -> i16 {
-        crate::krabka_version::KRABKA_VERSION_MIN
+        krabka_version::KRABKA_VERSION_MIN
     }
     // dependencies: inherits the empty default. No krabka.version level needs a
     // metadata.version yet. min_required_floor: inherits the supported min,
@@ -308,17 +307,17 @@ pub fn feature_registry() -> &'static [&'static dyn Feature] {
 pub fn supported_feature_ranges() -> BTreeMap<String, (i16, i16)> {
     let mut ranges: BTreeMap<_, _> = feature_registry()
         .iter()
-        .map(|feature| (feature.name().to_string(), feature.supported_range()))
+        .map(|feature| (feature.name().to_owned(), feature.supported_range()))
         .collect();
     // Registration-only KIP-1155 capability signal. Keep it out of the
     // finalizable feature registry: upstream has not assigned the KIP's
     // promised metadata.version level, and inventing one would make
     // ApiVersions claim support for an undefined metadata record format.
     ranges.insert(
-        crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE.into(),
+        metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE.into(),
         (
-            crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
-            crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
+            metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
+            metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
         ),
     );
     ranges
@@ -335,17 +334,20 @@ pub fn feature(name: &str) -> Option<&'static dyn Feature> {
 
 /// KIP-584/1022 bootstrap: one `V1FeatureLevel` record per registered feature
 /// at its per-release default, derived from `bootstrap_mv`, the bootstrap
-/// metadata.version level. Both `krabka format` and the broker's standalone
-/// self-bootstrap use this, so a fresh cluster finalizes the release default of
-/// every feature.
+/// metadata.version level.
+///
+/// Both `krabka format` and the broker's standalone self-bootstrap use this, so
+/// a fresh cluster finalizes the release default of every feature.
 #[must_use]
 pub fn bootstrap_feature_records(bootstrap_mv: i16) -> Vec<crate::MetadataRecord> {
     bootstrap_feature_records_with_overrides(bootstrap_mv, &BTreeMap::new())
 }
 
 /// KIP-1022 `krabka format` seeding: one `V1FeatureLevel` record per registered
-/// feature, each at its explicit `--feature NAME=LEVEL` override if present in
-/// `overrides`, else its per-release default for `bootstrap_mv`.
+/// feature.
+///
+/// Each feature is at its explicit `--feature NAME=LEVEL` override if present
+/// in `overrides`, else at its per-release default for `bootstrap_mv`.
 ///
 /// Mirrors `kafka-storage format`: this function **omits** a feature whose
 /// resolved level is `0`. Level 0 means absent and disabled, which is the
@@ -358,7 +360,7 @@ pub fn bootstrap_feature_records_with_overrides(
 ) -> Vec<crate::MetadataRecord> {
     feature_registry()
         .iter()
-        .filter(|f| f.name() != crate::metadata_version::KRAFT_VERSION_FEATURE)
+        .filter(|f| f.name() != metadata_version::KRAFT_VERSION_FEATURE)
         .filter_map(|f| {
             let level = overrides
                 .get(f.name())
@@ -366,7 +368,7 @@ pub fn bootstrap_feature_records_with_overrides(
                 .unwrap_or_else(|| f.default_level(bootstrap_mv));
             (level > 0).then(|| {
                 crate::MetadataRecord::V1FeatureLevel(crate::FeatureLevelRecord {
-                    name: f.name().to_string(),
+                    name: f.name().to_owned(),
                     level,
                 })
             })
@@ -375,10 +377,12 @@ pub fn bootstrap_feature_records_with_overrides(
 }
 
 /// KIP-1022 dependency validation for a fully-resolved feature→level map, as
-/// seeded by `krabka format`. For every finalized feature, each of its
-/// `dependencies(level)` must be present in `resolved` at `>=` the required
-/// level. Returns `Err` with the name of the first unmet dependency, enforcing
-/// the rule at format time in the same way as the `UpdateFeatures` handler.
+/// seeded by `krabka format`.
+///
+/// For every finalized feature, each of its `dependencies(level)` must be
+/// present in `resolved` at `>=` the required level. Returns `Err` with the
+/// name of the first unmet dependency, enforcing the rule at format time in the
+/// same way as the `UpdateFeatures` handler.
 /// # Errors
 /// Returns an error naming the first finalized feature whose required
 /// dependency is absent or finalized below the minimum level.
@@ -480,7 +484,7 @@ mod tests {
             ("transaction.version", (0, 2)),
         ]
         .into_iter()
-        .map(|(name, range)| (name.to_string(), range))
+        .map(|(name, range)| (name.to_owned(), range))
         .collect();
         check!(supported_feature_ranges() == want);
     }
@@ -496,13 +500,13 @@ mod tests {
             (
                 "override to 1 earns a record",
                 METADATA_VERSION_MAX,
-                vec![("krabka.version".to_string(), 1)],
+                vec![("krabka.version".to_owned(), 1)],
                 Some(1),
             ),
             (
                 "override to 0 omits the record",
                 METADATA_VERSION_MAX,
-                vec![("krabka.version".to_string(), 0)],
+                vec![("krabka.version".to_owned(), 0)],
                 None,
             ),
         ] {
@@ -518,7 +522,7 @@ mod tests {
     fn krabka_version_declares_no_dependencies_and_no_level_name() {
         let f = feature("krabka.version").expect("registered");
         check!((f.dependencies(0), f.dependencies(1), f.level_name(1)) == (&[][..], &[][..], None));
-        let resolved = BTreeMap::from([("krabka.version".to_string(), 1)]);
+        let resolved = BTreeMap::from([("krabka.version".to_owned(), 1)]);
         check!(validate_feature_dependencies(&resolved) == Ok(()));
     }
 
@@ -526,13 +530,13 @@ mod tests {
     fn downgrade_capability_is_registration_only() {
         let ranges = supported_feature_ranges();
         check!(
-            ranges.get(crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE)
+            ranges.get(metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE)
                 == Some(&(
-                    crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
-                    crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
+                    metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
+                    metadata_version::METADATA_DOWNGRADE_CAPABILITY_LEVEL,
                 ))
         );
-        check!(feature(crate::metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE).is_none());
+        check!(feature(metadata_version::METADATA_DOWNGRADE_CAPABILITY_FEATURE).is_none());
     }
 
     #[test]
@@ -592,12 +596,12 @@ mod tests {
         for (_case, bootstrap, want) in [
             (
                 "before GA threshold",
-                crate::group_version::GROUP_VERSION_GA_METADATA_LEVEL - 1,
+                group_version::GROUP_VERSION_GA_METADATA_LEVEL - 1,
                 0,
             ),
             (
                 "at GA threshold",
-                crate::group_version::GROUP_VERSION_GA_METADATA_LEVEL,
+                group_version::GROUP_VERSION_GA_METADATA_LEVEL,
                 1,
             ),
             ("after GA threshold", 25, 1),
@@ -679,7 +683,7 @@ mod tests {
         check!(
             (
                 f.supported_range(),
-                f.default_level(crate::metadata_version::METADATA_VERSION_MAX),
+                f.default_level(metadata_version::METADATA_VERSION_MAX),
                 f.dependencies(0),
                 f.dependencies(1),
             ) == (
@@ -687,8 +691,8 @@ mod tests {
                 1,
                 &[][..],
                 &[(
-                    crate::metadata_version::METADATA_VERSION_FEATURE,
-                    crate::metadata_version::ELR_MIN_LEVEL,
+                    metadata_version::METADATA_VERSION_FEATURE,
+                    metadata_version::ELR_MIN_LEVEL,
                 )][..],
             )
         );
@@ -697,24 +701,20 @@ mod tests {
     #[test]
     fn elr_version_level_one_requires_the_elr_metadata_version() {
         for (_case, metadata_level, want_err) in [
-            (
-                "below 4.0-IV1",
-                crate::metadata_version::ELR_MIN_LEVEL - 1,
-                true,
-            ),
-            ("at 4.0-IV1", crate::metadata_version::ELR_MIN_LEVEL, false),
+            ("below 4.0-IV1", metadata_version::ELR_MIN_LEVEL - 1, true),
+            ("at 4.0-IV1", metadata_version::ELR_MIN_LEVEL, false),
             (
                 "above 4.0-IV1",
-                crate::metadata_version::METADATA_VERSION_MAX,
+                metadata_version::METADATA_VERSION_MAX,
                 false,
             ),
         ] {
             let resolved = BTreeMap::from([
                 (
-                    crate::metadata_version::METADATA_VERSION_FEATURE.to_string(),
+                    metadata_version::METADATA_VERSION_FEATURE.to_owned(),
                     metadata_level,
                 ),
-                (crate::metadata_version::ELR_VERSION_FEATURE.to_string(), 1),
+                (metadata_version::ELR_VERSION_FEATURE.to_owned(), 1),
             ]);
             check!(validate_feature_dependencies(&resolved).is_err() == want_err);
         }
@@ -745,11 +745,9 @@ mod tests {
         // Anchor the bare 24 to the metadata.version table (mirrors the
         // group.version GA-threshold anchor test).
         assert2::assert!(
-            crate::metadata_version::from_feature_level(
-                crate::transaction_version::TV2_METADATA_LEVEL
-            )
-            .unwrap()
-            .ivn()
+            metadata_version::from_feature_level(transaction_version::TV2_METADATA_LEVEL)
+                .unwrap()
+                .ivn()
                 == "4.0-IV2"
         );
     }
@@ -771,9 +769,9 @@ mod tests {
         assert2::assert!(
             levels
                 == BTreeMap::from([
-                    ("metadata.version".to_string(), 25),
-                    ("group.version".to_string(), 1),
-                    ("transaction.version".to_string(), 2),
+                    ("metadata.version".to_owned(), 25),
+                    ("group.version".to_owned(), 1),
+                    ("transaction.version".to_owned(), 2),
                 ])
         );
     }
@@ -793,25 +791,25 @@ mod tests {
         .into_iter()
         .map(|(name, level)| {
             crate::MetadataRecord::V1FeatureLevel(crate::FeatureLevelRecord {
-                name: name.to_string(),
+                name: name.to_owned(),
                 level,
             })
         })
         .collect();
-        check!(bootstrap_feature_records(crate::metadata_version::METADATA_VERSION_MAX) == want);
+        check!(bootstrap_feature_records(metadata_version::METADATA_VERSION_MAX) == want);
     }
 
     #[test]
     fn bootstrap_with_overrides_applies_explicit_levels() {
         // group.version overridden down to 0 → omitted; the rest follow mv=25.
         let mut ov = BTreeMap::new();
-        ov.insert("group.version".to_string(), 0i16);
+        ov.insert("group.version".to_owned(), 0i16);
         let levels = levels_of(&bootstrap_feature_records_with_overrides(25, &ov));
         assert2::assert!(
             levels
                 == BTreeMap::from([
-                    ("metadata.version".to_string(), 25),
-                    ("transaction.version".to_string(), 2),
+                    ("metadata.version".to_owned(), 25),
+                    ("transaction.version".to_owned(), 2),
                 ])
         );
     }
@@ -821,7 +819,7 @@ mod tests {
         // streams.version is 0 by default below 4.2-IV1; an explicit override
         // turns it on and earns a record.
         let mut ov = BTreeMap::new();
-        ov.insert("streams.version".to_string(), 1i16);
+        ov.insert("streams.version".to_owned(), 1i16);
         let levels = levels_of(&bootstrap_feature_records_with_overrides(25, &ov));
         assert2::assert!(levels.get("streams.version") == Some(&1));
     }
@@ -837,8 +835,8 @@ mod tests {
         assert2::assert!(
             levels
                 == BTreeMap::from([
-                    ("metadata.version".to_string(), 23),
-                    ("group.version".to_string(), 1),
+                    ("metadata.version".to_owned(), 23),
+                    ("group.version".to_owned(), 1),
                 ])
         );
     }
@@ -847,9 +845,9 @@ mod tests {
     fn validate_dependencies_ok_for_real_registry() {
         // The real registry declares no dependencies, so any resolved set passes.
         let mut resolved = BTreeMap::new();
-        resolved.insert("metadata.version".to_string(), 25i16);
-        resolved.insert("group.version".to_string(), 1i16);
-        resolved.insert("transaction.version".to_string(), 2i16);
+        resolved.insert("metadata.version".to_owned(), 25i16);
+        resolved.insert("group.version".to_owned(), 1i16);
+        resolved.insert("transaction.version".to_owned(), 2i16);
         assert2::assert!(validate_feature_dependencies(&resolved).is_ok());
     }
 
@@ -863,18 +861,18 @@ mod tests {
             }
         }
         let mut ok = BTreeMap::new();
-        ok.insert("a".to_string(), 2i16);
-        ok.insert("b".to_string(), 1i16);
+        ok.insert("a".to_owned(), 2i16);
+        ok.insert("b".to_owned(), 1i16);
         assert2::assert!(check_deps(&ok, deps_of).is_ok());
 
         let mut too_low = BTreeMap::new();
-        too_low.insert("a".to_string(), 1i16);
-        too_low.insert("b".to_string(), 1i16);
+        too_low.insert("a".to_owned(), 1i16);
+        too_low.insert("b".to_owned(), 1i16);
         assert2::assert!(check_deps(&too_low, deps_of).is_err());
 
         // dependency feature absent entirely (treated as level 0) → rejected.
         let mut missing = BTreeMap::new();
-        missing.insert("b".to_string(), 1i16);
+        missing.insert("b".to_owned(), 1i16);
         assert2::assert!(check_deps(&missing, deps_of).is_err());
     }
 
@@ -884,11 +882,9 @@ mod tests {
         // bootstrap-default threshold can't silently drift from `4.0-IV0`
         // (mirrors metadata_version's `gate_level_constants`).
         assert2::assert!(
-            crate::metadata_version::from_feature_level(
-                crate::group_version::GROUP_VERSION_GA_METADATA_LEVEL
-            )
-            .unwrap()
-            .ivn()
+            metadata_version::from_feature_level(group_version::GROUP_VERSION_GA_METADATA_LEVEL)
+                .unwrap()
+                .ivn()
                 == "4.0-IV0"
         );
     }

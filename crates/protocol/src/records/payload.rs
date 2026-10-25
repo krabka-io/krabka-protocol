@@ -15,11 +15,34 @@
 //! [`krabka-records-legacy`](../../records_legacy/index.html) crate supplies
 //! the codec when an old client appears on the wire.
 
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+))]
+use std::io;
+use std::mem;
+
 use bytes::{Buf, BufMut, Bytes};
 use krabka_compression::{CompressionType, RecordDecompressionPolicy};
 
-use crate::records::{
-    RecordsError, borrowed::RecordBatch as RecordBatchBorrowed, owned::RecordBatch,
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+))]
+use crate::records::FileRegion;
+use crate::{
+    primitives::{fixed::put_i32, varint::put_uvarint},
+    records::{RecordsError, borrowed::RecordBatch as RecordBatchBorrowed, owned::RecordBatch},
 };
 
 /// Owned form of a records-field payload.
@@ -50,7 +73,7 @@ pub enum RecordsPayload {
         target_os = "freebsd",
         target_os = "dragonfly",
     ))]
-    FileRegions(Vec<crate::records::FileRegion>),
+    FileRegions(Vec<FileRegion>),
 }
 
 impl RecordsPayload {
@@ -129,7 +152,7 @@ impl RecordsPayload {
     #[must_use]
     pub fn payload_len(&self) -> usize {
         match self {
-            Self::V2(batches) => batches.iter().map(RecordBatch::encoded_len).sum(),
+            Self::V2(batches) => batches.iter().map(RecordBatch::encoded_batch_len).sum(),
             Self::Raw(b) | Self::Legacy(b) => b.len(),
             #[cfg(any(
                 target_os = "linux",
@@ -159,7 +182,7 @@ impl RecordsPayload {
         match self {
             Self::V2(batches) => {
                 for b in batches {
-                    b.encode(buf)?;
+                    b.encode_batch(buf)?;
                 }
                 Ok(())
             }
@@ -184,7 +207,12 @@ impl RecordsPayload {
                     let mut filled = 0usize;
                     let mut offset = region.offset;
                     while filled < region.len {
-                        match region.file.read_at(&mut scratch[filled..], offset) {
+                        let Some(unfilled) = scratch.get_mut(filled..) else {
+                            return Err(RecordsError::RecordParse(
+                                "FileRegion read overran its buffer".into(),
+                            ));
+                        };
+                        match region.file.read_at(unfilled, offset) {
                             Ok(0) => {
                                 return Err(RecordsError::RecordParse(
                                     "FileRegion read hit EOF before len bytes".into(),
@@ -194,7 +222,7 @@ impl RecordsPayload {
                                 filled += n;
                                 offset += n as u64;
                             }
-                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
                             Err(e) => {
                                 return Err(RecordsError::RecordParse(format!(
                                     "FileRegion read error: {e}"
@@ -278,7 +306,7 @@ impl RecordsPayload {
         let mut cur: &[u8] = &bytes;
         let mut batches = Vec::new();
         while !cur.is_empty() {
-            match RecordBatch::decode(&mut cur) {
+            match RecordBatch::decode_batch(&mut cur) {
                 Ok(rb) => batches.push(rb),
                 Err(RecordsError::HeaderTooShort { .. } | RecordsError::BodyTooShort { .. }) => {
                     break;
@@ -318,12 +346,12 @@ fn put_payload_length<B: BufMut>(
             .ok_or(crate::ProtocolError::InvalidValue(
                 "records payload length exceeds compact bytes range",
             ))?;
-        crate::primitives::varint::put_uvarint(buf, prefixed_len);
+        put_uvarint(buf, prefixed_len);
     } else {
         let payload_len = i32::try_from(payload_len).map_err(|_| {
             crate::ProtocolError::InvalidValue("records payload length exceeds bytes range")
         })?;
-        crate::primitives::fixed::put_i32(buf, payload_len);
+        put_i32(buf, payload_len);
     }
     Ok(())
 }
@@ -460,7 +488,7 @@ impl<'de> crate::DecodeBorrow<'de> for RecordsPayloadBorrowed<'de> {
     fn decode_borrow(buf: &mut &'de [u8], _version: i16) -> Result<Self, crate::ProtocolError> {
         // Caller has sliced the buffer to exactly the records-field bytes;
         // consume everything by swapping in an empty tail.
-        let bytes = std::mem::take(buf);
+        let bytes = mem::take(buf);
         Self::from_slice(bytes).map_err(Into::into)
     }
 }
@@ -473,7 +501,7 @@ impl<'de> crate::DecodeBorrow<'de> for RecordsPayloadBorrowed<'de> {
 ///
 /// The threshold is `MAGIC_OFFSET + 1 = 17`, not the full `HEADER_LEN`. A
 /// truncated v2 batch must still land in the V2 arm, so that the downstream
-/// `RecordBatch::decode` can give a precise error instead of a silent
+/// `RecordBatch::decode_batch` can give a precise error instead of a silent
 /// misclassification as legacy.
 #[inline]
 fn looks_like_v2(bytes: &[u8]) -> bool {
@@ -482,7 +510,7 @@ fn looks_like_v2(bytes: &[u8]) -> bool {
     // the first message's magic byte at `offset(8) + message_size(4) +
     // crc(4) = 16` — same index, different meaning.
     const MAGIC_OFFSET: usize = 16;
-    bytes.len() > MAGIC_OFFSET && bytes[MAGIC_OFFSET] == 2
+    bytes.get(MAGIC_OFFSET) == Some(&2)
 }
 
 #[cfg(test)]
@@ -493,7 +521,10 @@ mod tests {
     use krabka_units::{bytes, fraction};
 
     use super::*;
-    use crate::records::{Record, RecordBatch};
+    use crate::{
+        primitives::string_bytes::{compact_bytes_len_from_size, put_bytes, put_compact_bytes},
+        records::{Record, RecordBatch},
+    };
 
     fn sample_v2() -> RecordBatch {
         RecordBatch {
@@ -511,7 +542,7 @@ mod tests {
     fn from_bytes_dispatches_v2() {
         let rb = sample_v2();
         let mut buf = BytesMut::new();
-        rb.encode(&mut buf).unwrap();
+        rb.encode_batch(&mut buf).unwrap();
         let p = RecordsPayload::from_bytes(buf.freeze()).unwrap();
         match p {
             RecordsPayload::V2(batches) => assert2::assert!(batches == vec![rb]),
@@ -525,7 +556,7 @@ mod tests {
         rb.records[0].value = Some(Bytes::from(vec![b'x'; 4096]));
         rb.attributes = rb.attributes.with_compression(CompressionType::Lz4);
         let mut wire = BytesMut::new();
-        rb.encode(&mut wire).unwrap();
+        rb.encode_batch(&mut wire).unwrap();
         let wire = wire.freeze();
 
         RecordsPayload::from_bytes(wire.clone()).unwrap();
@@ -547,8 +578,8 @@ mod tests {
         let mut b1 = sample_v2();
         b1.base_offset = 1;
         let mut buf = BytesMut::new();
-        b0.encode(&mut buf).unwrap();
-        b1.encode(&mut buf).unwrap();
+        b0.encode_batch(&mut buf).unwrap();
+        b1.encode_batch(&mut buf).unwrap();
         let p = RecordsPayload::from_bytes(buf.freeze()).unwrap();
         let batches = p.as_v2().expect("v2");
         assert2::assert!(batches == &[b0, b1][..]);
@@ -559,7 +590,7 @@ mod tests {
         let mut b = sample_v2();
         b.base_offset = 7;
         let mut wire = BytesMut::new();
-        b.encode(&mut wire).unwrap();
+        b.encode_batch(&mut wire).unwrap();
         let wire = wire.freeze();
         let p = RecordsPayload::Raw(wire.clone());
         assert2::assert!(p.payload_len() == wire.len());
@@ -590,8 +621,7 @@ mod tests {
     fn length_prefixed_legacy_encodes_compact_bytes_directly() {
         let payload = legacy_bytes();
         let records = RecordsPayload::Legacy(payload.clone());
-        let expected_len =
-            crate::primitives::string_bytes::compact_bytes_len_from_size(payload.len());
+        let expected_len = compact_bytes_len_from_size(payload.len());
         let mut output = vec![0_u8; expected_len];
         let mut destination = output.as_mut_slice();
 
@@ -601,7 +631,7 @@ mod tests {
 
         assert2::assert!(destination.is_empty());
         let mut expected = BytesMut::new();
-        crate::primitives::string_bytes::put_compact_bytes(&mut expected, &payload);
+        put_compact_bytes(&mut expected, &payload).unwrap();
         assert2::assert!(output.as_slice() == expected.as_ref());
     }
 
@@ -615,7 +645,7 @@ mod tests {
         let mut payload_wire = BytesMut::new();
         <RecordsPayload as crate::Encode>::encode(&records, &mut payload_wire, 0).unwrap();
         let mut expected = BytesMut::new();
-        crate::primitives::string_bytes::put_bytes(&mut expected, &payload_wire);
+        put_bytes(&mut expected, &payload_wire).unwrap();
         let mut actual = BytesMut::new();
         records
             .encode_length_prefixed(&mut actual, 0, false)
@@ -664,7 +694,7 @@ mod tests {
     fn borrowed_dispatches() {
         let rb = sample_v2();
         let mut buf = BytesMut::new();
-        rb.encode(&mut buf).unwrap();
+        rb.encode_batch(&mut buf).unwrap();
         let frozen = buf.freeze();
         let p = RecordsPayloadBorrowed::from_slice(&frozen).unwrap();
         assert2::assert!(matches!(p, RecordsPayloadBorrowed::V2(_)));
@@ -753,7 +783,7 @@ mod tests {
     fn borrowed_v2_payload_len_and_encode() {
         let rb = sample_v2();
         let mut buf = BytesMut::new();
-        rb.encode(&mut buf).unwrap();
+        rb.encode_batch(&mut buf).unwrap();
         let frozen = buf.freeze();
         let p = RecordsPayloadBorrowed::from_slice(&frozen).unwrap();
         assert2::assert!(p.payload_len() == frozen.len());
@@ -767,7 +797,7 @@ mod tests {
     fn borrowed_encode_decode_via_traits() {
         let rb = sample_v2();
         let mut buf = BytesMut::new();
-        rb.encode(&mut buf).unwrap();
+        rb.encode_batch(&mut buf).unwrap();
         let frozen = buf.freeze();
 
         let p = RecordsPayloadBorrowed::from_slice(&frozen).unwrap();
@@ -800,8 +830,8 @@ mod tests {
         let mut b1 = sample_v2();
         b1.base_offset = 1;
         let mut buf = BytesMut::new();
-        b0.encode(&mut buf).unwrap();
-        b1.encode(&mut buf).unwrap();
+        b0.encode_batch(&mut buf).unwrap();
+        b1.encode_batch(&mut buf).unwrap();
         buf.extend_from_slice(&[0u8; 7]); // partial trailing batch header
         let p = RecordsPayload::from_fetch_bytes(buf.freeze()).unwrap();
         let batches = p.as_v2().expect("v2");
@@ -814,7 +844,7 @@ mod tests {
         // leniently — leniency only forgives truncation, not corruption.
         let rb = sample_v2();
         let mut buf = BytesMut::new();
-        rb.encode(&mut buf).unwrap();
+        rb.encode_batch(&mut buf).unwrap();
         let mut bytes = buf.to_vec();
         // Corrupt a body byte after the header (HEADER_LEN = 61) to break CRC.
         bytes[61] ^= 0xFF;

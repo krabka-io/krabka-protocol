@@ -9,10 +9,10 @@ use crate::{
 };
 
 /// A cut over two topics, one of them with two partitions.
-pub(crate) fn sample_cut_topics() -> Vec<BarrierCutTopic> {
+pub fn sample_cut_topics() -> Vec<BarrierCutTopic> {
     vec![
         BarrierCutTopic {
-            topic: "orders".to_string(),
+            topic: "orders".to_owned(),
             partitions: vec![
                 BarrierCutPartition {
                     partition: 0,
@@ -28,7 +28,7 @@ pub(crate) fn sample_cut_topics() -> Vec<BarrierCutTopic> {
             unknown_tagged_fields: sample_tagged_fields(),
         },
         BarrierCutTopic {
-            topic: "payments".to_string(),
+            topic: "payments".to_owned(),
             partitions: Vec::new(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         },
@@ -36,9 +36,9 @@ pub(crate) fn sample_cut_topics() -> Vec<BarrierCutTopic> {
 }
 
 /// One partition that took no marker.
-pub(crate) fn sample_missing_partitions() -> Vec<BarrierMissingPartition> {
+pub fn sample_missing_partitions() -> Vec<BarrierMissingPartition> {
     vec![BarrierMissingPartition {
-        topic: "payments".to_string(),
+        topic: "payments".to_owned(),
         partition: 4,
         unknown_tagged_fields: sample_tagged_fields(),
     }]

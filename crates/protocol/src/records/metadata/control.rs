@@ -131,12 +131,12 @@ impl ControlRecord {
     /// unsupported record versions, or trailing value bytes.
     pub fn decode(key: &[u8], value: &[u8]) -> Result<Self, ProtocolError> {
         let record_type = decode_control_record_key(key)?;
-        if value.len() < 2 {
+        let Some(&version_bytes) = value.first_chunk::<2>() else {
             return Err(ProtocolError::UnexpectedEof {
                 needed: 2 - value.len(),
             });
-        }
-        let version = i16::from_be_bytes([value[0], value[1]]);
+        };
+        let version = i16::from_be_bytes(version_bytes);
         let mut cur = value;
         let record = match record_type {
             ControlRecordType::LeaderChange => {
@@ -171,17 +171,20 @@ pub fn encode_typed_control_batch(
     record: &ControlRecord,
 ) -> Result<Bytes, ProtocolError> {
     let (key, value) = record.encode_key_value()?;
-    Ok(encode_control_batch(base_offset, key, value))
+    encode_control_batch(base_offset, key, value)
 }
 
 /// Encode a single-record control batch at `base_offset` with the control bit
 /// set, returning the full v2 `RecordBatch` bytes (CRC computed by the encoder).
 ///
-/// # Panics
-/// Panics only if the underlying record-batch encoder fails, which cannot happen
-/// for an uncompressed in-range single-record batch.
-#[must_use]
-pub fn encode_control_batch(base_offset: i64, key: Bytes, value: Bytes) -> Bytes {
+/// # Errors
+/// Returns a [`ProtocolError`] if the record-batch encoder fails, which an
+/// uncompressed in-range single-record batch never does.
+pub fn encode_control_batch(
+    base_offset: i64,
+    key: Bytes,
+    value: Bytes,
+) -> Result<Bytes, ProtocolError> {
     let batch = RecordBatch {
         base_offset,
         attributes: Attributes::default().with_control(true),
@@ -193,10 +196,8 @@ pub fn encode_control_batch(base_offset: i64, key: Bytes, value: Bytes) -> Bytes
         ..Default::default()
     };
     let mut out = BytesMut::new();
-    batch
-        .encode(&mut out)
-        .expect("control batch encodes (no compression, in-range)");
-    out.freeze()
+    batch.encode_batch(&mut out)?;
+    Ok(out.freeze())
 }
 
 #[cfg(test)]
@@ -248,8 +249,8 @@ mod tests {
                 voter_id: 7,
                 voter_directory_id: Uuid([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
                 endpoints: vec![Endpoint {
-                    name: "CONTROLLER".to_string(),
-                    host: "localhost".to_string(),
+                    name: "CONTROLLER".to_owned(),
+                    host: "localhost".to_owned(),
                     port: 9_093,
                     ..Default::default()
                 }],
@@ -306,9 +307,9 @@ mod tests {
     #[test]
     fn control_batch_sets_control_bit() {
         let key = control_record_key(ControlRecordType::LeaderChange);
-        let batch = encode_control_batch(42, key, bytes::Bytes::from_static(b"\x00\x00"));
+        let batch = encode_control_batch(42, key, bytes::Bytes::from_static(b"\x00\x00")).unwrap();
         let mut cur: &[u8] = &batch;
-        let decoded = RecordBatch::decode(&mut cur).expect("control batch decodes");
+        let decoded = RecordBatch::decode_batch(&mut cur).expect("control batch decodes");
         assert2::assert!(decoded.base_offset == 42);
         assert2::assert!(cur.is_empty());
         // magic byte at offset 16, attributes i16 at offset 21..23; control bit = 0x20.

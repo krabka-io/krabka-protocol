@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_heartbeat_request::task_offset,
     primitives::{
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
@@ -18,15 +19,10 @@ pub struct TaskOffset<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TaskOffset<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_heartbeat_request::task_offset::TaskOffset {
-        crate::owned::common::streams_group_heartbeat_request::task_offset::TaskOffset {
-            subtopology_id: (self.subtopology_id).to_string(),
+    pub fn to_owned(&self) -> task_offset::TaskOffset {
+        task_offset::TaskOffset {
+            subtopology_id: (self.subtopology_id).to_owned(),
             partition: (self.partition),
             offset: (self.offset),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -38,9 +34,9 @@ impl Encode for TaskOffset<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.subtopology_id);
+                put_compact_string(buf, self.subtopology_id)?;
             } else {
-                let () = put_string(buf, self.subtopology_id);
+                put_string(buf, self.subtopology_id)?;
             }
         }
         if version >= 0 {
@@ -51,7 +47,7 @@ impl Encode for TaskOffset<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

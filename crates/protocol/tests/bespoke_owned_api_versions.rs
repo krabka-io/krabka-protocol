@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for owned ApiVersions wrappers that go beyond the standard
 // min/max-version roundtrip. Relocated here from the hand-written wrappers as
 // part of making those wrappers uniformly generated.
@@ -19,8 +21,8 @@ fn owned_api_versions_request_roundtrip_cases() {
             "v3 populated",
             3,
             ApiVersionsRequest {
-                client_software_name: "krabka".to_string(),
-                client_software_version: "0.0.0".to_string(),
+                client_software_name: "krabka".to_owned(),
+                client_software_version: "0.0.0".to_owned(),
                 unknown_tagged_fields: UnknownTaggedFields::default(),
                 ..Default::default()
             },
@@ -29,9 +31,9 @@ fn owned_api_versions_request_roundtrip_cases() {
             "v5 routing identity",
             5,
             ApiVersionsRequest {
-                client_software_name: "krabka".to_string(),
-                client_software_version: "0.0.0".to_string(),
-                cluster_id: Some("cluster".to_string()),
+                client_software_name: "krabka".to_owned(),
+                client_software_version: "0.0.0".to_owned(),
+                cluster_id: Some("cluster".to_owned()),
                 node_id: 7,
                 ..Default::default()
             },

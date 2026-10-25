@@ -42,16 +42,16 @@ impl Encode for BeginTransactionRecord {
                     },
                     |b| {
                         if flex {
-                            let () = put_compact_nullable_string(b, self.name.as_deref());
+                            put_compact_nullable_string(b, self.name.as_deref())?;
                         } else {
-                            let () = put_nullable_string(b, self.name.as_deref());
+                            put_nullable_string(b, self.name.as_deref())?;
                         }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -113,7 +113,7 @@ impl BeginTransactionRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = Some("x".to_string());
+            m.name = Some("x".to_owned());
         }
         m
     }
@@ -124,7 +124,7 @@ impl BeginTransactionRecord {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("name".to_string(), ::serde_json::Value::Null);
+    obj.insert("name".to_owned(), ::serde_json::Value::Null);
     ::serde_json::Value::Object(obj)
 }
 /// A message with a non-default value in every tagged field, at every depth, for
@@ -132,7 +132,7 @@ pub fn default_json(_version: i16) -> ::serde_json::Value {
 #[must_use]
 pub fn tagged_fixture() -> BeginTransactionRecord {
     BeginTransactionRecord {
-        name: Some("x".to_string()),
+        name: Some("x".to_owned()),
         ..BeginTransactionRecord::default()
     }
 }
@@ -142,8 +142,8 @@ pub fn tagged_fixture() -> BeginTransactionRecord {
 pub fn tagged_fixture_json(_version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
     m.insert(
-        "name".to_string(),
-        ::serde_json::Value::String("x".to_string()),
+        "name".to_owned(),
+        ::serde_json::Value::String("x".to_owned()),
     );
     ::serde_json::Value::Object(m)
 }

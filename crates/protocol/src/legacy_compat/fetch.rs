@@ -1,6 +1,9 @@
 use crate::{
     kafka_3_6_2,
-    owned::{fetch_request::FetchRequest, fetch_response::FetchResponse},
+    owned::{
+        fetch_request::{self, FetchRequest},
+        fetch_response::{self, FetchResponse},
+    },
 };
 
 // ── Request: legacy → canonical ──────────────────────────────────────────────
@@ -29,9 +32,7 @@ impl From<kafka_3_6_2::owned::fetch_request::FetchRequest> for FetchRequest {
     }
 }
 
-impl From<kafka_3_6_2::owned::fetch_request::ReplicaState>
-    for crate::owned::fetch_request::ReplicaState
-{
+impl From<kafka_3_6_2::owned::fetch_request::ReplicaState> for fetch_request::ReplicaState {
     fn from(l: kafka_3_6_2::owned::fetch_request::ReplicaState) -> Self {
         Self {
             replica_id: l.replica_id,
@@ -41,9 +42,7 @@ impl From<kafka_3_6_2::owned::fetch_request::ReplicaState>
     }
 }
 
-impl From<kafka_3_6_2::owned::fetch_request::FetchTopic>
-    for crate::owned::fetch_request::FetchTopic
-{
+impl From<kafka_3_6_2::owned::fetch_request::FetchTopic> for fetch_request::FetchTopic {
     fn from(l: kafka_3_6_2::owned::fetch_request::FetchTopic) -> Self {
         Self {
             topic: l.topic,
@@ -54,9 +53,7 @@ impl From<kafka_3_6_2::owned::fetch_request::FetchTopic>
     }
 }
 
-impl From<kafka_3_6_2::owned::fetch_request::FetchPartition>
-    for crate::owned::fetch_request::FetchPartition
-{
+impl From<kafka_3_6_2::owned::fetch_request::FetchPartition> for fetch_request::FetchPartition {
     fn from(l: kafka_3_6_2::owned::fetch_request::FetchPartition) -> Self {
         Self {
             partition: l.partition,
@@ -71,9 +68,7 @@ impl From<kafka_3_6_2::owned::fetch_request::FetchPartition>
     }
 }
 
-impl From<kafka_3_6_2::owned::fetch_request::ForgottenTopic>
-    for crate::owned::fetch_request::ForgottenTopic
-{
+impl From<kafka_3_6_2::owned::fetch_request::ForgottenTopic> for fetch_request::ForgottenTopic {
     fn from(l: kafka_3_6_2::owned::fetch_request::ForgottenTopic) -> Self {
         Self {
             topic: l.topic,
@@ -99,10 +94,10 @@ impl From<FetchResponse> for kafka_3_6_2::owned::fetch_response::FetchResponse {
     }
 }
 
-impl From<crate::owned::fetch_response::FetchableTopicResponse>
+impl From<fetch_response::FetchableTopicResponse>
     for kafka_3_6_2::owned::fetch_response::FetchableTopicResponse
 {
-    fn from(c: crate::owned::fetch_response::FetchableTopicResponse) -> Self {
+    fn from(c: fetch_response::FetchableTopicResponse) -> Self {
         Self {
             topic: c.topic,
             topic_id: c.topic_id,
@@ -112,10 +107,8 @@ impl From<crate::owned::fetch_response::FetchableTopicResponse>
     }
 }
 
-impl From<crate::owned::fetch_response::PartitionData>
-    for kafka_3_6_2::owned::fetch_response::PartitionData
-{
-    fn from(c: crate::owned::fetch_response::PartitionData) -> Self {
+impl From<fetch_response::PartitionData> for kafka_3_6_2::owned::fetch_response::PartitionData {
+    fn from(c: fetch_response::PartitionData) -> Self {
         Self {
             partition_index: c.partition_index,
             error_code: c.error_code,
@@ -135,10 +128,10 @@ impl From<crate::owned::fetch_response::PartitionData>
     }
 }
 
-impl From<crate::owned::fetch_response::AbortedTransaction>
+impl From<fetch_response::AbortedTransaction>
     for kafka_3_6_2::owned::fetch_response::AbortedTransaction
 {
-    fn from(c: crate::owned::fetch_response::AbortedTransaction) -> Self {
+    fn from(c: fetch_response::AbortedTransaction) -> Self {
         Self {
             producer_id: c.producer_id,
             first_offset: c.first_offset,
@@ -147,10 +140,8 @@ impl From<crate::owned::fetch_response::AbortedTransaction>
     }
 }
 
-impl From<crate::owned::fetch_response::EpochEndOffset>
-    for kafka_3_6_2::owned::fetch_response::EpochEndOffset
-{
-    fn from(c: crate::owned::fetch_response::EpochEndOffset) -> Self {
+impl From<fetch_response::EpochEndOffset> for kafka_3_6_2::owned::fetch_response::EpochEndOffset {
+    fn from(c: fetch_response::EpochEndOffset) -> Self {
         Self {
             epoch: c.epoch,
             end_offset: c.end_offset,
@@ -159,10 +150,10 @@ impl From<crate::owned::fetch_response::EpochEndOffset>
     }
 }
 
-impl From<crate::owned::fetch_response::LeaderIdAndEpoch>
+impl From<fetch_response::LeaderIdAndEpoch>
     for kafka_3_6_2::owned::fetch_response::LeaderIdAndEpoch
 {
-    fn from(c: crate::owned::fetch_response::LeaderIdAndEpoch) -> Self {
+    fn from(c: fetch_response::LeaderIdAndEpoch) -> Self {
         Self {
             leader_id: c.leader_id,
             leader_epoch: c.leader_epoch,
@@ -171,10 +162,8 @@ impl From<crate::owned::fetch_response::LeaderIdAndEpoch>
     }
 }
 
-impl From<crate::owned::fetch_response::SnapshotId>
-    for kafka_3_6_2::owned::fetch_response::SnapshotId
-{
-    fn from(c: crate::owned::fetch_response::SnapshotId) -> Self {
+impl From<fetch_response::SnapshotId> for kafka_3_6_2::owned::fetch_response::SnapshotId {
+    fn from(c: fetch_response::SnapshotId) -> Self {
         Self {
             end_offset: c.end_offset,
             epoch: c.epoch,
@@ -224,10 +213,10 @@ mod tests {
             isolation_level: 1,
             session_id: 46,
             session_epoch: 47,
-            topics: vec![crate::owned::fetch_request::FetchTopic {
-                topic: "fetch-topic".to_string(),
+            topics: vec![fetch_request::FetchTopic {
+                topic: "fetch-topic".to_owned(),
                 topic_id: Uuid::ZERO,
-                partitions: vec![crate::owned::fetch_request::FetchPartition {
+                partitions: vec![fetch_request::FetchPartition {
                     partition: 3,
                     current_leader_epoch: 4,
                     fetch_offset: 5,
@@ -240,15 +229,15 @@ mod tests {
                 }],
                 unknown_tagged_fields: UnknownTaggedFields(vec![]),
             }],
-            forgotten_topics_data: vec![crate::owned::fetch_request::ForgottenTopic {
-                topic: "forgotten-topic".to_string(),
+            forgotten_topics_data: vec![fetch_request::ForgottenTopic {
+                topic: "forgotten-topic".to_owned(),
                 topic_id: Uuid::ZERO,
                 partitions: vec![9, 10],
                 unknown_tagged_fields: UnknownTaggedFields(vec![]),
             }],
-            rack_id: "rack-a".to_string(),
-            cluster_id: Some("cluster-a".to_string()),
-            replica_state: crate::owned::fetch_request::ReplicaState {
+            rack_id: "rack-a".to_owned(),
+            cluster_id: Some("cluster-a".to_owned()),
+            replica_state: fetch_request::ReplicaState {
                 replica_id: 48,
                 replica_epoch: 49,
                 unknown_tagged_fields: UnknownTaggedFields(vec![]),
@@ -303,7 +292,7 @@ mod tests {
             error_code: 52,
             session_id: 53,
             responses: vec![kafka_3_6_2::owned::fetch_response::FetchableTopicResponse {
-                topic: "fetch-response-topic".to_string(),
+                topic: "fetch-response-topic".to_owned(),
                 topic_id: Uuid([0x12; 16]),
                 partitions: vec![kafka_3_6_2::owned::fetch_response::PartitionData {
                     partition_index: 54,

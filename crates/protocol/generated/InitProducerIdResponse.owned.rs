@@ -68,7 +68,7 @@ impl Encode for InitProducerIdResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -166,16 +166,16 @@ impl InitProducerIdResponse {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("producerId".to_string(), ::serde_json::json!(-1));
-    obj.insert("producerEpoch".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("producerId".to_owned(), ::serde_json::json!(-1));
+    obj.insert("producerEpoch".to_owned(), ::serde_json::json!(0));
     if version >= 6 {
-        obj.insert("ongoingTxnProducerId".to_string(), ::serde_json::json!(-1));
+        obj.insert("ongoingTxnProducerId".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 6 {
         obj.insert(
-            "ongoingTxnProducerEpoch".to_string(),
+            "ongoingTxnProducerEpoch".to_owned(),
             ::serde_json::json!(-1),
         );
     }

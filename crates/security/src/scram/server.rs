@@ -3,9 +3,13 @@
 //! It supports SCRAM-SHA-256 and SCRAM-SHA-512. The mechanism comes from the
 //! credential that the server authenticates against.
 
+use std::fmt;
+
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
-use hmac::{Hmac, KeyInit, Mac};
-use ring::rand::{SecureRandom, SystemRandom};
+use ring::{
+    hmac as ring_hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 use sha2::{Digest, Sha256, Sha512};
 use subtle::ConstantTimeEq;
 
@@ -41,8 +45,8 @@ pub enum ScramServerExchange {
     AwaitingClientFinal(AwaitingClientFinal),
 }
 
-impl std::fmt::Debug for ScramServerExchange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ScramServerExchange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AwaitingClientFirst(_) => f
                 .debug_tuple("ScramServerExchange::AwaitingClientFirst")
@@ -146,9 +150,10 @@ impl AwaitingClientFirst {
         }
         let c_nonce = client_first.nonce;
         let mut server_nonce_bytes = [0u8; 18];
-        SystemRandom::new()
-            .fill(&mut server_nonce_bytes)
-            .expect("rng");
+        // The client side maps a failed system RNG the same way.
+        if SystemRandom::new().fill(&mut server_nonce_bytes).is_err() {
+            return StepResult::Failed(AuthError::MalformedMessage);
+        }
         let server_nonce = B64.encode(server_nonce_bytes);
         let combined_nonce = format!("{c_nonce}{server_nonce}");
         let server_first = format!(
@@ -274,19 +279,14 @@ fn verify_and_sign_sha512(
     proof: &[u8],
     auth_message: &[u8],
 ) -> (Vec<u8>, Vec<u8>) {
-    let mut mac = <Hmac<Sha512>>::new_from_slice(stored_key).expect("hmac");
-    mac.update(auth_message);
-    let client_signature = mac.finalize().into_bytes();
-    let client_key: Vec<u8> = client_signature
-        .iter()
-        .zip(proof.iter())
-        .map(|(a, b)| a ^ b)
-        .collect();
-    let computed_stored = Sha512::digest(&client_key).to_vec();
-    let mut server_mac = <Hmac<Sha512>>::new_from_slice(server_key).expect("hmac");
-    server_mac.update(auth_message);
-    let server_signature = server_mac.finalize().into_bytes().to_vec();
-    (computed_stored, server_signature)
+    verify_and_sign_with(
+        ring_hmac::HMAC_SHA512,
+        stored_key,
+        server_key,
+        proof,
+        auth_message,
+        |client_key| Sha512::digest(client_key).to_vec(),
+    )
 }
 
 fn verify_and_sign_sha256(
@@ -295,17 +295,40 @@ fn verify_and_sign_sha256(
     proof: &[u8],
     auth_message: &[u8],
 ) -> (Vec<u8>, Vec<u8>) {
-    let mut mac = <Hmac<Sha256>>::new_from_slice(stored_key).expect("hmac");
-    mac.update(auth_message);
-    let client_signature = mac.finalize().into_bytes();
+    verify_and_sign_with(
+        ring_hmac::HMAC_SHA256,
+        stored_key,
+        server_key,
+        proof,
+        auth_message,
+        |client_key| Sha256::digest(client_key).to_vec(),
+    )
+}
+
+/// Recover `H(ClientKey)` from `proof`, and compute the `ServerSignature`,
+/// with `algorithm` as the HMAC and `hash` as `H`.
+///
+/// `ring`'s HMAC takes a key of any length, so this cannot fail.
+fn verify_and_sign_with(
+    algorithm: ring_hmac::Algorithm,
+    stored_key: &[u8],
+    server_key: &[u8],
+    proof: &[u8],
+    auth_message: &[u8],
+    hash: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> (Vec<u8>, Vec<u8>) {
+    let client_signature =
+        ring_hmac::sign(&ring_hmac::Key::new(algorithm, stored_key), auth_message);
     let client_key: Vec<u8> = client_signature
+        .as_ref()
         .iter()
         .zip(proof.iter())
         .map(|(a, b)| a ^ b)
         .collect();
-    let computed_stored = Sha256::digest(&client_key).to_vec();
-    let mut server_mac = <Hmac<Sha256>>::new_from_slice(server_key).expect("hmac");
-    server_mac.update(auth_message);
-    let server_signature = server_mac.finalize().into_bytes().to_vec();
+    let computed_stored = hash(&client_key);
+    let server_signature =
+        ring_hmac::sign(&ring_hmac::Key::new(algorithm, server_key), auth_message)
+            .as_ref()
+            .to_vec();
     (computed_stored, server_signature)
 }

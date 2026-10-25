@@ -1,3 +1,5 @@
+use std::{fmt, str::FromStr};
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -70,7 +72,7 @@ impl Principal {
     #[must_use]
     pub fn to_kafka(&self) -> KafkaPrincipal {
         KafkaPrincipal {
-            principal_type: "User".to_string(),
+            principal_type: "User".to_owned(),
             name: self.name.clone(),
         }
     }
@@ -89,13 +91,13 @@ pub struct KafkaPrincipal {
     pub name: String,
 }
 
-impl std::fmt::Display for KafkaPrincipal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for KafkaPrincipal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.principal_type, self.name)
     }
 }
 
-impl std::str::FromStr for KafkaPrincipal {
+impl FromStr for KafkaPrincipal {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, String> {
         let (pt, n) = s

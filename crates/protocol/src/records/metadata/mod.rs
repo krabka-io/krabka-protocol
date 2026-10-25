@@ -1,6 +1,8 @@
-//! KIP-631 metadata record layer: the `ApiMessageAndVersion` value envelope,
-//! a decode dispatch over the generated record types, control-record framing,
-//! and a `bootstrap.checkpoint` builder. Byte-compatible with apache/kafka 4.x
+//! KIP-631 metadata record layer.
+//!
+//! The layer is the `ApiMessageAndVersion` value envelope, a decode dispatch
+//! over the generated record types, control-record framing, and a
+//! `bootstrap.checkpoint` builder. Byte-compatible with apache/kafka 4.x
 //! `KRaft`.
 
 pub mod checkpoint;

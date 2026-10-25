@@ -3,8 +3,10 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::envelope_request,
     primitives::{
         string_bytes::{
+            bytes_len, compact_bytes_len, compact_nullable_bytes_len, nullable_bytes_len,
             put_bytes, put_compact_bytes, put_compact_nullable_bytes, put_nullable_bytes,
         },
         string_bytes_borrowed::{
@@ -42,12 +44,9 @@ impl Default for EnvelopeRequest<'_> {
     }
 }
 impl EnvelopeRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::envelope_request::EnvelopeRequest {
-        crate::owned::envelope_request::EnvelopeRequest {
+    pub fn to_owned(&self) -> envelope_request::EnvelopeRequest {
+        envelope_request::EnvelopeRequest {
             request_data: Bytes::copy_from_slice(self.request_data),
             request_principal: (self.request_principal).map(Bytes::copy_from_slice),
             client_host_address: Bytes::copy_from_slice(self.client_host_address),
@@ -66,28 +65,28 @@ impl Encode for EnvelopeRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.request_data);
+                put_compact_bytes(buf, self.request_data)?;
             } else {
-                let () = put_bytes(buf, self.request_data);
+                put_bytes(buf, self.request_data)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_bytes(buf, self.request_principal);
+                put_compact_nullable_bytes(buf, self.request_principal)?;
             } else {
-                let () = put_nullable_bytes(buf, self.request_principal);
+                put_nullable_bytes(buf, self.request_principal)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.client_host_address);
+                put_compact_bytes(buf, self.client_host_address)?;
             } else {
-                let () = put_bytes(buf, self.client_host_address);
+                put_bytes(buf, self.client_host_address)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -96,39 +95,23 @@ impl Encode for EnvelopeRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.request_data).len() + 1).unwrap(),
-                ) + (self.request_data).len()
+                compact_bytes_len(self.request_data)
             } else {
-                4 + (self.request_data).len()
-            };
-        }
-        if version >= 0 {
-            n += match self.request_principal {
-                None => {
-                    if flex {
-                        1
-                    } else {
-                        4
-                    }
-                }
-                Some(b) => {
-                    if flex {
-                        crate::primitives::varint::uvarint_len(u32::try_from(b.len() + 1).unwrap())
-                            + b.len()
-                    } else {
-                        4 + b.len()
-                    }
-                }
+                bytes_len(self.request_data)
             };
         }
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.client_host_address).len() + 1).unwrap(),
-                ) + (self.client_host_address).len()
+                compact_nullable_bytes_len(self.request_principal)
             } else {
-                4 + (self.client_host_address).len()
+                nullable_bytes_len(self.request_principal)
+            };
+        }
+        if version >= 0 {
+            n += if flex {
+                compact_bytes_len(self.client_host_address)
+            } else {
+                bytes_len(self.client_host_address)
             };
         }
         if flex {

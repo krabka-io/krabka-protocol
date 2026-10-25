@@ -10,6 +10,7 @@ use crate::{
             bytes_len, compact_bytes_len, get_bytes_owned, get_compact_bytes_owned, put_bytes,
             put_compact_bytes,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -25,7 +26,7 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PushTelemetryRequest {
-    pub client_instance_id: crate::primitives::uuid::Uuid,
+    pub client_instance_id: Uuid,
     pub subscription_id: i32,
     pub terminating: bool,
     pub compression_type: i8,
@@ -42,7 +43,7 @@ impl Encode for PushTelemetryRequest {
         }
         let flex = is_flexible(version);
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.client_instance_id);
+            put_uuid(buf, self.client_instance_id);
         }
         if version >= 0 {
             put_i32(buf, self.subscription_id);
@@ -55,14 +56,14 @@ impl Encode for PushTelemetryRequest {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.metrics);
+                put_compact_bytes(buf, &self.metrics)?;
             } else {
-                let () = put_bytes(buf, &self.metrics);
+                put_bytes(buf, &self.metrics)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -106,7 +107,7 @@ impl Decode<'_> for PushTelemetryRequest {
         let flex = is_flexible(version);
         let mut out = Self::default();
         if version >= 0 {
-            out.client_instance_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.client_instance_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.subscription_id = get_i32(buf)?;
@@ -136,7 +137,7 @@ impl PushTelemetryRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.client_instance_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.client_instance_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.subscription_id = 1i32;
@@ -160,14 +161,14 @@ impl PushTelemetryRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "clientInstanceId".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "clientInstanceId".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("subscriptionId".to_string(), ::serde_json::json!(0));
-    obj.insert("terminating".to_string(), ::serde_json::Value::Bool(false));
-    obj.insert("compressionType".to_string(), ::serde_json::json!(0));
+    obj.insert("subscriptionId".to_owned(), ::serde_json::json!(0));
+    obj.insert("terminating".to_owned(), ::serde_json::Value::Bool(false));
+    obj.insert("compressionType".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "metrics".to_string(),
+        "metrics".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

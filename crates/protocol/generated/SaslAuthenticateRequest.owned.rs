@@ -36,14 +36,14 @@ impl Encode for SaslAuthenticateRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, &self.auth_bytes);
+                put_compact_bytes(buf, &self.auth_bytes)?;
             } else {
-                let () = put_bytes(buf, &self.auth_bytes);
+                put_bytes(buf, &self.auth_bytes)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -105,7 +105,7 @@ impl SaslAuthenticateRequest {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "authBytes".to_string(),
+        "authBytes".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     ::serde_json::Value::Object(obj)

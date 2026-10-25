@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_delegation_token_request,
     primitives::{
+        array::{get_nullable_array_len, nullable_array_len_prefix_len, put_nullable_array_len},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
     },
@@ -33,14 +35,9 @@ impl Default for DescribeDelegationTokenRequest<'_> {
     }
 }
 impl DescribeDelegationTokenRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::describe_delegation_token_request::DescribeDelegationTokenRequest {
-        crate::owned::describe_delegation_token_request::DescribeDelegationTokenRequest {
+    pub fn to_owned(&self) -> describe_delegation_token_request::DescribeDelegationTokenRequest {
+        describe_delegation_token_request::DescribeDelegationTokenRequest {
             owners: (self.owners).as_ref().map(|v| {
                 v.iter()
                     .map(DescribeDelegationTokenOwner::to_owned)
@@ -62,17 +59,17 @@ impl Encode for DescribeDelegationTokenRequest<'_> {
         if version >= 0 {
             {
                 let len = (self.owners).as_ref().map(Vec::len);
-                crate::primitives::array::put_nullable_array_len(buf, len, flex);
+                put_nullable_array_len(buf, len, flex)?;
                 if let Some(v) = &self.owners {
                     for it in v {
                         it.encode(buf, version)?;
                     }
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,10 +79,7 @@ impl Encode for DescribeDelegationTokenRequest<'_> {
         if version >= 0 {
             n += {
                 let opt: Option<&Vec<_>> = (self.owners).as_ref();
-                let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                    opt.map(std::vec::Vec::len),
-                    flex,
-                );
+                let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                 let body: usize =
                     opt.map_or(0, |v| v.iter().map(|it| it.encoded_len(version)).sum());
                 prefix + body
@@ -110,7 +104,7 @@ impl<'de> DecodeBorrow<'de> for DescribeDelegationTokenRequest<'de> {
         let mut out = Self::default();
         if version >= 0 {
             out.owners = {
-                let opt = crate::primitives::array::get_nullable_array_len(buf, flex)?;
+                let opt = get_nullable_array_len(buf, flex)?;
                 match opt {
                     None => None,
                     Some(n) => {
@@ -147,16 +141,11 @@ pub struct DescribeDelegationTokenOwner<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeDelegationTokenOwner<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::describe_delegation_token_request::DescribeDelegationTokenOwner {
-        crate::owned::describe_delegation_token_request::DescribeDelegationTokenOwner {
-            principal_type: (self.principal_type).to_string(),
-            principal_name: (self.principal_name).to_string(),
+    pub fn to_owned(&self) -> describe_delegation_token_request::DescribeDelegationTokenOwner {
+        describe_delegation_token_request::DescribeDelegationTokenOwner {
+            principal_type: (self.principal_type).to_owned(),
+            principal_name: (self.principal_name).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -166,21 +155,21 @@ impl Encode for DescribeDelegationTokenOwner<'_> {
         let flex = version >= 2;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal_type);
+                put_compact_string(buf, self.principal_type)?;
             } else {
-                let () = put_string(buf, self.principal_type);
+                put_string(buf, self.principal_type)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal_name);
+                put_compact_string(buf, self.principal_name)?;
             } else {
-                let () = put_string(buf, self.principal_name);
+                put_string(buf, self.principal_name)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

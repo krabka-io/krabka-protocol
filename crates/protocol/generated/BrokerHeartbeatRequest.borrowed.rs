@@ -3,7 +3,16 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::fixed::{get_bool, get_i32, get_i64, put_bool, put_i32, put_i64},
+    codegen_helpers::is_default,
+    owned::broker_heartbeat_request,
+    primitives::{
+        array::{
+            array_len_prefix_len, get_array_len, get_nullable_array_len,
+            nullable_array_len_prefix_len, put_array_len, put_nullable_array_len,
+        },
+        fixed::{get_bool, get_i32, get_i64, put_bool, put_i32, put_i64},
+        uuid::{Uuid, get_uuid, put_uuid},
+    },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
 pub const API_KEY: i16 = 63;
@@ -23,8 +32,8 @@ pub struct BrokerHeartbeatRequest {
     pub current_metadata_offset: i64,
     pub want_fence: bool,
     pub want_shut_down: bool,
-    pub offline_log_dirs: Vec<crate::primitives::uuid::Uuid>,
-    pub cordoned_log_dirs: Option<Vec<crate::primitives::uuid::Uuid>>,
+    pub offline_log_dirs: Vec<Uuid>,
+    pub cordoned_log_dirs: Option<Vec<Uuid>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for BrokerHeartbeatRequest {
@@ -42,12 +51,9 @@ impl Default for BrokerHeartbeatRequest {
     }
 }
 impl BrokerHeartbeatRequest {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::broker_heartbeat_request::BrokerHeartbeatRequest {
-        crate::owned::broker_heartbeat_request::BrokerHeartbeatRequest {
+    pub fn to_owned(&self) -> broker_heartbeat_request::BrokerHeartbeatRequest {
+        broker_heartbeat_request::BrokerHeartbeatRequest {
             broker_id: (self.broker_id),
             broker_epoch: (self.broker_epoch),
             current_metadata_offset: (self.current_metadata_offset),
@@ -85,59 +91,49 @@ impl Encode for BrokerHeartbeatRequest {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.offline_log_dirs)) {
+            if version >= 1 && !(is_default(&self.offline_log_dirs)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.offline_log_dirs).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.offline_log_dirs).len(), flex);
                         let body: usize = (self.offline_log_dirs).iter().map(|_| 16).sum();
                         prefix + body
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.offline_log_dirs).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.offline_log_dirs).len(), flex)?;
                             for it in &self.offline_log_dirs {
-                                crate::primitives::uuid::put_uuid(b, *it);
+                                put_uuid(b, *it);
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
             if version >= 2 && self.cordoned_log_dirs.is_some() {
                 let payload = encode_to_bytes(
                     {
                         let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
-                        let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                            opt.map(std::vec::Vec::len),
-                            flex,
-                        );
+                        let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                         let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                         prefix + body
                     },
                     |b| {
                         {
                             let len = (self.cordoned_log_dirs).as_ref().map(Vec::len);
-                            crate::primitives::array::put_nullable_array_len(b, len, flex);
+                            put_nullable_array_len(b, len, flex)?;
                             if let Some(v) = &self.cordoned_log_dirs {
                                 for it in v {
-                                    crate::primitives::uuid::put_uuid(b, *it);
+                                    put_uuid(b, *it);
                                 }
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(1, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -161,12 +157,9 @@ impl Encode for BrokerHeartbeatRequest {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 1 && !(crate::codegen_helpers::is_default(&self.offline_log_dirs)) {
+            if version >= 1 && !(is_default(&self.offline_log_dirs)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.offline_log_dirs).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.offline_log_dirs).len(), flex);
                     let body: usize = (self.offline_log_dirs).iter().map(|_| 16).sum();
                     prefix + body
                 }));
@@ -174,10 +167,7 @@ impl Encode for BrokerHeartbeatRequest {
             if version >= 2 && self.cordoned_log_dirs.is_some() {
                 known_pairs.push((1, {
                     let opt: Option<&Vec<_>> = (self.cordoned_log_dirs).as_ref();
-                    let prefix = crate::primitives::array::nullable_array_len_prefix_len(
-                        opt.map(std::vec::Vec::len),
-                        flex,
-                    );
+                    let prefix = nullable_array_len_prefix_len(opt.map(Vec::len), flex);
                     let body: usize = opt.map_or(0, |v| v.iter().map(|_| 16).sum());
                     prefix + body
                 }));
@@ -220,10 +210,10 @@ impl<'de> DecodeBorrow<'de> for BrokerHeartbeatRequest {
                     tag_offline_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
-                                v.push(crate::primitives::uuid::get_uuid(b)?);
+                                v.push(get_uuid(b)?);
                             }
                             v
                         }
@@ -235,13 +225,13 @@ impl<'de> DecodeBorrow<'de> for BrokerHeartbeatRequest {
                     tag_cordoned_log_dirs = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let opt = crate::primitives::array::get_nullable_array_len(b, flex)?;
+                            let opt = get_nullable_array_len(b, flex)?;
                             match opt {
                                 None => None,
                                 Some(n) => {
                                     let mut v = Vec::with_capacity(n);
                                     for _ in 0..n {
-                                        v.push(crate::primitives::uuid::get_uuid(b)?);
+                                        v.push(get_uuid(b)?);
                                     }
                                     Some(v)
                                 }
@@ -284,10 +274,10 @@ impl BrokerHeartbeatRequest {
             m.want_shut_down = true;
         }
         if version >= 1 {
-            m.offline_log_dirs = vec![crate::primitives::uuid::Uuid([1u8; 16])];
+            m.offline_log_dirs = vec![Uuid([1u8; 16])];
         }
         if version >= 2 {
-            m.cordoned_log_dirs = Some(vec![crate::primitives::uuid::Uuid([1u8; 16])]);
+            m.cordoned_log_dirs = Some(vec![Uuid([1u8; 16])]);
         }
         m
     }

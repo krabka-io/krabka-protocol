@@ -3,10 +3,13 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
+    owned::offset_commit_value,
     primitives::{
         fixed::{get_i32, get_i64, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -25,7 +28,7 @@ pub struct OffsetCommitValue<'a> {
     pub metadata: &'a str,
     pub commit_timestamp: i64,
     pub expire_timestamp: i64,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Default for OffsetCommitValue<'_> {
@@ -36,21 +39,18 @@ impl Default for OffsetCommitValue<'_> {
             metadata: "",
             commit_timestamp: 0i64,
             expire_timestamp: -1i64,
-            topic_id: crate::primitives::uuid::Uuid::default(),
+            topic_id: Uuid::default(),
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
     }
 }
 impl OffsetCommitValue<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::offset_commit_value::OffsetCommitValue {
-        crate::owned::offset_commit_value::OffsetCommitValue {
+    pub fn to_owned(&self) -> offset_commit_value::OffsetCommitValue {
+        offset_commit_value::OffsetCommitValue {
             offset: (self.offset),
             leader_epoch: (self.leader_epoch),
-            metadata: (self.metadata).to_string(),
+            metadata: (self.metadata).to_owned(),
             commit_timestamp: (self.commit_timestamp),
             expire_timestamp: (self.expire_timestamp),
             topic_id: (self.topic_id),
@@ -74,9 +74,9 @@ impl Encode for OffsetCommitValue<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.metadata);
+                put_compact_string(buf, self.metadata)?;
             } else {
-                let () = put_string(buf, self.metadata);
+                put_string(buf, self.metadata)?;
             }
         }
         if version >= 0 {
@@ -87,14 +87,14 @@ impl Encode for OffsetCommitValue<'_> {
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.topic_id)) {
+            if !(is_default(&self.topic_id)) {
                 let payload = encode_to_bytes(16, |b| {
-                    crate::primitives::uuid::put_uuid(b, self.topic_id);
+                    put_uuid(b, self.topic_id);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -122,7 +122,7 @@ impl Encode for OffsetCommitValue<'_> {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.topic_id)) {
+            if !(is_default(&self.topic_id)) {
                 known_pairs.push((0, 16));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -164,7 +164,7 @@ impl<'de> DecodeBorrow<'de> for OffsetCommitValue<'de> {
                 0 => {
                     tag_topic_id = Some({
                         let b: &mut &[u8] = payload;
-                        crate::primitives::uuid::get_uuid(b)?
+                        get_uuid(b)?
                     });
                     Ok(true)
                 }
@@ -198,7 +198,7 @@ impl OffsetCommitValue<'_> {
             m.expire_timestamp = 1i64;
         }
         if version >= 4 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         m
     }

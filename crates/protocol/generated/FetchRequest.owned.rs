@@ -4,7 +4,9 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +14,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, encode_to_bytes, read_tagged_fields, tagged_fields_len},
 };
@@ -104,11 +107,11 @@ impl FetchRequest {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -120,28 +123,35 @@ impl FetchRequest {
     ) -> Result<(), ProtocolError> {
         if version >= 7 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.forgotten_topics_data).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.forgotten_topics_data).len(), flex)?;
                 for it in &self.forgotten_topics_data {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
-    fn encode_field_9<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_9<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 11 {
             if flex {
-                let () = put_compact_string(buf, &self.rack_id);
+                put_compact_string(buf, &self.rack_id)?;
             } else {
-                let () = put_string(buf, &self.rack_id);
+                put_string(buf, &self.rack_id)?;
             }
         }
+        Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
             if self.cluster_id.is_some() {
@@ -153,24 +163,25 @@ impl FetchRequest {
                     },
                     |b| {
                         if flex {
-                            let () = put_compact_nullable_string(b, self.cluster_id.as_deref());
+                            put_compact_nullable_string(b, self.cluster_id.as_deref())?;
                         } else {
-                            let () = put_nullable_string(b, self.cluster_id.as_deref());
+                            put_nullable_string(b, self.cluster_id.as_deref())?;
                         }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(is_default(&self.replica_state)) {
                 let payload = encode_to_bytes(self.replica_state.encoded_len(version), |b| {
                     self.replica_state.encode(b, version)?;
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -257,7 +268,7 @@ impl FetchRequest {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(FetchTopic::decode(buf, version)?);
@@ -275,7 +286,7 @@ impl FetchRequest {
     ) -> Result<(), ProtocolError> {
         if version >= 7 {
             out.forgotten_topics_data = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ForgottenTopic::decode(buf, version)?);
@@ -359,8 +370,8 @@ impl Encode for FetchRequest {
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex)?;
         self.encode_field_8(buf, version, flex)?;
-        self.encode_field_9(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_field_9(buf, version, flex)?;
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -389,18 +400,14 @@ impl Encode for FetchRequest {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if version >= 7 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.forgotten_topics_data).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.forgotten_topics_data).len(), flex);
                 let body: usize = (self.forgotten_topics_data)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -427,7 +434,7 @@ impl Encode for FetchRequest {
                     },
                 ));
             }
-            if version >= 15 && !(crate::codegen_helpers::is_default(&self.replica_state)) {
+            if version >= 15 && !(is_default(&self.replica_state)) {
                 known_pairs.push((1, self.replica_state.encoded_len(version)));
             }
             n += tagged_fields_len(&known_pairs, &self.unknown_tagged_fields);
@@ -492,10 +499,10 @@ impl FetchRequest {
             m.forgotten_topics_data = vec![ForgottenTopic::populated(version)];
         }
         if version >= 11 {
-            m.rack_id = "x".to_string();
+            m.rack_id = "x".to_owned();
         }
         if version >= 12 {
-            m.cluster_id = Some("x".to_string());
+            m.cluster_id = Some("x".to_owned());
         }
         if version >= 15 {
             m.replica_state = ReplicaState::populated(version);
@@ -529,7 +536,7 @@ impl Encode for ReplicaState {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -582,7 +589,7 @@ impl ReplicaState {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FetchTopic {
     pub topic: String,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<FetchPartition>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -591,25 +598,25 @@ impl Encode for FetchTopic {
         let flex = version >= 12;
         if (0..=12).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version >= 13 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -628,8 +635,7 @@ impl Encode for FetchTopic {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -656,11 +662,11 @@ impl Decode<'_> for FetchTopic {
             };
         }
         if version >= 13 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(FetchPartition::decode(buf, version)?);
@@ -680,10 +686,10 @@ impl FetchTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (0..=12).contains(&version) {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version >= 13 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.partitions = vec![FetchPartition::populated(version)];
@@ -699,7 +705,7 @@ pub struct FetchPartition {
     pub last_fetched_epoch: i32,
     pub log_start_offset: i64,
     pub partition_max_bytes: i32,
-    pub replica_directory_id: crate::primitives::uuid::Uuid,
+    pub replica_directory_id: Uuid,
     pub high_watermark: i64,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -712,7 +718,7 @@ impl Default for FetchPartition {
             last_fetched_epoch: -1i32,
             log_start_offset: -1i64,
             partition_max_bytes: 0i32,
-            replica_directory_id: crate::primitives::uuid::Uuid::default(),
+            replica_directory_id: Uuid::default(),
             high_watermark: 9_223_372_036_854_775_807i64,
             unknown_tagged_fields: UnknownTaggedFields::default(),
         }
@@ -749,25 +755,31 @@ impl FetchPartition {
             put_i32(buf, self.partition_max_bytes);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if version >= 17 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 17 && !(is_default(&self.replica_directory_id)) {
                 let payload = encode_to_bytes(16, |b| {
-                    crate::primitives::uuid::put_uuid(b, self.replica_directory_id);
+                    put_uuid(b, self.replica_directory_id);
                     Ok(())
-                });
+                })?;
                 tagged.add(0, payload);
             }
             if version >= 18 && self.high_watermark != 9_223_372_036_854_775_807i64 {
                 let payload = encode_to_bytes(8, |b| {
                     put_i64(b, self.high_watermark);
                     Ok(())
-                });
+                })?;
                 tagged.add(1, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -848,7 +860,7 @@ impl FetchPartition {
                 0 if version >= 17 => {
                     tag_replica_directory_id = Some({
                         let b: &mut &[u8] = payload;
-                        crate::primitives::uuid::get_uuid(b)?
+                        get_uuid(b)?
                     });
                     Ok(true)
                 }
@@ -882,7 +894,7 @@ impl Encode for FetchPartition {
         self.encode_field_3(buf, version, flex);
         self.encode_field_4(buf, version, flex);
         self.encode_field_5(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -908,7 +920,7 @@ impl Encode for FetchPartition {
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if version >= 17 && !(crate::codegen_helpers::is_default(&self.replica_directory_id)) {
+            if version >= 17 && !(is_default(&self.replica_directory_id)) {
                 known_pairs.push((0, 16));
             }
             if version >= 18 && self.high_watermark != 9_223_372_036_854_775_807i64 {
@@ -957,7 +969,7 @@ impl FetchPartition {
             m.partition_max_bytes = 1i32;
         }
         if version >= 17 {
-            m.replica_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.replica_directory_id = Uuid([1u8; 16]);
         }
         if version >= 18 {
             m.high_watermark = 1i64;
@@ -968,7 +980,7 @@ impl FetchPartition {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ForgottenTopic {
     pub topic: String,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub partitions: Vec<i32>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
@@ -977,25 +989,25 @@ impl Encode for ForgottenTopic {
         let flex = version >= 12;
         if (7..=12).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.topic);
+                put_compact_string(buf, &self.topic)?;
             } else {
-                let () = put_string(buf, &self.topic);
+                put_string(buf, &self.topic)?;
             }
         }
         if version >= 13 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if version >= 7 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     put_i32(buf, *it);
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -1014,8 +1026,7 @@ impl Encode for ForgottenTopic {
         }
         if version >= 7 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions).iter().map(|_| 4).sum();
                 prefix + body
             };
@@ -1039,11 +1050,11 @@ impl Decode<'_> for ForgottenTopic {
             };
         }
         if version >= 13 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if version >= 7 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(get_i32(buf)?);
@@ -1063,10 +1074,10 @@ impl ForgottenTopic {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if (7..=12).contains(&version) {
-            m.topic = "x".to_string();
+            m.topic = "x".to_owned();
         }
         if version >= 13 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         if version >= 7 {
             m.partitions = vec![1i32];
@@ -1081,43 +1092,43 @@ impl ForgottenTopic {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 12 {
-        obj.insert("clusterId".to_string(), ::serde_json::Value::Null);
+        obj.insert("clusterId".to_owned(), ::serde_json::Value::Null);
     }
     if version <= 14 {
-        obj.insert("replicaId".to_string(), ::serde_json::json!(-1));
+        obj.insert("replicaId".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 15 {
-        obj.insert("replicaState".to_string(), {
+        obj.insert("replicaState".to_owned(), {
             let mut m = ::serde_json::Map::new();
-            m.insert("replicaId".to_string(), ::serde_json::json!(-1));
-            m.insert("replicaEpoch".to_string(), ::serde_json::json!(-1));
+            m.insert("replicaId".to_owned(), ::serde_json::json!(-1));
+            m.insert("replicaEpoch".to_owned(), ::serde_json::json!(-1));
             ::serde_json::Value::Object(m)
         });
     }
-    obj.insert("maxWaitMs".to_string(), ::serde_json::json!(0));
-    obj.insert("minBytes".to_string(), ::serde_json::json!(0));
+    obj.insert("maxWaitMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("minBytes".to_owned(), ::serde_json::json!(0));
     if version >= 3 {
-        obj.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
+        obj.insert("maxBytes".to_owned(), ::serde_json::json!(2_147_483_647));
     }
     if version >= 4 {
-        obj.insert("isolationLevel".to_string(), ::serde_json::json!(0));
+        obj.insert("isolationLevel".to_owned(), ::serde_json::json!(0));
     }
     if version >= 7 {
-        obj.insert("sessionId".to_string(), ::serde_json::json!(0));
+        obj.insert("sessionId".to_owned(), ::serde_json::json!(0));
     }
     if version >= 7 {
-        obj.insert("sessionEpoch".to_string(), ::serde_json::json!(-1));
+        obj.insert("sessionEpoch".to_owned(), ::serde_json::json!(-1));
     }
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 7 {
         obj.insert(
-            "forgottenTopicsData".to_string(),
+            "forgottenTopicsData".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
     if version >= 11 {
         obj.insert(
-            "rackId".to_string(),
+            "rackId".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
@@ -1128,7 +1139,7 @@ pub fn default_json(version: i16) -> ::serde_json::Value {
 #[must_use]
 pub fn tagged_fixture() -> FetchRequest {
     FetchRequest {
-        cluster_id: Some("x".to_string()),
+        cluster_id: Some("x".to_owned()),
         replica_state: ReplicaState {
             replica_id: 1i32,
             replica_epoch: 1i64,
@@ -1136,7 +1147,7 @@ pub fn tagged_fixture() -> FetchRequest {
         },
         topics: vec![FetchTopic {
             partitions: vec![FetchPartition {
-                replica_directory_id: crate::primitives::uuid::Uuid([1u8; 16]),
+                replica_directory_id: Uuid([1u8; 16]),
                 high_watermark: 1i64,
                 ..FetchPartition::default()
             }],
@@ -1152,71 +1163,71 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
     if version >= 12 {
         m.insert(
-            "clusterId".to_string(),
-            ::serde_json::Value::String("x".to_string()),
+            "clusterId".to_owned(),
+            ::serde_json::Value::String("x".to_owned()),
         );
     }
     if version <= 14 {
-        m.insert("replicaId".to_string(), ::serde_json::json!(-1));
+        m.insert("replicaId".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 15 {
-        m.insert("replicaState".to_string(), {
+        m.insert("replicaState".to_owned(), {
             let mut m = ::serde_json::Map::new();
-            m.insert("replicaId".to_string(), ::serde_json::json!(1));
-            m.insert("replicaEpoch".to_string(), ::serde_json::json!(1));
+            m.insert("replicaId".to_owned(), ::serde_json::json!(1));
+            m.insert("replicaEpoch".to_owned(), ::serde_json::json!(1));
             ::serde_json::Value::Object(m)
         });
     }
-    m.insert("maxWaitMs".to_string(), ::serde_json::json!(0));
-    m.insert("minBytes".to_string(), ::serde_json::json!(0));
-    m.insert("maxBytes".to_string(), ::serde_json::json!(2_147_483_647));
-    m.insert("isolationLevel".to_string(), ::serde_json::json!(0));
+    m.insert("maxWaitMs".to_owned(), ::serde_json::json!(0));
+    m.insert("minBytes".to_owned(), ::serde_json::json!(0));
+    m.insert("maxBytes".to_owned(), ::serde_json::json!(2_147_483_647));
+    m.insert("isolationLevel".to_owned(), ::serde_json::json!(0));
     if version >= 7 {
-        m.insert("sessionId".to_string(), ::serde_json::json!(0));
+        m.insert("sessionId".to_owned(), ::serde_json::json!(0));
     }
     if version >= 7 {
-        m.insert("sessionEpoch".to_string(), ::serde_json::json!(-1));
+        m.insert("sessionEpoch".to_owned(), ::serde_json::json!(-1));
     }
     m.insert(
-        "topics".to_string(),
+        "topics".to_owned(),
         ::serde_json::Value::Array(vec![{
             let mut m = ::serde_json::Map::new();
             if version <= 12 {
                 m.insert(
-                    "topic".to_string(),
+                    "topic".to_owned(),
                     ::serde_json::Value::String(String::new()),
                 );
             }
             if version >= 13 {
                 m.insert(
-                    "topicId".to_string(),
-                    ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+                    "topicId".to_owned(),
+                    ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
                 );
             }
             m.insert(
-                "partitions".to_string(),
+                "partitions".to_owned(),
                 ::serde_json::Value::Array(vec![{
                     let mut m = ::serde_json::Map::new();
-                    m.insert("partition".to_string(), ::serde_json::json!(0));
+                    m.insert("partition".to_owned(), ::serde_json::json!(0));
                     if version >= 9 {
-                        m.insert("currentLeaderEpoch".to_string(), ::serde_json::json!(-1));
+                        m.insert("currentLeaderEpoch".to_owned(), ::serde_json::json!(-1));
                     }
-                    m.insert("fetchOffset".to_string(), ::serde_json::json!(0));
+                    m.insert("fetchOffset".to_owned(), ::serde_json::json!(0));
                     if version >= 12 {
-                        m.insert("lastFetchedEpoch".to_string(), ::serde_json::json!(-1));
+                        m.insert("lastFetchedEpoch".to_owned(), ::serde_json::json!(-1));
                     }
                     if version >= 5 {
-                        m.insert("logStartOffset".to_string(), ::serde_json::json!(-1));
+                        m.insert("logStartOffset".to_owned(), ::serde_json::json!(-1));
                     }
-                    m.insert("partitionMaxBytes".to_string(), ::serde_json::json!(0));
+                    m.insert("partitionMaxBytes".to_owned(), ::serde_json::json!(0));
                     if version >= 17 {
                         m.insert(
-                            "replicaDirectoryId".to_string(),
-                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string()),
+                            "replicaDirectoryId".to_owned(),
+                            ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_owned()),
                         );
                     }
                     if version == 18 {
-                        m.insert("highWatermark".to_string(), ::serde_json::json!(1));
+                        m.insert("highWatermark".to_owned(), ::serde_json::json!(1));
                     }
                     ::serde_json::Value::Object(m)
                 }]),
@@ -1226,13 +1237,13 @@ pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     );
     if version >= 7 {
         m.insert(
-            "forgottenTopicsData".to_string(),
+            "forgottenTopicsData".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
     if version >= 11 {
         m.insert(
-            "rackId".to_string(),
+            "rackId".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }

@@ -13,7 +13,8 @@
 
 use std::{
     collections::BTreeSet,
-    io::BufRead,
+    fs::{self, File},
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
 };
 
@@ -23,7 +24,7 @@ use crate::{emit::common::BANNER_PREFIX, fmt};
 #[derive(Debug, thiserror::Error)]
 pub enum WriteError {
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
     Fmt(#[from] fmt::FmtError),
 }
@@ -37,8 +38,8 @@ impl Written {
     ///
     /// # Errors
     /// Returns an error when the file cannot be written.
-    pub fn write(&mut self, path: PathBuf, body: &str) -> std::io::Result<()> {
-        std::fs::write(&path, body)?;
+    pub fn write(&mut self, path: PathBuf, body: &str) -> io::Result<()> {
+        fs::write(&path, body)?;
         self.0.insert(path);
         Ok(())
     }
@@ -80,21 +81,21 @@ impl Written {
     /// # Errors
     /// Returns an error when a directory cannot be read or a file cannot be
     /// removed.
-    pub fn prune(&self, dir: &Path, recursive: bool) -> std::io::Result<()> {
+    pub fn prune(&self, dir: &Path, recursive: bool) -> io::Result<()> {
         if !dir.is_dir() {
             return Ok(());
         }
-        for entry in std::fs::read_dir(dir)? {
+        for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             if path.is_dir() {
                 if recursive {
                     self.prune(&path, true)?;
-                    if std::fs::read_dir(&path)?.next().is_none() {
-                        std::fs::remove_dir(&path)?;
+                    if fs::read_dir(&path)?.next().is_none() {
+                        fs::remove_dir(&path)?;
                     }
                 }
             } else if !self.0.contains(&path) && is_generated(&path)? {
-                std::fs::remove_file(&path)?;
+                fs::remove_file(&path)?;
             }
         }
         Ok(())
@@ -102,15 +103,17 @@ impl Written {
 }
 
 /// True when `path` opens with the generated-file banner.
-fn is_generated(path: &Path) -> std::io::Result<bool> {
-    let file = std::fs::File::open(path)?;
+fn is_generated(path: &Path) -> io::Result<bool> {
+    let file = File::open(path)?;
     let mut first = String::new();
-    std::io::BufReader::new(file).read_line(&mut first)?;
+    BufReader::new(file).read_line(&mut first)?;
     Ok(first.starts_with(BANNER_PREFIX))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{env, process};
+
     use assert2::assert;
 
     use super::*;
@@ -121,10 +124,9 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir()
-                .join(format!("krabka-codegen-out-{}-{name}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
+            let dir = env::temp_dir().join(format!("krabka-codegen-out-{}-{name}", process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
             Self(dir)
         }
 
@@ -134,15 +136,15 @@ mod tests {
 
         fn at(&self, rel: &str, body: &str) -> PathBuf {
             let path = self.0.join(rel);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, body).unwrap();
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, body).unwrap();
             path
         }
     }
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
+            let _ = fs::remove_dir_all(&self.0);
         }
     }
 

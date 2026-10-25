@@ -31,7 +31,7 @@ pub struct WallMicros(pub i64);
 
 impl WallMicros {
     /// The Unix epoch, `1970-01-01T00:00:00Z`.
-    pub const EPOCH: Self = WallMicros(0);
+    pub const EPOCH: Self = Self(0);
 
     /// The inner `i64`. Use it for arithmetic against other time counts.
     #[must_use]

@@ -3,10 +3,13 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::controller_registration_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i16, get_i32, get_u16, put_bool, put_i16, put_i32, put_u16},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -23,21 +26,16 @@ pub fn is_flexible(version: i16) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ControllerRegistrationRequest<'a> {
     pub controller_id: i32,
-    pub incarnation_id: crate::primitives::uuid::Uuid,
+    pub incarnation_id: Uuid,
     pub zk_migration_ready: bool,
     pub listeners: Vec<Listener<'a>>,
     pub features: Vec<Feature<'a>>,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ControllerRegistrationRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::controller_registration_request::ControllerRegistrationRequest {
-        crate::owned::controller_registration_request::ControllerRegistrationRequest {
+    pub fn to_owned(&self) -> controller_registration_request::ControllerRegistrationRequest {
+        controller_registration_request::ControllerRegistrationRequest {
             controller_id: (self.controller_id),
             incarnation_id: (self.incarnation_id),
             zk_migration_ready: (self.zk_migration_ready),
@@ -60,30 +58,30 @@ impl Encode for ControllerRegistrationRequest<'_> {
             put_i32(buf, self.controller_id);
         }
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.incarnation_id);
+            put_uuid(buf, self.incarnation_id);
         }
         if version >= 0 {
             put_bool(buf, self.zk_migration_ready);
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.listeners).len(), flex);
+                put_array_len(buf, (self.listeners).len(), flex)?;
                 for it in &self.listeners {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.features).len(), flex);
+                put_array_len(buf, (self.features).len(), flex)?;
                 for it in &self.features {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -101,8 +99,7 @@ impl Encode for ControllerRegistrationRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.listeners).len(), flex);
+                let prefix = array_len_prefix_len((self.listeners).len(), flex);
                 let body: usize = (self.listeners)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -112,8 +109,7 @@ impl Encode for ControllerRegistrationRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.features).len(), flex);
+                let prefix = array_len_prefix_len((self.features).len(), flex);
                 let body: usize = (self.features)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -142,14 +138,14 @@ impl<'de> DecodeBorrow<'de> for ControllerRegistrationRequest<'de> {
             out.controller_id = get_i32(buf)?;
         }
         if version >= 0 {
-            out.incarnation_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.incarnation_id = get_uuid(buf)?;
         }
         if version >= 0 {
             out.zk_migration_ready = get_bool(buf)?;
         }
         if version >= 0 {
             out.listeners = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Listener::decode_borrow(buf, version)?);
@@ -159,7 +155,7 @@ impl<'de> DecodeBorrow<'de> for ControllerRegistrationRequest<'de> {
         }
         if version >= 0 {
             out.features = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(Feature::decode_borrow(buf, version)?);
@@ -182,7 +178,7 @@ impl ControllerRegistrationRequest<'_> {
             m.controller_id = 1i32;
         }
         if version >= 0 {
-            m.incarnation_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.incarnation_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.zk_migration_ready = true;
@@ -205,14 +201,11 @@ pub struct Listener<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Listener<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::controller_registration_request::Listener {
-        crate::owned::controller_registration_request::Listener {
-            name: (self.name).to_string(),
-            host: (self.host).to_string(),
+    pub fn to_owned(&self) -> controller_registration_request::Listener {
+        controller_registration_request::Listener {
+            name: (self.name).to_owned(),
+            host: (self.host).to_owned(),
             port: (self.port),
             security_protocol: (self.security_protocol),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -224,16 +217,16 @@ impl Encode for Listener<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -244,7 +237,7 @@ impl Encode for Listener<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -336,13 +329,10 @@ pub struct Feature<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Feature<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::controller_registration_request::Feature {
-        crate::owned::controller_registration_request::Feature {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> controller_registration_request::Feature {
+        controller_registration_request::Feature {
+            name: (self.name).to_owned(),
             min_supported_version: (self.min_supported_version),
             max_supported_version: (self.max_supported_version),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -354,9 +344,9 @@ impl Encode for Feature<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
@@ -367,7 +357,7 @@ impl Encode for Feature<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

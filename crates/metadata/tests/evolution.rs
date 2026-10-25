@@ -2,6 +2,9 @@
 //! everything is V1. The future-version policy is "decode v2 →
 //! re-encode v1 round-trips for the fields v1 understands." This harness
 //! seeds that contract with an assertion that v1 ↔ v1 round-trips.
+#![cfg(test)]
+
+use std::collections::BTreeMap;
 
 use krabka_metadata::{
     BrokerRegistrationRecord, DeleteTopicRecord, LeaderEpoch, MetadataRecord, NodeId,
@@ -48,7 +51,7 @@ prop_compose! {
         port in 1024..65535u16,
         rack in prop::option::of("[a-zA-Z][a-zA-Z0-9-]{0,16}"),
     ) -> BrokerRegistrationRecord {
-        BrokerRegistrationRecord { node_id: NodeId(node_id), broker_epoch: 0, incarnation_id: uuid::Uuid::nil(), host, port, rack, endpoints: vec![], log_dirs: vec![], fenced: false, in_controlled_shutdown: false, cordoned_log_dirs: None, features: std::collections::BTreeMap::new() }
+        BrokerRegistrationRecord { node_id: NodeId(node_id), broker_epoch: 0, incarnation_id: uuid::Uuid::nil(), host, port, rack, endpoints: vec![], log_dirs: vec![], fenced: false, in_controlled_shutdown: false, cordoned_log_dirs: None, features: BTreeMap::new() }
     }
 }
 

@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::delete_acls_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i16, get_i32, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -33,12 +35,9 @@ pub struct DeleteAclsResponse<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DeleteAclsResponse<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_acls_response::DeleteAclsResponse {
-        crate::owned::delete_acls_response::DeleteAclsResponse {
+    pub fn to_owned(&self) -> delete_acls_response::DeleteAclsResponse {
+        delete_acls_response::DeleteAclsResponse {
             throttle_time_ms: (self.throttle_time_ms),
             filter_results: (self.filter_results)
                 .iter()
@@ -62,15 +61,15 @@ impl Encode for DeleteAclsResponse<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.filter_results).len(), flex);
+                put_array_len(buf, (self.filter_results).len(), flex)?;
                 for it in &self.filter_results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -82,10 +81,7 @@ impl Encode for DeleteAclsResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.filter_results).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.filter_results).len(), flex);
                 let body: usize = (self.filter_results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -115,7 +111,7 @@ impl<'de> DecodeBorrow<'de> for DeleteAclsResponse<'de> {
         }
         if version >= 0 {
             out.filter_results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteAclsFilterResult::decode_borrow(buf, version)?);
@@ -161,14 +157,11 @@ impl Default for DeleteAclsFilterResult<'_> {
     }
 }
 impl DeleteAclsFilterResult<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_acls_response::DeleteAclsFilterResult {
-        crate::owned::delete_acls_response::DeleteAclsFilterResult {
+    pub fn to_owned(&self) -> delete_acls_response::DeleteAclsFilterResult {
+        delete_acls_response::DeleteAclsFilterResult {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             matching_acls: (self.matching_acls)
                 .iter()
                 .map(DeleteAclsMatchingAcl::to_owned)
@@ -185,22 +178,22 @@ impl Encode for DeleteAclsFilterResult<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.matching_acls).len(), flex);
+                put_array_len(buf, (self.matching_acls).len(), flex)?;
                 for it in &self.matching_acls {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -219,10 +212,7 @@ impl Encode for DeleteAclsFilterResult<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.matching_acls).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.matching_acls).len(), flex);
                 let body: usize = (self.matching_acls)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -253,7 +243,7 @@ impl<'de> DecodeBorrow<'de> for DeleteAclsFilterResult<'de> {
         }
         if version >= 0 {
             out.matching_acls = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteAclsMatchingAcl::decode_borrow(buf, version)?);
@@ -314,19 +304,16 @@ impl Default for DeleteAclsMatchingAcl<'_> {
     }
 }
 impl<'a> DeleteAclsMatchingAcl<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::delete_acls_response::DeleteAclsMatchingAcl {
-        crate::owned::delete_acls_response::DeleteAclsMatchingAcl {
+    pub fn to_owned(&self) -> delete_acls_response::DeleteAclsMatchingAcl {
+        delete_acls_response::DeleteAclsMatchingAcl {
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             resource_type: (self.resource_type),
-            resource_name: (self.resource_name).to_string(),
+            resource_name: (self.resource_name).to_owned(),
             pattern_type: (self.pattern_type),
-            principal: (self.principal).to_string(),
-            host: (self.host).to_string(),
+            principal: (self.principal).to_owned(),
+            host: (self.host).to_owned(),
             operation: (self.operation),
             permission_type: (self.permission_type),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -337,51 +324,75 @@ impl<'a> DeleteAclsMatchingAcl<'a> {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
+        Ok(())
     }
     fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i8(buf, self.resource_type);
         }
     }
-    fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_3<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.resource_name);
+                put_compact_string(buf, self.resource_name)?;
             } else {
-                let () = put_string(buf, self.resource_name);
+                put_string(buf, self.resource_name)?;
             }
         }
+        Ok(())
     }
     fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 1 {
             put_i8(buf, self.pattern_type);
         }
     }
-    fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_5<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.principal);
+                put_compact_string(buf, self.principal)?;
             } else {
-                let () = put_string(buf, self.principal);
+                put_string(buf, self.principal)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_6<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
+        Ok(())
     }
     fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -393,11 +404,17 @@ impl<'a> DeleteAclsMatchingAcl<'a> {
             put_i8(buf, self.permission_type);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -530,15 +547,15 @@ impl Encode for DeleteAclsMatchingAcl<'_> {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 2;
         self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
+        self.encode_field_1(buf, version, flex)?;
         self.encode_field_2(buf, version, flex);
-        self.encode_field_3(buf, version, flex);
+        self.encode_field_3(buf, version, flex)?;
         self.encode_field_4(buf, version, flex);
-        self.encode_field_5(buf, version, flex);
-        self.encode_field_6(buf, version, flex);
+        self.encode_field_5(buf, version, flex)?;
+        self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
         self.encode_field_8(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {

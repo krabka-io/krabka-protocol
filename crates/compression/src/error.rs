@@ -1,5 +1,7 @@
 //! Errors returned by `compress` and `decompress`.
 
+use std::io;
+
 use thiserror::Error;
 
 /// Errors that can occur during compression or decompression.
@@ -37,7 +39,7 @@ pub enum CompressionError {
 
     /// I/O error from one of the codec libraries.
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 }
 
 #[cfg(test)]

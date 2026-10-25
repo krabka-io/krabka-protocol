@@ -3,6 +3,9 @@
 //! Each property holds three claims for a randomly built message: `encoded_len`
 //! predicts the exact byte count, a decode consumes every byte, and the decoded
 //! value equals the original.
+#![cfg(test)]
+
+use std::fmt;
 
 use bytes::{Bytes, BytesMut};
 use krabka_protocol::{
@@ -24,7 +27,7 @@ const V0: i16 = 0;
 
 fn check_roundtrip<T>(value: &T) -> Result<(), TestCaseError>
 where
-    T: Encode + for<'de> Decode<'de> + PartialEq + std::fmt::Debug,
+    T: Encode + for<'de> Decode<'de> + PartialEq + fmt::Debug,
 {
     let mut buf = BytesMut::new();
     value.encode(&mut buf, V0).unwrap();

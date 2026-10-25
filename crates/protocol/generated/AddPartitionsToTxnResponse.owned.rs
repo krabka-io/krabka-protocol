@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, put_i16, put_i32},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -47,31 +48,23 @@ impl Encode for AddPartitionsToTxnResponse {
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.results_by_transaction).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.results_by_transaction).len(), flex)?;
                 for it in &self.results_by_transaction {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if (0..=3).contains(&version) {
             {
-                crate::primitives::array::put_array_len(
-                    buf,
-                    (self.results_by_topic_v3_and_below).len(),
-                    flex,
-                );
+                put_array_len(buf, (self.results_by_topic_v3_and_below).len(), flex)?;
                 for it in &self.results_by_topic_v3_and_below {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -86,10 +79,7 @@ impl Encode for AddPartitionsToTxnResponse {
         }
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.results_by_transaction).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.results_by_transaction).len(), flex);
                 let body: usize = (self.results_by_transaction)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -99,10 +89,7 @@ impl Encode for AddPartitionsToTxnResponse {
         }
         if (0..=3).contains(&version) {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.results_by_topic_v3_and_below).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.results_by_topic_v3_and_below).len(), flex);
                 let body: usize = (self.results_by_topic_v3_and_below)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -135,7 +122,7 @@ impl Decode<'_> for AddPartitionsToTxnResponse {
         }
         if version >= 4 {
             out.results_by_transaction = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(AddPartitionsToTxnResult::decode(buf, version)?);
@@ -145,7 +132,7 @@ impl Decode<'_> for AddPartitionsToTxnResponse {
         }
         if (0..=3).contains(&version) {
             out.results_by_topic_v3_and_below = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult::decode(buf, version)?);
@@ -190,22 +177,22 @@ impl Encode for AddPartitionsToTxnResult {
         let flex = version >= 3;
         if version >= 4 {
             if flex {
-                let () = put_compact_string(buf, &self.transactional_id);
+                put_compact_string(buf, &self.transactional_id)?;
             } else {
-                let () = put_string(buf, &self.transactional_id);
+                put_string(buf, &self.transactional_id)?;
             }
         }
         if version >= 4 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_results).len(), flex);
+                put_array_len(buf, (self.topic_results).len(), flex)?;
                 for it in &self.topic_results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -221,10 +208,7 @@ impl Encode for AddPartitionsToTxnResult {
         }
         if version >= 4 {
             n += {
-                let prefix = crate::primitives::array::array_len_prefix_len(
-                    (self.topic_results).len(),
-                    flex,
-                );
+                let prefix = array_len_prefix_len((self.topic_results).len(), flex);
                 let body: usize = (self.topic_results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -252,7 +236,7 @@ impl Decode<'_> for AddPartitionsToTxnResult {
         }
         if version >= 4 {
             out.topic_results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(super::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult::decode(buf, version)?);
@@ -272,7 +256,7 @@ impl AddPartitionsToTxnResult {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 4 {
-            m.transactional_id = "x".to_string();
+            m.transactional_id = "x".to_owned();
         }
         if version >= 4 {
             m.topic_results = vec![super::common::add_partitions_to_txn_response::add_partitions_to_txn_topic_result::AddPartitionsToTxnTopicResult::populated(version)];
@@ -286,19 +270,19 @@ impl AddPartitionsToTxnResult {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
     if version >= 4 {
-        obj.insert("errorCode".to_string(), ::serde_json::json!(0));
+        obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
     }
     if version >= 4 {
         obj.insert(
-            "resultsByTransaction".to_string(),
+            "resultsByTransaction".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
     if version <= 3 {
         obj.insert(
-            "resultsByTopicV3AndBelow".to_string(),
+            "resultsByTopicV3AndBelow".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }

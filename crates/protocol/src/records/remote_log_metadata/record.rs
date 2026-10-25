@@ -27,7 +27,7 @@ use crate::{
 ///
 /// All four record schemas are version 0, so the apiVersion is always written
 /// as 0.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteLogMetadataRecord {
     SegmentMetadata(RemoteLogSegmentMetadataRecord), // apiKey 0
     SegmentMetadataUpdate(RemoteLogSegmentMetadataUpdateRecord), // apiKey 1

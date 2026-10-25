@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -44,15 +45,15 @@ impl Encode for DescribeConfigsResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.results).len(), flex);
+                put_array_len(buf, (self.results).len(), flex)?;
                 for it in &self.results {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -64,8 +65,7 @@ impl Encode for DescribeConfigsResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.results).len(), flex);
+                let prefix = array_len_prefix_len((self.results).len(), flex);
                 let body: usize = (self.results)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -95,7 +95,7 @@ impl Decode<'_> for DescribeConfigsResponse {
         }
         if version >= 0 {
             out.results = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResult::decode(buf, version)?);
@@ -152,9 +152,9 @@ impl Encode for DescribeConfigsResult {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message.as_deref());
+                put_compact_nullable_string(buf, self.error_message.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.error_message.as_deref());
+                put_nullable_string(buf, self.error_message.as_deref())?;
             }
         }
         if version >= 0 {
@@ -162,22 +162,22 @@ impl Encode for DescribeConfigsResult {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.configs).len(), flex);
+                put_array_len(buf, (self.configs).len(), flex)?;
                 for it in &self.configs {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -206,8 +206,7 @@ impl Encode for DescribeConfigsResult {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.configs).len(), flex);
+                let prefix = array_len_prefix_len((self.configs).len(), flex);
                 let body: usize = (self.configs)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -248,7 +247,7 @@ impl Decode<'_> for DescribeConfigsResult {
         }
         if version >= 0 {
             out.configs = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsResourceResult::decode(buf, version)?);
@@ -271,13 +270,13 @@ impl DescribeConfigsResult {
             m.error_code = 1i16;
         }
         if version >= 0 {
-            m.error_message = Some("x".to_string());
+            m.error_message = Some("x".to_owned());
         }
         if version >= 0 {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 0 {
             m.configs = vec![DescribeConfigsResourceResult::populated(version)];
@@ -313,23 +312,35 @@ impl Default for DescribeConfigsResourceResult {
     }
 }
 impl DescribeConfigsResourceResult {
-    fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_0<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_1<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value.as_deref());
+                put_compact_nullable_string(buf, self.value.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.value.as_deref());
+                put_nullable_string(buf, self.value.as_deref())?;
             }
         }
+        Ok(())
     }
     fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -354,11 +365,11 @@ impl DescribeConfigsResourceResult {
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
             {
-                crate::primitives::array::put_array_len(buf, (self.synonyms).len(), flex);
+                put_array_len(buf, (self.synonyms).len(), flex)?;
                 for it in &self.synonyms {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -367,20 +378,32 @@ impl DescribeConfigsResourceResult {
             put_i8(buf, self.config_type);
         }
     }
-    fn encode_field_7<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_7<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.documentation.as_deref());
+                put_compact_nullable_string(buf, self.documentation.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.documentation.as_deref());
+                put_nullable_string(buf, self.documentation.as_deref())?;
             }
         }
+        Ok(())
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -453,7 +476,7 @@ impl DescribeConfigsResourceResult {
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
             out.synonyms = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeConfigsSynonym::decode(buf, version)?);
@@ -504,15 +527,15 @@ impl DescribeConfigsResourceResult {
 impl Encode for DescribeConfigsResourceResult {
     fn encode<B: BufMut>(&self, buf: &mut B, version: i16) -> Result<(), ProtocolError> {
         let flex = version >= 4;
-        self.encode_field_0(buf, version, flex);
-        self.encode_field_1(buf, version, flex);
+        self.encode_field_0(buf, version, flex)?;
+        self.encode_field_1(buf, version, flex)?;
         self.encode_field_2(buf, version, flex);
         self.encode_field_3(buf, version, flex);
         self.encode_field_4(buf, version, flex);
         self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex);
-        self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_field_7(buf, version, flex)?;
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -543,8 +566,7 @@ impl Encode for DescribeConfigsResourceResult {
         }
         if version >= 1 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.synonyms).len(), flex);
+                let prefix = array_len_prefix_len((self.synonyms).len(), flex);
                 let body: usize = (self.synonyms)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -591,10 +613,10 @@ impl DescribeConfigsResourceResult {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 0 {
-            m.value = Some("x".to_string());
+            m.value = Some("x".to_owned());
         }
         if version >= 0 {
             m.read_only = true;
@@ -612,7 +634,7 @@ impl DescribeConfigsResourceResult {
             m.config_type = 1i8;
         }
         if version >= 3 {
-            m.documentation = Some("x".to_string());
+            m.documentation = Some("x".to_owned());
         }
         m
     }
@@ -639,16 +661,16 @@ impl Encode for DescribeConfigsSynonym {
         let flex = version >= 4;
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.name);
+                put_compact_string(buf, &self.name)?;
             } else {
-                let () = put_string(buf, &self.name);
+                put_string(buf, &self.name)?;
             }
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.value.as_deref());
+                put_compact_nullable_string(buf, self.value.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.value.as_deref());
+                put_nullable_string(buf, self.value.as_deref())?;
             }
         }
         if version >= 1 {
@@ -656,7 +678,7 @@ impl Encode for DescribeConfigsSynonym {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -720,10 +742,10 @@ impl DescribeConfigsSynonym {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 1 {
-            m.name = "x".to_string();
+            m.name = "x".to_owned();
         }
         if version >= 1 {
-            m.value = Some("x".to_string());
+            m.value = Some("x".to_owned());
         }
         if version >= 1 {
             m.source = 1i8;
@@ -737,7 +759,7 @@ impl DescribeConfigsSynonym {
 #[allow(unused_comparisons)]
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
-    obj.insert("results".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
+    obj.insert("results".to_owned(), ::serde_json::Value::Array(vec![]));
     ::serde_json::Value::Object(obj)
 }

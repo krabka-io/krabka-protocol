@@ -3,6 +3,8 @@
 //! It supports SCRAM-SHA-256 and SCRAM-SHA-512. The mechanism is fixed at
 //! construction.
 
+use std::{iter, str::from_utf8};
+
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use hmac::{Hmac, KeyInit, Mac};
 use ring::rand::{SecureRandom, SystemRandom};
@@ -110,7 +112,7 @@ impl ScramClientExchange {
             .fill(&mut nonce_bytes)
             .map_err(|_| AuthError::MalformedMessage)?;
         let client_nonce = B64.encode(nonce_bytes);
-        let bare = std::iter::once(format!(
+        let bare = iter::once(format!(
             "n={},r={client_nonce}",
             encode_saslname(&self.username)
         ))
@@ -147,13 +149,13 @@ impl AwaitingServerFirst {
         err
     )]
     pub fn step(self, server_bytes: &[u8]) -> Result<(Vec<u8>, AwaitingServerFinal), AuthError> {
-        let s = std::str::from_utf8(server_bytes).map_err(|_| AuthError::MalformedMessage)?;
+        let s = from_utf8(server_bytes).map_err(|_| AuthError::MalformedMessage)?;
         let mut nonce = None;
         let mut salt = None;
         let mut iterations = None;
         for attr in s.split(',') {
             if let Some(v) = attr.strip_prefix("r=") {
-                nonce = Some(v.to_string());
+                nonce = Some(v.to_owned());
             } else if let Some(v) = attr.strip_prefix("s=") {
                 salt = Some(B64.decode(v).map_err(|_| AuthError::MalformedMessage)?);
             } else if let Some(v) = attr.strip_prefix("i=") {
@@ -205,7 +207,7 @@ impl AwaitingServerFinal {
         err
     )]
     pub fn verify_server_final(self, server_bytes: &[u8]) -> Result<(), AuthError> {
-        let s = std::str::from_utf8(server_bytes).map_err(|_| AuthError::MalformedMessage)?;
+        let s = from_utf8(server_bytes).map_err(|_| AuthError::MalformedMessage)?;
         let v_b64 = s.strip_prefix("v=").ok_or(AuthError::MalformedMessage)?;
         let v = B64.decode(v_b64).map_err(|_| AuthError::MalformedMessage)?;
         let expected: Vec<u8> = match self.mechanism {

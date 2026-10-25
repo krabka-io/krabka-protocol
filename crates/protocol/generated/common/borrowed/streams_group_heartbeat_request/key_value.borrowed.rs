@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::common::streams_group_heartbeat_request::key_value,
     primitives::{
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -16,16 +17,11 @@ pub struct KeyValue<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl KeyValue<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(
-        &self,
-    ) -> crate::owned::common::streams_group_heartbeat_request::key_value::KeyValue {
-        crate::owned::common::streams_group_heartbeat_request::key_value::KeyValue {
-            key: (self.key).to_string(),
-            value: (self.value).to_string(),
+    pub fn to_owned(&self) -> key_value::KeyValue {
+        key_value::KeyValue {
+            key: (self.key).to_owned(),
+            value: (self.value).to_owned(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
     }
@@ -35,21 +31,21 @@ impl Encode for KeyValue<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.key);
+                put_compact_string(buf, self.key)?;
             } else {
-                let () = put_string(buf, self.key);
+                put_string(buf, self.key)?;
             }
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.value);
+                put_compact_string(buf, self.value)?;
             } else {
-                let () = put_string(buf, self.value);
+                put_string(buf, self.value)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

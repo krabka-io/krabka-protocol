@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::describe_cluster_response,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i8, get_i16, get_i32, put_bool, put_i8, put_i16, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -54,17 +56,14 @@ impl Default for DescribeClusterResponse<'_> {
     }
 }
 impl<'a> DescribeClusterResponse<'a> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_cluster_response::DescribeClusterResponse {
-        crate::owned::describe_cluster_response::DescribeClusterResponse {
+    pub fn to_owned(&self) -> describe_cluster_response::DescribeClusterResponse {
+        describe_cluster_response::DescribeClusterResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
-            error_message: (self.error_message).map(std::string::ToString::to_string),
+            error_message: (self.error_message).map(str::to_owned),
             endpoint_type: (self.endpoint_type),
-            cluster_id: (self.cluster_id).to_string(),
+            cluster_id: (self.cluster_id).to_owned(),
             controller_id: (self.controller_id),
             brokers: (self.brokers)
                 .iter()
@@ -84,28 +83,40 @@ impl<'a> DescribeClusterResponse<'a> {
             put_i16(buf, self.error_code);
         }
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.error_message);
+                put_compact_nullable_string(buf, self.error_message)?;
             } else {
-                let () = put_nullable_string(buf, self.error_message);
+                put_nullable_string(buf, self.error_message)?;
             }
         }
+        Ok(())
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 1 {
             put_i8(buf, self.endpoint_type);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.cluster_id);
+                put_compact_string(buf, self.cluster_id)?;
             } else {
-                let () = put_string(buf, self.cluster_id);
+                put_string(buf, self.cluster_id)?;
             }
         }
+        Ok(())
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -120,11 +131,11 @@ impl<'a> DescribeClusterResponse<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.brokers).len(), flex);
+                put_array_len(buf, (self.brokers).len(), flex)?;
                 for it in &self.brokers {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         Ok(())
     }
@@ -133,11 +144,17 @@ impl<'a> DescribeClusterResponse<'a> {
             put_i32(buf, self.cluster_authorized_operations);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -221,7 +238,7 @@ impl<'a> DescribeClusterResponse<'a> {
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
             out.brokers = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DescribeClusterBroker::decode_borrow(buf, version)?);
@@ -265,13 +282,13 @@ impl Encode for DescribeClusterResponse<'_> {
         let flex = is_flexible(version);
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
+        self.encode_field_2(buf, version, flex)?;
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex)?;
         self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -305,8 +322,7 @@ impl Encode for DescribeClusterResponse<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.brokers).len(), flex);
+                let prefix = array_len_prefix_len((self.brokers).len(), flex);
                 let body: usize = (self.brokers)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -388,16 +404,13 @@ pub struct DescribeClusterBroker<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl DescribeClusterBroker<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::describe_cluster_response::DescribeClusterBroker {
-        crate::owned::describe_cluster_response::DescribeClusterBroker {
+    pub fn to_owned(&self) -> describe_cluster_response::DescribeClusterBroker {
+        describe_cluster_response::DescribeClusterBroker {
             broker_id: (self.broker_id),
-            host: (self.host).to_string(),
+            host: (self.host).to_owned(),
             port: (self.port),
-            rack: (self.rack).map(std::string::ToString::to_string),
+            rack: (self.rack).map(str::to_owned),
             is_fenced: (self.is_fenced),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -411,9 +424,9 @@ impl Encode for DescribeClusterBroker<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.host);
+                put_compact_string(buf, self.host)?;
             } else {
-                let () = put_string(buf, self.host);
+                put_string(buf, self.host)?;
             }
         }
         if version >= 0 {
@@ -421,9 +434,9 @@ impl Encode for DescribeClusterBroker<'_> {
         }
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.rack);
+                put_compact_nullable_string(buf, self.rack)?;
             } else {
-                let () = put_nullable_string(buf, self.rack);
+                put_nullable_string(buf, self.rack)?;
             }
         }
         if version >= 2 {
@@ -431,7 +444,7 @@ impl Encode for DescribeClusterBroker<'_> {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -3,6 +3,7 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::broker_heartbeat_response,
     primitives::fixed::{get_bool, get_i16, get_i32, put_bool, put_i16, put_i32},
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -37,12 +38,9 @@ impl Default for BrokerHeartbeatResponse {
     }
 }
 impl BrokerHeartbeatResponse {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::broker_heartbeat_response::BrokerHeartbeatResponse {
-        crate::owned::broker_heartbeat_response::BrokerHeartbeatResponse {
+    pub fn to_owned(&self) -> broker_heartbeat_response::BrokerHeartbeatResponse {
+        broker_heartbeat_response::BrokerHeartbeatResponse {
             throttle_time_ms: (self.throttle_time_ms),
             error_code: (self.error_code),
             is_caught_up: (self.is_caught_up),
@@ -78,7 +76,7 @@ impl Encode for BrokerHeartbeatResponse {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

@@ -1,4 +1,5 @@
 //! The fixed-width byte layout of a stamp, and the validation of a decode.
+#![cfg(test)]
 
 use assert2::check;
 use krabka_hlc::{HLC_ENCODED_LEN, Hlc, HlcError, WallMicros};

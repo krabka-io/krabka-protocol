@@ -3,8 +3,9 @@ use bytes::{BufMut, Bytes};
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::sasl_authenticate_request,
     primitives::{
-        string_bytes::{put_bytes, put_compact_bytes},
+        string_bytes::{bytes_len, compact_bytes_len, put_bytes, put_compact_bytes},
         string_bytes_borrowed::{get_bytes_borrowed, get_compact_bytes_borrowed},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
@@ -25,12 +26,9 @@ pub struct SaslAuthenticateRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl SaslAuthenticateRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::sasl_authenticate_request::SaslAuthenticateRequest {
-        crate::owned::sasl_authenticate_request::SaslAuthenticateRequest {
+    pub fn to_owned(&self) -> sasl_authenticate_request::SaslAuthenticateRequest {
+        sasl_authenticate_request::SaslAuthenticateRequest {
             auth_bytes: Bytes::copy_from_slice(self.auth_bytes),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
         }
@@ -47,14 +45,14 @@ impl Encode for SaslAuthenticateRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_bytes(buf, self.auth_bytes);
+                put_compact_bytes(buf, self.auth_bytes)?;
             } else {
-                let () = put_bytes(buf, self.auth_bytes);
+                put_bytes(buf, self.auth_bytes)?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -63,11 +61,9 @@ impl Encode for SaslAuthenticateRequest<'_> {
         let mut n: usize = 0;
         if version >= 0 {
             n += if flex {
-                crate::primitives::varint::uvarint_len(
-                    u32::try_from((self.auth_bytes).len() + 1).unwrap(),
-                ) + (self.auth_bytes).len()
+                compact_bytes_len(self.auth_bytes)
             } else {
-                4 + (self.auth_bytes).len()
+                bytes_len(self.auth_bytes)
             };
         }
         if flex {

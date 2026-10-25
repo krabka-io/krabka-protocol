@@ -4,7 +4,9 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
+    codegen_helpers::is_default,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i16, get_i32, get_u16, put_i16, put_i32, put_u16},
         string_bytes::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
@@ -43,21 +45,18 @@ impl Encode for BeginQuorumEpochResponse {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let mut tagged = WriteTaggedFields::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if !(is_default(&self.node_endpoints)) {
                 let payload = encode_to_bytes(
                     {
-                        let prefix = crate::primitives::array::array_len_prefix_len(
-                            (self.node_endpoints).len(),
-                            flex,
-                        );
+                        let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                         let body: usize = (self.node_endpoints)
                             .iter()
                             .map(|it| it.encoded_len(version))
@@ -66,21 +65,17 @@ impl Encode for BeginQuorumEpochResponse {
                     },
                     |b| {
                         {
-                            crate::primitives::array::put_array_len(
-                                b,
-                                (self.node_endpoints).len(),
-                                flex,
-                            );
+                            put_array_len(b, (self.node_endpoints).len(), flex)?;
                             for it in &self.node_endpoints {
                                 it.encode(b, version)?;
                             }
-                        };
+                        }
                         Ok(())
                     },
-                );
+                )?;
                 tagged.add(0, payload);
             }
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -92,20 +87,16 @@ impl Encode for BeginQuorumEpochResponse {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if flex {
             let mut known_pairs: Vec<(u32, usize)> = Vec::new();
-            if !(crate::codegen_helpers::is_default(&self.node_endpoints)) {
+            if !(is_default(&self.node_endpoints)) {
                 known_pairs.push((0, {
-                    let prefix = crate::primitives::array::array_len_prefix_len(
-                        (self.node_endpoints).len(),
-                        flex,
-                    );
+                    let prefix = array_len_prefix_len((self.node_endpoints).len(), flex);
                     let body: usize = (self.node_endpoints)
                         .iter()
                         .map(|it| it.encoded_len(version))
@@ -133,7 +124,7 @@ impl Decode<'_> for BeginQuorumEpochResponse {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode(buf, version)?);
@@ -148,7 +139,7 @@ impl Decode<'_> for BeginQuorumEpochResponse {
                     tag_node_endpoints = Some({
                         let b: &mut &[u8] = payload;
                         {
-                            let n = crate::primitives::array::get_array_len(b, flex)?;
+                            let n = get_array_len(b, flex)?;
                             let mut v = Vec::with_capacity(n);
                             for _ in 0..n {
                                 v.push(NodeEndpoint::decode(b, version)?);
@@ -195,22 +186,22 @@ impl Encode for TopicData {
         let flex = version >= 1;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.topic_name);
+                put_compact_string(buf, &self.topic_name)?;
             } else {
-                let () = put_string(buf, &self.topic_name);
+                put_string(buf, &self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -226,8 +217,7 @@ impl Encode for TopicData {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -255,7 +245,7 @@ impl Decode<'_> for TopicData {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode(buf, version)?);
@@ -275,7 +265,7 @@ impl TopicData {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.topic_name = "x".to_string();
+            m.topic_name = "x".to_owned();
         }
         if version >= 0 {
             m.partitions = vec![PartitionData::populated(version)];
@@ -308,7 +298,7 @@ impl Encode for PartitionData {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -391,9 +381,9 @@ impl Encode for NodeEndpoint {
         }
         if version >= 1 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
         if version >= 1 {
@@ -401,7 +391,7 @@ impl Encode for NodeEndpoint {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -460,7 +450,7 @@ impl NodeEndpoint {
             m.node_id = 1i32;
         }
         if version >= 1 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 1 {
             m.port = 1u16;
@@ -474,11 +464,11 @@ impl NodeEndpoint {
 #[allow(unused_comparisons)]
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
-    obj.insert("errorCode".to_string(), ::serde_json::json!(0));
-    obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    obj.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     if version >= 1 {
         obj.insert(
-            "nodeEndpoints".to_string(),
+            "nodeEndpoints".to_owned(),
             ::serde_json::Value::Array(vec![]),
         );
     }
@@ -491,7 +481,7 @@ pub fn tagged_fixture() -> BeginQuorumEpochResponse {
     BeginQuorumEpochResponse {
         node_endpoints: vec![NodeEndpoint {
             node_id: 1i32,
-            host: "x".to_string(),
+            host: "x".to_owned(),
             port: 1u16,
             ..NodeEndpoint::default()
         }],
@@ -503,19 +493,19 @@ pub fn tagged_fixture() -> BeginQuorumEpochResponse {
 #[must_use]
 pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
     let mut m = ::serde_json::Map::new();
-    m.insert("errorCode".to_string(), ::serde_json::json!(0));
-    m.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+    m.insert("errorCode".to_owned(), ::serde_json::json!(0));
+    m.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     if version == 1 {
         m.insert(
-            "nodeEndpoints".to_string(),
+            "nodeEndpoints".to_owned(),
             ::serde_json::Value::Array(vec![{
                 let mut m = ::serde_json::Map::new();
-                m.insert("nodeId".to_string(), ::serde_json::json!(1));
+                m.insert("nodeId".to_owned(), ::serde_json::json!(1));
                 m.insert(
-                    "host".to_string(),
-                    ::serde_json::Value::String("x".to_string()),
+                    "host".to_owned(),
+                    ::serde_json::Value::String("x".to_owned()),
                 );
-                m.insert("port".to_string(), ::serde_json::json!(1));
+                m.insert("port".to_owned(), ::serde_json::json!(1));
                 ::serde_json::Value::Object(m)
             }]),
         );

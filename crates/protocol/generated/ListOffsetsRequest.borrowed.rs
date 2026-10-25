@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::list_offsets_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i8, get_i32, get_i64, put_i8, put_i32, put_i64},
         string_bytes::{compact_string_len, put_compact_string, put_string, string_len},
         string_bytes_borrowed::{get_compact_string_borrowed, get_string_borrowed},
@@ -29,12 +31,9 @@ pub struct ListOffsetsRequest<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListOffsetsRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_offsets_request::ListOffsetsRequest {
-        crate::owned::list_offsets_request::ListOffsetsRequest {
+    pub fn to_owned(&self) -> list_offsets_request::ListOffsetsRequest {
+        list_offsets_request::ListOffsetsRequest {
             replica_id: (self.replica_id),
             isolation_level: (self.isolation_level),
             topics: (self.topics)
@@ -63,18 +62,18 @@ impl Encode for ListOffsetsRequest<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if version >= 10 {
             put_i32(buf, self.timeout_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -89,8 +88,7 @@ impl Encode for ListOffsetsRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -123,7 +121,7 @@ impl<'de> DecodeBorrow<'de> for ListOffsetsRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ListOffsetsTopic::decode_borrow(buf, version)?);
@@ -167,13 +165,10 @@ pub struct ListOffsetsTopic<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl ListOffsetsTopic<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_offsets_request::ListOffsetsTopic {
-        crate::owned::list_offsets_request::ListOffsetsTopic {
-            name: (self.name).to_string(),
+    pub fn to_owned(&self) -> list_offsets_request::ListOffsetsTopic {
+        list_offsets_request::ListOffsetsTopic {
+            name: (self.name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(ListOffsetsPartition::to_owned)
@@ -187,22 +182,22 @@ impl Encode for ListOffsetsTopic<'_> {
         let flex = version >= 6;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.name);
+                put_compact_string(buf, self.name)?;
             } else {
-                let () = put_string(buf, self.name);
+                put_string(buf, self.name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -218,8 +213,7 @@ impl Encode for ListOffsetsTopic<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -247,7 +241,7 @@ impl<'de> DecodeBorrow<'de> for ListOffsetsTopic<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(ListOffsetsPartition::decode_borrow(buf, version)?);
@@ -293,12 +287,9 @@ impl Default for ListOffsetsPartition {
     }
 }
 impl ListOffsetsPartition {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::list_offsets_request::ListOffsetsPartition {
-        crate::owned::list_offsets_request::ListOffsetsPartition {
+    pub fn to_owned(&self) -> list_offsets_request::ListOffsetsPartition {
+        list_offsets_request::ListOffsetsPartition {
             partition_index: (self.partition_index),
             current_leader_epoch: (self.current_leader_epoch),
             timestamp: (self.timestamp),
@@ -320,7 +311,7 @@ impl Encode for ListOffsetsPartition {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }

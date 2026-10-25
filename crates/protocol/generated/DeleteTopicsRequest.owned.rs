@@ -5,6 +5,7 @@ use bytes::{Buf, BufMut};
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_i32, put_i32},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
@@ -12,6 +13,7 @@ use crate::{
             nullable_string_len, put_compact_nullable_string, put_compact_string,
             put_nullable_string, put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -43,30 +45,30 @@ impl Encode for DeleteTopicsRequest {
         let flex = is_flexible(version);
         if version >= 6 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if (0..=5).contains(&version) {
             {
-                crate::primitives::array::put_array_len(buf, (self.topic_names).len(), flex);
+                put_array_len(buf, (self.topic_names).len(), flex)?;
                 for it in &self.topic_names {
                     if flex {
-                        let () = put_compact_string(buf, it);
+                        put_compact_string(buf, it)?;
                     } else {
-                        let () = put_string(buf, it);
+                        put_string(buf, it)?;
                     }
                 }
-            };
+            }
         }
         if version >= 0 {
             put_i32(buf, self.timeout_ms);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -75,16 +77,14 @@ impl Encode for DeleteTopicsRequest {
         let mut n: usize = 0;
         if version >= 6 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
         }
         if (0..=5).contains(&version) {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topic_names).len(), flex);
+                let prefix = array_len_prefix_len((self.topic_names).len(), flex);
                 let body: usize = (self.topic_names)
                     .iter()
                     .map(|it| {
@@ -120,7 +120,7 @@ impl Decode<'_> for DeleteTopicsRequest {
         let mut out = Self::default();
         if version >= 6 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(DeleteTopicState::decode(buf, version)?);
@@ -130,7 +130,7 @@ impl Decode<'_> for DeleteTopicsRequest {
         }
         if (0..=5).contains(&version) {
             out.topic_names = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(if flex {
@@ -160,7 +160,7 @@ impl DeleteTopicsRequest {
             m.topics = vec![DeleteTopicState::populated(version)];
         }
         if (0..=5).contains(&version) {
-            m.topic_names = vec!["x".to_string()];
+            m.topic_names = vec!["x".to_owned()];
         }
         if version >= 0 {
             m.timeout_ms = 1i32;
@@ -171,7 +171,7 @@ impl DeleteTopicsRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DeleteTopicState {
     pub name: Option<String>,
-    pub topic_id: crate::primitives::uuid::Uuid,
+    pub topic_id: Uuid,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl Encode for DeleteTopicState {
@@ -179,17 +179,17 @@ impl Encode for DeleteTopicState {
         let flex = version >= 4;
         if version >= 6 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.name.as_deref());
+                put_compact_nullable_string(buf, self.name.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.name.as_deref());
+                put_nullable_string(buf, self.name.as_deref())?;
             }
         }
         if version >= 6 {
-            crate::primitives::uuid::put_uuid(buf, self.topic_id);
+            put_uuid(buf, self.topic_id);
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -225,7 +225,7 @@ impl Decode<'_> for DeleteTopicState {
             };
         }
         if version >= 6 {
-            out.topic_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.topic_id = get_uuid(buf)?;
         }
         if flex {
             out.unknown_tagged_fields = read_tagged_fields(buf, |_tag, _payload| Ok(false))?;
@@ -239,10 +239,10 @@ impl DeleteTopicState {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 6 {
-            m.name = Some("x".to_string());
+            m.name = Some("x".to_owned());
         }
         if version >= 6 {
-            m.topic_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.topic_id = Uuid([1u8; 16]);
         }
         m
     }
@@ -254,12 +254,12 @@ impl DeleteTopicState {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     if version >= 6 {
-        obj.insert("topics".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("topics".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     if version <= 5 {
-        obj.insert("topicNames".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("topicNames".to_owned(), ::serde_json::Value::Array(vec![]));
     }
-    obj.insert("timeoutMs".to_string(), ::serde_json::json!(0));
+    obj.insert("timeoutMs".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }
 impl crate::ProtocolRequest for DeleteTopicsRequest {

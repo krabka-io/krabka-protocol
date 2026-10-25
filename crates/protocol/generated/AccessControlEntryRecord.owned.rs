@@ -10,6 +10,7 @@ use crate::{
             compact_string_len, get_compact_string_owned, get_string_owned, put_compact_string,
             put_string, string_len,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -23,7 +24,7 @@ pub fn is_flexible(version: i16) -> bool {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AccessControlEntryRecord {
-    pub id: crate::primitives::uuid::Uuid,
+    pub id: Uuid,
     pub resource_type: i8,
     pub resource_name: String,
     pub pattern_type: i8,
@@ -36,7 +37,7 @@ pub struct AccessControlEntryRecord {
 impl AccessControlEntryRecord {
     fn encode_field_0<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
-            crate::primitives::uuid::put_uuid(buf, self.id);
+            put_uuid(buf, self.id);
         }
     }
     fn encode_field_1<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -44,37 +45,55 @@ impl AccessControlEntryRecord {
             put_i8(buf, self.resource_type);
         }
     }
-    fn encode_field_2<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_2<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.resource_name);
+                put_compact_string(buf, &self.resource_name)?;
             } else {
-                let () = put_string(buf, &self.resource_name);
+                put_string(buf, &self.resource_name)?;
             }
         }
+        Ok(())
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
             put_i8(buf, self.pattern_type);
         }
     }
-    fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_4<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.principal);
+                put_compact_string(buf, &self.principal)?;
             } else {
-                let () = put_string(buf, &self.principal);
+                put_string(buf, &self.principal)?;
             }
         }
+        Ok(())
     }
-    fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, flex: bool) {
+    fn encode_field_5<B: BufMut>(
+        &self,
+        buf: &mut B,
+        version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.host);
+                put_compact_string(buf, &self.host)?;
             } else {
-                let () = put_string(buf, &self.host);
+                put_string(buf, &self.host)?;
             }
         }
+        Ok(())
     }
     fn encode_field_6<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 0 {
@@ -86,11 +105,17 @@ impl AccessControlEntryRecord {
             put_i8(buf, self.permission_type);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0<B: Buf>(
         out: &mut Self,
@@ -99,7 +124,7 @@ impl AccessControlEntryRecord {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 0 {
-            out.id = crate::primitives::uuid::get_uuid(buf)?;
+            out.id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -214,13 +239,13 @@ impl Encode for AccessControlEntryRecord {
         let flex = is_flexible(version);
         self.encode_field_0(buf, version, flex);
         self.encode_field_1(buf, version, flex);
-        self.encode_field_2(buf, version, flex);
+        self.encode_field_2(buf, version, flex)?;
         self.encode_field_3(buf, version, flex);
-        self.encode_field_4(buf, version, flex);
-        self.encode_field_5(buf, version, flex);
+        self.encode_field_4(buf, version, flex)?;
+        self.encode_field_5(buf, version, flex)?;
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -296,22 +321,22 @@ impl AccessControlEntryRecord {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.resource_type = 1i8;
         }
         if version >= 0 {
-            m.resource_name = "x".to_string();
+            m.resource_name = "x".to_owned();
         }
         if version >= 0 {
             m.pattern_type = 1i8;
         }
         if version >= 0 {
-            m.principal = "x".to_string();
+            m.principal = "x".to_owned();
         }
         if version >= 0 {
-            m.host = "x".to_string();
+            m.host = "x".to_owned();
         }
         if version >= 0 {
             m.operation = 1i8;
@@ -329,24 +354,24 @@ impl AccessControlEntryRecord {
 pub fn default_json(_version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "id".to_string(),
-        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_string()),
+        "id".to_owned(),
+        ::serde_json::Value::String("AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
     );
-    obj.insert("resourceType".to_string(), ::serde_json::json!(0));
+    obj.insert("resourceType".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "resourceName".to_string(),
+        "resourceName".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("patternType".to_string(), ::serde_json::json!(0));
+    obj.insert("patternType".to_owned(), ::serde_json::json!(0));
     obj.insert(
-        "principal".to_string(),
+        "principal".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     obj.insert(
-        "host".to_string(),
+        "host".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("operation".to_string(), ::serde_json::json!(0));
-    obj.insert("permissionType".to_string(), ::serde_json::json!(0));
+    obj.insert("operation".to_owned(), ::serde_json::json!(0));
+    obj.insert("permissionType".to_owned(), ::serde_json::json!(0));
     ::serde_json::Value::Object(obj)
 }

@@ -58,9 +58,9 @@ impl Encode for InitProducerIdRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.transactional_id.as_deref());
+                put_compact_nullable_string(buf, self.transactional_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.transactional_id.as_deref());
+                put_nullable_string(buf, self.transactional_id.as_deref())?;
             }
         }
         if version >= 0 {
@@ -80,7 +80,7 @@ impl Encode for InitProducerIdRequest {
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -160,7 +160,7 @@ impl InitProducerIdRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.transactional_id = Some("x".to_string());
+            m.transactional_id = Some("x".to_owned());
         }
         if version >= 0 {
             m.transaction_timeout_ms = 1i32;
@@ -187,22 +187,22 @@ impl InitProducerIdRequest {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "transactionalId".to_string(),
+        "transactionalId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
-    obj.insert("transactionTimeoutMs".to_string(), ::serde_json::json!(0));
+    obj.insert("transactionTimeoutMs".to_owned(), ::serde_json::json!(0));
     if version >= 3 {
-        obj.insert("producerId".to_string(), ::serde_json::json!(-1));
+        obj.insert("producerId".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 3 {
-        obj.insert("producerEpoch".to_string(), ::serde_json::json!(-1));
+        obj.insert("producerEpoch".to_owned(), ::serde_json::json!(-1));
     }
     if version >= 6 {
-        obj.insert("enable2Pc".to_string(), ::serde_json::Value::Bool(false));
+        obj.insert("enable2Pc".to_owned(), ::serde_json::Value::Bool(false));
     }
     if version >= 6 {
         obj.insert(
-            "keepPreparedTxn".to_string(),
+            "keepPreparedTxn".to_owned(),
             ::serde_json::Value::Bool(false),
         );
     }

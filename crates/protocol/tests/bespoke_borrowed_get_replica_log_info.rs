@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 // Bespoke tests for the borrowed GetReplicaLogInfo wrappers. GetReplicaLogInfo
 // is a krabka-internal RPC (api_key 1020, in the krabka-private range) excluded
 // from the JVM differential sweep, so its generated borrowed codecs need direct

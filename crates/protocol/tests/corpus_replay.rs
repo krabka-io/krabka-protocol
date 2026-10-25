@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{env, fs, path::Path};
 
 use serde::Deserialize;
 
@@ -20,16 +20,14 @@ struct Meta {
     description: String,
 }
 
-fn load_pair(stem: &Path) -> (Meta, Vec<u8>) {
-    let hex_raw: String = fs::read_to_string(stem.with_extension("hex"))
-        .unwrap()
+fn load_pair(stem: &Path) -> datatest_stable::Result<(Meta, Vec<u8>)> {
+    let hex_raw: String = fs::read_to_string(stem.with_extension("hex"))?
         .chars()
         .filter(|c| !c.is_whitespace())
         .collect();
-    let bytes = hex::decode(hex_raw).unwrap();
-    let meta: Meta =
-        toml::from_str(&fs::read_to_string(stem.with_extension("toml")).unwrap()).unwrap();
-    (meta, bytes)
+    let bytes = hex::decode(hex_raw)?;
+    let meta: Meta = toml::from_str(&fs::read_to_string(stem.with_extension("toml"))?)?;
+    Ok((meta, bytes))
 }
 
 /// Map (`api_key`, direction) to the message name with the generated `CASES` table.
@@ -47,23 +45,30 @@ fn name_for(api_key: i16, is_request: bool) -> Option<&'static str> {
 }
 
 fn corpus_entry_round_trips(path: &Path) -> datatest_stable::Result<()> {
-    std::fs::metadata(path)?;
+    fs::metadata(path)?;
     let stem = path.with_extension("");
-    let (meta, bytes) = load_pair(&stem);
+    let (meta, bytes) = load_pair(&stem)?;
     let is_request = match meta.direction.as_str() {
         "request" => true,
         "response" => false,
-        other => panic!("bad direction {other} in {}", stem.display()),
+        other => return Err(format!("bad direction {other} in {}", stem.display()).into()),
     };
-    let name = name_for(meta.api_key, is_request).unwrap_or_else(|| {
-        panic!(
+    let name = name_for(meta.api_key, is_request).ok_or_else(|| {
+        format!(
             "no CASES name for api_key {} in {}",
             meta.api_key,
             stem.display()
         )
-    });
-    let re = roundtrip(name, meta.version, &bytes);
-    assert2::assert!(re == bytes);
+    })?;
+    let re = roundtrip(name, meta.version, &bytes)?;
+    if re != bytes {
+        return Err(format!(
+            "{name} v{} does not round-trip in {}",
+            meta.version,
+            stem.display()
+        )
+        .into());
+    }
     Ok(())
 }
 
@@ -76,9 +81,9 @@ fn corpus_entry_round_trips(path: &Path) -> datatest_stable::Result<()> {
 /// that tree. Absent those variables this is the Cargo path unchanged.
 fn fixture_root(relative: &str) -> String {
     let (Ok(srcdir), Ok(workspace), Ok(package)) = (
-        std::env::var("TEST_SRCDIR"),
-        std::env::var("TEST_WORKSPACE"),
-        std::env::var("FIXTURE_ROOT"),
+        env::var("TEST_SRCDIR"),
+        env::var("TEST_WORKSPACE"),
+        env::var("FIXTURE_ROOT"),
     ) else {
         return relative.to_owned();
     };

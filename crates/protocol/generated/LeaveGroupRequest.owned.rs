@@ -4,11 +4,14 @@ use bytes::{Buf, BufMut};
 
 use crate::{
     Decode, Encode, ProtocolError, UnknownTaggedFields,
-    primitives::string_bytes::{
-        compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
-        get_compact_string_owned, get_nullable_string_owned, get_string_owned, nullable_string_len,
-        put_compact_nullable_string, put_compact_string, put_nullable_string, put_string,
-        string_len,
+    primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
+        string_bytes::{
+            compact_nullable_string_len, compact_string_len, get_compact_nullable_string_owned,
+            get_compact_string_owned, get_nullable_string_owned, get_string_owned,
+            nullable_string_len, put_compact_nullable_string, put_compact_string,
+            put_nullable_string, put_string, string_len,
+        },
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -40,29 +43,29 @@ impl Encode for LeaveGroupRequest {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, &self.group_id);
+                put_compact_string(buf, &self.group_id)?;
             } else {
-                let () = put_string(buf, &self.group_id);
+                put_string(buf, &self.group_id)?;
             }
         }
         if (0..=2).contains(&version) {
             if flex {
-                let () = put_compact_string(buf, &self.member_id);
+                put_compact_string(buf, &self.member_id)?;
             } else {
-                let () = put_string(buf, &self.member_id);
+                put_string(buf, &self.member_id)?;
             }
         }
         if version >= 3 {
             {
-                crate::primitives::array::put_array_len(buf, (self.members).len(), flex);
+                put_array_len(buf, (self.members).len(), flex)?;
                 for it in &self.members {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -85,8 +88,7 @@ impl Encode for LeaveGroupRequest {
         }
         if version >= 3 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.members).len(), flex);
+                let prefix = array_len_prefix_len((self.members).len(), flex);
                 let body: usize = (self.members)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -127,7 +129,7 @@ impl Decode<'_> for LeaveGroupRequest {
         }
         if version >= 3 {
             out.members = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(MemberIdentity::decode(buf, version)?);
@@ -147,10 +149,10 @@ impl LeaveGroupRequest {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 0 {
-            m.group_id = "x".to_string();
+            m.group_id = "x".to_owned();
         }
         if (0..=2).contains(&version) {
-            m.member_id = "x".to_string();
+            m.member_id = "x".to_owned();
         }
         if version >= 3 {
             m.members = vec![MemberIdentity::populated(version)];
@@ -170,28 +172,28 @@ impl Encode for MemberIdentity {
         let flex = version >= 4;
         if version >= 3 {
             if flex {
-                let () = put_compact_string(buf, &self.member_id);
+                put_compact_string(buf, &self.member_id)?;
             } else {
-                let () = put_string(buf, &self.member_id);
+                put_string(buf, &self.member_id)?;
             }
         }
         if version >= 3 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.group_instance_id.as_deref());
+                put_compact_nullable_string(buf, self.group_instance_id.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.group_instance_id.as_deref());
+                put_nullable_string(buf, self.group_instance_id.as_deref())?;
             }
         }
         if version >= 5 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.reason.as_deref());
+                put_compact_nullable_string(buf, self.reason.as_deref())?;
             } else {
-                let () = put_nullable_string(buf, self.reason.as_deref());
+                put_nullable_string(buf, self.reason.as_deref())?;
             }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -263,13 +265,13 @@ impl MemberIdentity {
     pub fn populated(version: i16) -> Self {
         let mut m = Self::default();
         if version >= 3 {
-            m.member_id = "x".to_string();
+            m.member_id = "x".to_owned();
         }
         if version >= 3 {
-            m.group_instance_id = Some("x".to_string());
+            m.group_instance_id = Some("x".to_owned());
         }
         if version >= 5 {
-            m.reason = Some("x".to_string());
+            m.reason = Some("x".to_owned());
         }
         m
     }
@@ -281,17 +283,17 @@ impl MemberIdentity {
 pub fn default_json(version: i16) -> ::serde_json::Value {
     let mut obj = ::serde_json::Map::new();
     obj.insert(
-        "groupId".to_string(),
+        "groupId".to_owned(),
         ::serde_json::Value::String(String::new()),
     );
     if version <= 2 {
         obj.insert(
-            "memberId".to_string(),
+            "memberId".to_owned(),
             ::serde_json::Value::String(String::new()),
         );
     }
     if version >= 3 {
-        obj.insert("members".to_string(), ::serde_json::Value::Array(vec![]));
+        obj.insert("members".to_owned(), ::serde_json::Value::Array(vec![]));
     }
     ::serde_json::Value::Object(obj)
 }

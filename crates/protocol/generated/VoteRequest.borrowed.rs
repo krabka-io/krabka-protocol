@@ -3,7 +3,9 @@ use bytes::BufMut;
 
 use crate::{
     DecodeBorrow, Encode, ProtocolError, UnknownTaggedFields,
+    owned::vote_request,
     primitives::{
+        array::{array_len_prefix_len, get_array_len, put_array_len},
         fixed::{get_bool, get_i32, get_i64, put_bool, put_i32, put_i64},
         string_bytes::{
             compact_nullable_string_len, compact_string_len, nullable_string_len,
@@ -14,6 +16,7 @@ use crate::{
             get_compact_nullable_string_borrowed, get_compact_string_borrowed,
             get_nullable_string_borrowed, get_string_borrowed,
         },
+        uuid::{Uuid, get_uuid, put_uuid},
     },
     tagged_fields::{WriteTaggedFields, read_tagged_fields, tagged_fields_len},
 };
@@ -45,13 +48,10 @@ impl Default for VoteRequest<'_> {
     }
 }
 impl VoteRequest<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::vote_request::VoteRequest {
-        crate::owned::vote_request::VoteRequest {
-            cluster_id: (self.cluster_id).map(std::string::ToString::to_string),
+    pub fn to_owned(&self) -> vote_request::VoteRequest {
+        vote_request::VoteRequest {
+            cluster_id: (self.cluster_id).map(str::to_owned),
             voter_id: (self.voter_id),
             topics: (self.topics).iter().map(TopicData::to_owned).collect(),
             unknown_tagged_fields: self.unknown_tagged_fields.clone(),
@@ -69,9 +69,9 @@ impl Encode for VoteRequest<'_> {
         let flex = is_flexible(version);
         if version >= 0 {
             if flex {
-                let () = put_compact_nullable_string(buf, self.cluster_id);
+                put_compact_nullable_string(buf, self.cluster_id)?;
             } else {
-                let () = put_nullable_string(buf, self.cluster_id);
+                put_nullable_string(buf, self.cluster_id)?;
             }
         }
         if version >= 1 {
@@ -79,15 +79,15 @@ impl Encode for VoteRequest<'_> {
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.topics).len(), flex);
+                put_array_len(buf, (self.topics).len(), flex)?;
                 for it in &self.topics {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -106,8 +106,7 @@ impl Encode for VoteRequest<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.topics).len(), flex);
+                let prefix = array_len_prefix_len((self.topics).len(), flex);
                 let body: usize = (self.topics).iter().map(|it| it.encoded_len(version)).sum();
                 prefix + body
             };
@@ -141,7 +140,7 @@ impl<'de> DecodeBorrow<'de> for VoteRequest<'de> {
         }
         if version >= 0 {
             out.topics = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(TopicData::decode_borrow(buf, version)?);
@@ -179,13 +178,10 @@ pub struct TopicData<'a> {
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl TopicData<'_> {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::vote_request::TopicData {
-        crate::owned::vote_request::TopicData {
-            topic_name: (self.topic_name).to_string(),
+    pub fn to_owned(&self) -> vote_request::TopicData {
+        vote_request::TopicData {
+            topic_name: (self.topic_name).to_owned(),
             partitions: (self.partitions)
                 .iter()
                 .map(PartitionData::to_owned)
@@ -199,22 +195,22 @@ impl Encode for TopicData<'_> {
         let flex = version >= 0;
         if version >= 0 {
             if flex {
-                let () = put_compact_string(buf, self.topic_name);
+                put_compact_string(buf, self.topic_name)?;
             } else {
-                let () = put_string(buf, self.topic_name);
+                put_string(buf, self.topic_name)?;
             }
         }
         if version >= 0 {
             {
-                crate::primitives::array::put_array_len(buf, (self.partitions).len(), flex);
+                put_array_len(buf, (self.partitions).len(), flex)?;
                 for it in &self.partitions {
                     it.encode(buf, version)?;
                 }
-            };
+            }
         }
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
         Ok(())
     }
@@ -230,8 +226,7 @@ impl Encode for TopicData<'_> {
         }
         if version >= 0 {
             n += {
-                let prefix =
-                    crate::primitives::array::array_len_prefix_len((self.partitions).len(), flex);
+                let prefix = array_len_prefix_len((self.partitions).len(), flex);
                 let body: usize = (self.partitions)
                     .iter()
                     .map(|it| it.encoded_len(version))
@@ -259,7 +254,7 @@ impl<'de> DecodeBorrow<'de> for TopicData<'de> {
         }
         if version >= 0 {
             out.partitions = {
-                let n = crate::primitives::array::get_array_len(buf, flex)?;
+                let n = get_array_len(buf, flex)?;
                 let mut v = Vec::with_capacity(n);
                 for _ in 0..n {
                     v.push(PartitionData::decode_borrow(buf, version)?);
@@ -292,20 +287,17 @@ pub struct PartitionData {
     pub partition_index: i32,
     pub replica_epoch: i32,
     pub replica_id: i32,
-    pub replica_directory_id: crate::primitives::uuid::Uuid,
-    pub voter_directory_id: crate::primitives::uuid::Uuid,
+    pub replica_directory_id: Uuid,
+    pub voter_directory_id: Uuid,
     pub last_offset_epoch: i32,
     pub last_offset: i64,
     pub pre_vote: bool,
     pub unknown_tagged_fields: UnknownTaggedFields,
 }
 impl PartitionData {
-    /// # Panics
-    ///
-    /// Panics if a records field contains an invalid encoded record batch.
     #[must_use]
-    pub fn to_owned(&self) -> crate::owned::vote_request::PartitionData {
-        crate::owned::vote_request::PartitionData {
+    pub fn to_owned(&self) -> vote_request::PartitionData {
+        vote_request::PartitionData {
             partition_index: (self.partition_index),
             replica_epoch: (self.replica_epoch),
             replica_id: (self.replica_id),
@@ -334,12 +326,12 @@ impl PartitionData {
     }
     fn encode_field_3<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 1 {
-            crate::primitives::uuid::put_uuid(buf, self.replica_directory_id);
+            put_uuid(buf, self.replica_directory_id);
         }
     }
     fn encode_field_4<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
         if version >= 1 {
-            crate::primitives::uuid::put_uuid(buf, self.voter_directory_id);
+            put_uuid(buf, self.voter_directory_id);
         }
     }
     fn encode_field_5<B: BufMut>(&self, buf: &mut B, version: i16, _flex: bool) {
@@ -357,11 +349,17 @@ impl PartitionData {
             put_bool(buf, self.pre_vote);
         }
     }
-    fn encode_tagged_fields<B: BufMut>(&self, buf: &mut B, _version: i16, flex: bool) {
+    fn encode_tagged_fields<B: BufMut>(
+        &self,
+        buf: &mut B,
+        _version: i16,
+        flex: bool,
+    ) -> Result<(), ProtocolError> {
         if flex {
             let tagged = WriteTaggedFields::new();
-            tagged.write(buf, &self.unknown_tagged_fields);
+            tagged.write(buf, &self.unknown_tagged_fields)?;
         }
+        Ok(())
     }
     fn decode_field_0(
         out: &mut Self,
@@ -403,7 +401,7 @@ impl PartitionData {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
-            out.replica_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.replica_directory_id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -414,7 +412,7 @@ impl PartitionData {
         _flex: bool,
     ) -> Result<(), ProtocolError> {
         if version >= 1 {
-            out.voter_directory_id = crate::primitives::uuid::get_uuid(buf)?;
+            out.voter_directory_id = get_uuid(buf)?;
         }
         Ok(())
     }
@@ -474,7 +472,7 @@ impl Encode for PartitionData {
         self.encode_field_5(buf, version, flex);
         self.encode_field_6(buf, version, flex);
         self.encode_field_7(buf, version, flex);
-        self.encode_tagged_fields(buf, version, flex);
+        self.encode_tagged_fields(buf, version, flex)?;
         Ok(())
     }
     fn encoded_len(&self, version: i16) -> usize {
@@ -542,10 +540,10 @@ impl PartitionData {
             m.replica_id = 1i32;
         }
         if version >= 1 {
-            m.replica_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.replica_directory_id = Uuid([1u8; 16]);
         }
         if version >= 1 {
-            m.voter_directory_id = crate::primitives::uuid::Uuid([1u8; 16]);
+            m.voter_directory_id = Uuid([1u8; 16]);
         }
         if version >= 0 {
             m.last_offset_epoch = 1i32;

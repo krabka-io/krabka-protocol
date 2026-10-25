@@ -5,6 +5,7 @@
 //! `jvm differential` CI job. These tests run anywhere, under Cargo and Bazel.
 //! They pin the emitted code for one message that uses every scalar type, a
 //! nested tag, a common struct and each shape of version check.
+#![cfg(test)]
 
 use assert2::assert;
 use krabka_protocol_codegen::{
@@ -97,7 +98,7 @@ fn item_name(item: &syn::Item) -> Option<String> {
 fn fixture_sets_every_tag_and_json_follows_the_schema_versions() {
     let spec = sample();
     let res_map = resolve::resolve_message(&spec).unwrap();
-    let emitted = tagged_fixture::emit_tagged_fixture(&spec, &res_map);
+    let emitted = tagged_fixture::emit_tagged_fixture(&spec, &res_map).unwrap();
 
     let expected = quote! {
         #[doc = " A message with a non-default value in every tagged field, at every depth, for"]
@@ -110,13 +111,13 @@ fn fixture_sets_every_tag_and_json_follows_the_schema_versions() {
                     ..Topic::default()
                 }],
                 endpoints: vec![super::common::sample_response::endpoint::Endpoint {
-                    host: "x".to_string(),
-                    rack: Some("y".to_string()),
+                    host: "x".to_owned(),
+                    rack: Some("y".to_owned()),
                     ..super::common::sample_response::endpoint::Endpoint::default()
                 }],
                 epoch: 2i64,
                 ready: false,
-                cluster_id: Some("x".to_string()),
+                cluster_id: Some("x".to_owned()),
                 token: ::bytes::Bytes::from_static(b"x"),
                 directory_id: crate::primitives::uuid::Uuid([1u8; 16]),
                 ratio: 1.5f64,
@@ -133,19 +134,19 @@ fn fixture_sets_every_tag_and_json_follows_the_schema_versions() {
         #[must_use]
         pub fn tagged_fixture_json(version: i16) -> ::serde_json::Value {
             let mut m = ::serde_json::Map::new();
-            m.insert("throttleTimeMs".to_string(), ::serde_json::json!(0));
+            m.insert("throttleTimeMs".to_owned(), ::serde_json::json!(0));
             if (1..=2).contains(&version) {
-                m.insert("errorCode".to_string(), ::serde_json::json!(0));
+                m.insert("errorCode".to_owned(), ::serde_json::json!(0));
             }
-            m.insert("topics".to_string(), ::serde_json::Value::Array(vec![{
+            m.insert("topics".to_owned(), ::serde_json::Value::Array(vec![{
                 let mut m = ::serde_json::Map::new();
-                m.insert("name".to_string(), ::serde_json::Value::String(String::new()));
+                m.insert("name".to_owned(), ::serde_json::Value::String(String::new()));
                 if version >= 2 {
-                    m.insert("leader".to_string(), {
+                    m.insert("leader".to_owned(), {
                         let mut m = ::serde_json::Map::new();
-                        m.insert("leaderId".to_string(), ::serde_json::json!(1));
+                        m.insert("leaderId".to_owned(), ::serde_json::json!(1));
                         if version == 3 {
-                            m.insert("leaderEpoch".to_string(), ::serde_json::json!(1));
+                            m.insert("leaderEpoch".to_owned(), ::serde_json::json!(1));
                         }
                         ::serde_json::Value::Object(m)
                     });
@@ -153,36 +154,36 @@ fn fixture_sets_every_tag_and_json_follows_the_schema_versions() {
                 ::serde_json::Value::Object(m)
             }]));
             if version >= 1 {
-                m.insert("endpoints".to_string(), ::serde_json::Value::Array(vec![{
+                m.insert("endpoints".to_owned(), ::serde_json::Value::Array(vec![{
                     let mut m = ::serde_json::Map::new();
-                    m.insert("host".to_string(), ::serde_json::Value::String("x".to_string()));
+                    m.insert("host".to_owned(), ::serde_json::Value::String("x".to_owned()));
                     if version <= 2 {
-                        m.insert("rack".to_string(), ::serde_json::Value::String("y".to_string()));
+                        m.insert("rack".to_owned(), ::serde_json::Value::String("y".to_owned()));
                     }
                     ::serde_json::Value::Object(m)
                 }]));
             }
-            if version >= 1 { m.insert("epoch".to_string(), ::serde_json::json!(2)); }
-            if version >= 1 { m.insert("ready".to_string(), ::serde_json::Value::Bool(false)); }
+            if version >= 1 { m.insert("epoch".to_owned(), ::serde_json::json!(2)); }
+            if version >= 1 { m.insert("ready".to_owned(), ::serde_json::Value::Bool(false)); }
             if version >= 1 {
-                m.insert("clusterId".to_string(), ::serde_json::Value::String("x".to_string()));
+                m.insert("clusterId".to_owned(), ::serde_json::Value::String("x".to_owned()));
             }
             if version >= 1 {
-                m.insert("token".to_string(), ::serde_json::Value::String("eA==".to_string()));
+                m.insert("token".to_owned(), ::serde_json::Value::String("eA==".to_owned()));
             }
             if version >= 2 {
                 m.insert(
-                    "directoryId".to_string(),
-                    ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_string())
+                    "directoryId".to_owned(),
+                    ::serde_json::Value::String("AQEBAQEBAQEBAQEBAQEBAQ".to_owned())
                 );
             }
-            if version >= 1 { m.insert("ratio".to_string(), ::serde_json::json!(1.5)); }
+            if version >= 1 { m.insert("ratio".to_owned(), ::serde_json::json!(1.5)); }
             if version >= 1 {
-                m.insert("replicas".to_string(), ::serde_json::Value::Array(vec![::serde_json::json!(1)]));
+                m.insert("replicas".to_owned(), ::serde_json::Value::Array(vec![::serde_json::json!(1)]));
             }
-            if version >= 1 { m.insert("port".to_string(), ::serde_json::json!(1)); }
-            if version >= 1 { m.insert("level".to_string(), ::serde_json::json!(1)); }
-            if version >= 1 { m.insert("weight".to_string(), ::serde_json::json!(1)); }
+            if version >= 1 { m.insert("port".to_owned(), ::serde_json::json!(1)); }
+            if version >= 1 { m.insert("level".to_owned(), ::serde_json::json!(1)); }
+            if version >= 1 { m.insert("weight".to_owned(), ::serde_json::json!(1)); }
             ::serde_json::Value::Object(m)
         }
     };
@@ -195,7 +196,7 @@ fn only_a_message_with_a_tag_gets_a_fixture() {
     let cases = [(sample(), true), (untagged(), false)];
     for (spec, has_tag) in cases {
         let res_map = resolve::resolve_message(&spec).unwrap();
-        let fixture = tagged_fixture::emit_tagged_fixture(&spec, &res_map);
+        let fixture = tagged_fixture::emit_tagged_fixture(&spec, &res_map).unwrap();
         let owned = owned_quote::emit(&spec, "sha").unwrap().primary;
 
         // The owned module carries exactly the fixture functions the emitter
@@ -236,7 +237,7 @@ fn owned_wrapper_round_trips_the_fixture_only_with_a_tag() {
 
     let cases = [(sample(), vec![tagged_test]), (untagged(), Vec::new())];
     for (spec, expected) in cases {
-        let wrapper = wrappers::emit(&spec, wrappers::Flavor::Owned, "sha", None);
+        let wrapper = wrappers::emit(&spec, wrappers::Flavor::Owned, "sha", None).unwrap();
         let file: syn::File = syn::parse_str(&wrapper).unwrap();
         let tests = file
             .items
@@ -260,7 +261,7 @@ fn owned_wrapper_round_trips_the_fixture_only_with_a_tag() {
 
 #[test]
 fn differential_table_lists_every_version_of_each_tagged_message() {
-    let table = differential_table::emit(&[sample(), untagged()], "sha");
+    let table = differential_table::emit(&[sample(), untagged()], "sha").unwrap();
 
     let expected = [
         quote! {
@@ -272,33 +273,32 @@ fn differential_table_lists_every_version_of_each_tagged_message() {
             ];
         },
         quote! {
-            fn encode_tagged_fixture_0(name: &str, version: i16) -> Option<(Vec<u8>, Vec<u8>)> {
-                use krabka_protocol::DecodeBorrow;
-                Some(match name {
+            fn encode_tagged_fixture_0(name: &str, version: i16) -> Result<Option<EncodedPair>, TableError> {
+                Ok(Some(match name {
                     "SampleResponse" => {
                         let owned = krabka_protocol::owned::sample_response::tagged_fixture();
                         let max = krabka_protocol::owned::sample_response::MAX_VERSION;
-                        let full = encode_with(&owned, max);
+                        let full = encode_with(&owned, max)?;
                         let mut cur = full.as_slice();
                         let borrowed =
-                            krabka_protocol::borrowed::sample_response::SampleResponse::decode_borrow(&mut cur, max)
-                                .unwrap();
-                        assert2::assert!(cur.is_empty());
-                        (encode_with(&owned, version), encode_with(&borrowed, version))
+                            <krabka_protocol::borrowed::sample_response::SampleResponse as krabka_protocol::DecodeBorrow>::decode_borrow(&mut cur, max)?;
+                        expect_consumed(name, cur)?;
+                        (encode_with(&owned, version)?, encode_with(&borrowed, version)?)
                     }
-                    _ => return None,
-                })
+                    _ => return Ok(None),
+                }))
             }
         },
         quote! {
-            /// # Panics
-            ///
-            /// Panics when `name` does not identify a message with a tagged field.
-            #[must_use]
-            pub fn tagged_fixture_json_for(name: &str, version: i16) -> ::serde_json::Value {
+            #[doc = " The JSON form of the tagged fixture of message `name` at `version`."]
+            #[doc = ""]
+            #[doc = " # Errors"]
+            #[doc = ""]
+            #[doc = " Fails when `name` has no tagged field."]
+            pub fn tagged_fixture_json_for(name: &str, version: i16) -> Result<::serde_json::Value, TableError> {
                 match name {
-                    "SampleResponse" => krabka_protocol::owned::sample_response::tagged_fixture_json(version),
-                    _ => panic!("unknown message in tagged_fixture_json_for: {name}"),
+                    "SampleResponse" => Ok(krabka_protocol::owned::sample_response::tagged_fixture_json(version)),
+                    _ => Err(TableError::UnknownMessage(name.to_owned())),
                 }
             }
         },
@@ -332,7 +332,7 @@ fn tagged_versions_follow_kafka_rules() {
     let rejected = |message: &'static str| {
         Err(ValidateError::Unsupported {
             message,
-            context: "TaggedRequest.Value".to_string(),
+            context: "TaggedRequest.Value".to_owned(),
         })
     };
     let cases = [

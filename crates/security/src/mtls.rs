@@ -8,6 +8,7 @@
 //! as the principal name. Operators and `KafkaUser` mTLS provisioning pin ACLs
 //! by that DN, so Krabka matches it byte-for-byte.
 
+use tracing::field;
 use x509_parser::prelude::{FromDer, X509Certificate};
 
 /// Parse `cert_der` and return the Subject DN in RFC 2253 format.
@@ -21,7 +22,7 @@ use x509_parser::prelude::{FromDer, X509Certificate};
 #[tracing::instrument(
     level = "debug",
     skip_all,
-    fields(mechanism = "mTLS", principal = tracing::field::Empty)
+    fields(mechanism = "mTLS", principal = field::Empty)
 )]
 pub fn extract_principal_from_cert(cert_der: &[u8]) -> Option<String> {
     let (_, cert) = X509Certificate::from_der(cert_der).ok()?;

@@ -261,6 +261,7 @@ impl<C: PhysicalClock> HlcClock<C> {
         };
         state.wall = wall;
         state.counter = counter;
+        drop(state);
         Ok(Hlc::new(WallMicros(wall), counter, self.node))
     }
 
@@ -338,6 +339,7 @@ impl<C: PhysicalClock> HlcClock<C> {
         }
         state.wall = wall;
         state.counter = counter;
+        drop(state);
         Ok(Hlc::new(WallMicros(wall), counter, self.node))
     }
 
