@@ -21,6 +21,15 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  pages-packaging:
+    name: Pages packaging regressions
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -m unittest discover -s tools -p 'test_pages_site.py' -v
+
   # Build, test, lint and format. The Aspect CLI narrows each of these to what
   # the change actually touched; `bazel build|test //...` is the equivalent for
   # anyone without the CLI, and is what the nightly job runs.
@@ -278,6 +287,15 @@ jobs:
           bazel query 'kind("rust_doc rule", //crates/...)' > "${targets}"
           test -s "${targets}"
           bazel build --target_pattern_file="${targets}"
+      - name: Check assembled Pages sources on pull requests
+        run: |
+          aspect rustdoc-site --output site --repo krabka-protocol
+          python3 tools/pages_site.py stage site "${RUNNER_TEMP}/pages-site"
+          tar --directory "${RUNNER_TEMP}/pages-site" \
+            --dereference --hard-dereference \
+            --exclude=.git --exclude=.github \
+            -cf "${RUNNER_TEMP}/pages-check.tar" .
+          python3 tools/pages_site.py verify "${RUNNER_TEMP}/pages-site" "${RUNNER_TEMP}/pages-check.tar"
       - uses: actions/upload-artifact@v4
         with:
           name: rustdoc
