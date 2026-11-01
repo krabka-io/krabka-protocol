@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-01
+
 - Group partition offset, ELR and recovery state by topic so topic deletion touches only its own auxiliary state (#77).
 - `krabka.version` level 2 (`krabka_version::DISKLESS_OBJECT_RESERVATION_LEVEL`) turns on diskless WAL object reservations, and the supported range becomes `[0, 2]`. Level 2 changes no private RPC version (krabka-io/krabka-broker#1763).
+- `MetadataImage::matching_acls` looks ACLs up in an index, with no allocation: a keyed lookup for the literal name and for the `*` wildcard, and one hash probe per distinct prefix length, in place of a scan of every prefixed ACL of the resource type. It matches the same entries, each once, but their order is now unspecified (#79).
 
 ## [0.7.0] — 2026-10-20
 
