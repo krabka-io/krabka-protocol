@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-01
+
+- Re-released with the 0.8 workspace; library behavior is unchanged.
+
 ## [0.7.0] — 2026-10-20
 
 - Re-released with the 0.7 workspace; library behavior is unchanged.

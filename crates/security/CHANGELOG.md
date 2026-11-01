@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-01
+
 **Breaking Rust API.** The `gssapi` module now needs the `gssapi` feature.
+Handle the `Result` that `hash_scram_password` now returns, and the new
+`ScramError::RandomUnavailable` and `JavaReplacementError::MatchOffset`
+variants.
 
 ### Changed
 
@@ -21,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lockfile refresh takes `crypto-bigint` 0.7.6 (RUSTSEC-2026-0387), `ctutils`
   0.4.5 (RUSTSEC-2026-0385) and `tokio` 1.53.3 (RUSTSEC-2026-0386), and moves
   off the yanked `num-modular` 0.6.6.
+- **Breaking.** `hash_scram_password` returns
+  `Result<ScramCredential, ScramError>`. When the system random number
+  generator cannot produce a salt, it and `PgScramVerifier::generate` return
+  the new `ScramError::RandomUnavailable` instead of panicking
+  ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+- **Breaking.** `JavaReplacementError` gains `MatchOffset`, which
+  `java_regex` returns in place of a panic for a match offset that is not a
+  character boundary. The `regex` crate never reports such an offset
+  ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+- `issue_broker_cert` returns `CaError::Rcgen` for a DNS subject alternative
+  name that is not a valid IA5 string, where it panicked before. The GSSAPI
+  acceptor and initiator recover a poisoned mutex instead of panicking
+  ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
 
 ### Added
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-01
+
+### Changed
+
+- gzip runs on the `zlib-rs` backend of `flate2`, with runtime CPU
+  detection, in place of `miniz_oxide`
+  ([#79](https://github.com/krabka-io/krabka-protocol/pull/79)). On the
+  produce path it deflates about 2.5 times and inflates about 1.2 times as
+  fast. The backend is pure Rust, so the build needs no C toolchain. The
+  output is still an RFC 1952 stream that Kafka reads, but its compressed
+  bytes differ from those of 0.7.0.
+
 ## [0.7.0] — 2026-10-20
 
 - Re-released with the 0.7 workspace; library behavior is unchanged.

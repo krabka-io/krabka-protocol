@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-01
+
+**Breaking Rust API.** Handle the `Result` that the wire encoders and the
+records-carrying borrowed `to_owned()` now return, call the owned
+`RecordBatch` codec methods by their new names, and pass
+`patch_base_offset_and_leader_epoch` a header array.
+
+### Added
+
+- `records::crc32c` and `records::crc32c_append`, the CRC-32C helpers that
+  the record codecs use, are now public. A downstream crate takes a batch
+  checksum through the same runtime-dispatched `crc-fast` entry point
+  ([#79](https://github.com/krabka-io/krabka-protocol/pull/79)).
+  `crc32c_append` no longer has a panic path.
+- `ValidatedBatch::validate_record_summaries_with` visits a new
+  `records::RecordSummary` per record: the record without its headers, plus
+  its header count and the body length that its length prefix declares
+  (Kafka's `sizeOfBodyInBytes`). The walk checks every header, the UTF-8 of
+  its key included, but collects none, so it allocates nothing per record
+  ([#79](https://github.com/krabka-io/krabka-protocol/pull/79)).
+- `RecordsPayload::encode_length_prefixed` writes a records payload with its
+  `BYTES` or `COMPACT_BYTES` length prefix
+  ([#76](https://github.com/krabka-io/krabka-protocol/pull/76)).
+- `ProtocolError::LengthOverflow`, for a length that its wire-format length
+  prefix cannot hold
+  ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+
+### Changed
+
+- **Breaking.** An encoder that panicked on a length its prefix cannot hold
+  now returns `ProtocolError::LengthOverflow`
+  ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)). The
+  `put_*` string and bytes encoders in `primitives::string_bytes`,
+  `primitives::array::put_array_len` and `put_nullable_array_len` return
+  `Result<(), ProtocolError>`, and so does `WriteTaggedFields::write`.
+  `tagged_fields::encode_to_bytes`,
+  `records::metadata::control::encode_control_batch` and
+  `records::metadata::checkpoint::build_bootstrap_checkpoint` return
+  `Result<Bytes, ProtocolError>`. The generated `Encode` implementations
+  return the error instead of panicking.
+- **Breaking.** The borrowed `to_owned()` of a message that carries records
+  returns `Result<_, RecordsError>`, and no longer panics when its records
+  do not convert ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+  This covers `FetchResponse`, `FetchSnapshotResponse`, `ProduceRequest`
+  and `ShareFetchResponse`, their `kafka_3_6_2` counterparts, and each of
+  their nested types that holds records.
+- **Breaking.** The inherent `decode`, `encode` and `encoded_len` of the
+  owned `RecordBatch` are now `decode_batch`, `encode_batch` and
+  `encoded_batch_len`, so they no longer shadow the `Decode` and `Encode`
+  trait methods ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+- **Breaking.** `patch_base_offset_and_leader_epoch` takes
+  `&mut [u8; HEADER_LEN]` in place of a slice that it asserted was long
+  enough ([#82](https://github.com/krabka-io/krabka-protocol/pull/82)).
+- The owned codecs copy less. A decoder keeps the framed `Bytes` of a
+  records field ([#74](https://github.com/krabka-io/krabka-protocol/pull/74)),
+  and an encoder writes an uncompressed records field directly into the
+  frame through `encode_length_prefixed`. Only a compressed v2 batch, whose
+  size is not known before compression, still goes through a temporary
+  buffer ([#76](https://github.com/krabka-io/krabka-protocol/pull/76)).
+- `ValidatedBatch::validate_records` uses the summary walk, so it no longer
+  allocates per record, and a record-field error label is formatted only
+  when the error occurs. The owned decoder and encoder take the CRC of a
+  contiguous batch in one pass. The bytes written, the errors and their
+  order are unchanged
+  ([#79](https://github.com/krabka-io/krabka-protocol/pull/79)).
+
 ## [0.7.0] — 2026-10-20
 
 - Re-released with the 0.7 workspace; library behavior is unchanged.
