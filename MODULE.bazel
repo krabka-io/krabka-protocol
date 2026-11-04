@@ -129,6 +129,27 @@ crate.from_cargo(
     platform_triples = PLATFORM_TRIPLES,
 )
 
+# Stable rustdoc uses dependency metadata to resolve inherited documentation.
+# Exact-version patches add HTML roots only; no dependency runtime changes.
+crate.annotation(
+    crate = "tracing",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:tracing-0.1.44-rustdoc-root.patch"],
+    version = "0.1.44",
+)
+crate.annotation(
+    crate = "yansi",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:yansi-1.0.1-rustdoc-root.patch"],
+    version = "1.0.1",
+)
+crate.annotation(
+    crate = "opentelemetry",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:opentelemetry-0.33.0-rustdoc-root.patch"],
+    version = "0.33.0",
+)
+
 # rules_rs_mutants deliberately ships no cargo-mutants binary: every consumer
 # builds one from its own lockfile so the sweep and the build agree on a
 # version. `//tools/mutants` is that lockfile.
