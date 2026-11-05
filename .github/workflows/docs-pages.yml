@@ -75,12 +75,16 @@ jobs:
           bazel build --target_pattern_file="${targets}"
 
       - name: Test empty-implementor workaround
-        run: python3 -m unittest discover -s tools/docs -v
+        run: |
+          set -euo pipefail
+          rustc --edition=2024 --deny warnings --test tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/test-empty-implementors"
+          "${RUNNER_TEMP}/test-empty-implementors"
+          rustc --edition=2024 --deny warnings tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/fix-empty-implementors"
 
       - name: assemble the site
         run: |
           aspect rustdoc-site --output site --repo krabka-protocol
-          python3 tools/docs/fix_empty_implementors.py site
+          "${RUNNER_TEMP}/fix-empty-implementors" site
 
       - if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
