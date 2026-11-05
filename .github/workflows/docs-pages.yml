@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/docs-pages.yml
       - .htmltest.yml
+      - tools/docs/**
       - .aspect/**
       - bazel/**
       - crates/**
@@ -74,8 +75,13 @@ jobs:
           test -s "${targets}"
           bazel build --target_pattern_file="${targets}"
 
+      - name: Test empty-implementor workaround
+        run: python3 -m unittest discover -s tools/docs -v
+
       - name: assemble the site
-        run: aspect rustdoc-site --output site --repo krabka-protocol
+        run: |
+          aspect rustdoc-site --output site --repo krabka-protocol
+          python3 tools/docs/fix_empty_implementors.py site
 
       - if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
