@@ -6,7 +6,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/docs-pages.yml
-      - .htmltest.yml
       - tools/docs/**
       - .aspect/**
       - bazel/**
@@ -113,33 +112,10 @@ jobs:
       - name: Verify final Pages archive
         run: python3 .docs-packaging/actions/upload-rustdoc-pages/pages_site.py verify "${DOCS_STAGED_PATH}" "${RUNNER_TEMP}/artifact.tar"
 
-      # Report-only pilot; keep the existing Source/archive packaging gate.
-      - name: Report local documentation links and assets
-        id: docs-links
-        continue-on-error: true
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          checker_dir="${RUNNER_TEMP}/docs-link-check"
-          mkdir -p "${checker_dir}"
-          cd "${checker_dir}"
-          curl --fail --silent --show-error --location --connect-timeout 15 --max-time 120 \
-            https://github.com/wjdp/htmltest/releases/download/v0.17.0/htmltest_0.17.0_linux_amd64.tar.gz \
-            --output htmltest.tar.gz
-          echo '775c597ee74899d6002cd2d93076f897f4ba68686bceabe2e5d72e84c57bc0fb  htmltest.tar.gz' | sha256sum --check
-          tar -xzf htmltest.tar.gz htmltest
-          ./htmltest --version
-          ./htmltest --conf "${GITHUB_WORKSPACE}/.htmltest.yml" "${DOCS_STAGED_PATH}" 2>&1 | tee report.txt
-
-      - name: Save documentation link report
-        continue-on-error: true
-        if: ${{ always() && steps.docs-links.outcome != 'skipped' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: docs-links
-          path: ${{ runner.temp }}/docs-link-check/report.txt
-          if-no-files-found: warn
-          retention-days: 7
+      # Check the actual uploaded bytes, including fragments and Rust-style hrefs.
+      # This is a same-component gate; external destinations remain unchecked.
+      - name: Verify final archive links and assets
+        run: python3 .docs-packaging/actions/upload-rustdoc-pages/archive_links.py "${RUNNER_TEMP}/artifact.tar"
 
   deploy:
     # workflow_dispatch can run from any ref; only main may publish to production Pages.
