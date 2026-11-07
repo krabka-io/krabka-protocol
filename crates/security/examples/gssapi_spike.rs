@@ -85,8 +85,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut server = build_server(&kdc_url, entry.key)?;
 
     // ---- Operation 2: client initiate (produce AP-REQ) --------------------
-    let mut client =
-        Kerberos::new_client_from_config(KerberosConfig::new_with_kdc_url(&kdc_url, "krabka-spike".to_owned()))?;
+    let mut client = Kerberos::new_client_from_config(KerberosConfig::new_with_kdc_url(
+        &kdc_url,
+        "krabka-spike".to_owned(),
+    ))?;
     let identity = AuthIdentity {
         username: Username::parse(CLIENT_PRINCIPAL)?,
         password: CLIENT_PASSWORD.to_owned().into(),
