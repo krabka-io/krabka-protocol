@@ -127,9 +127,9 @@ pub struct BarrierCut {
     /// Milliseconds since the Unix epoch, at the moment the coordinator
     /// published the cut.
     pub completed_at: i64,
-    /// [`CUT_STATUS_COMPLETE`](CUT_STATUS_COMPLETE)
+    /// [`CUT_STATUS_COMPLETE`](crate::krabka::barrier::CUT_STATUS_COMPLETE)
     /// when every partition took a marker, and
-    /// [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) when
+    /// [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) when
     /// at least one partition did not.
     pub status: i8,
     /// Cut offsets, grouped by topic.

@@ -6,7 +6,7 @@
 //!
 //! The coordinator consumes the epoch even when an injection misses a partition,
 //! and it never reuses an epoch. The response then reports
-//! [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) and names
+//! [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) and names
 //! the partitions that got no marker.
 
 use bytes::{Buf, BufMut};
@@ -116,7 +116,7 @@ pub struct TriggerBarrierResponse {
     pub epoch: i64,
     /// [`CUT_STATUS_COMPLETE`](crate::krabka::barrier::CUT_STATUS_COMPLETE)
     /// when every partition took a marker, and
-    /// [`CUT_STATUS_PARTIAL`](CUT_STATUS_PARTIAL) when
+    /// [`CUT_STATUS_PARTIAL`](crate::krabka::barrier::CUT_STATUS_PARTIAL) when
     /// at least one partition did not.
     pub status: i8,
     /// Cut offsets, grouped by topic.
