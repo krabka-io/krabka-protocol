@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/docs-pages.yml
+      - tools/docs/**
       - .aspect/**
       - bazel/**
       - crates/**
@@ -73,8 +74,17 @@ jobs:
           test -s "${targets}"
           bazel build --target_pattern_file="${targets}"
 
+      - name: Test empty-implementor workaround
+        run: |
+          set -euo pipefail
+          rustc --edition=2024 --deny warnings --test tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/test-empty-implementors"
+          "${RUNNER_TEMP}/test-empty-implementors"
+          rustc --edition=2024 --deny warnings tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/fix-empty-implementors"
+
       - name: assemble the site
-        run: aspect rustdoc-site --output site --repo krabka-protocol
+        run: |
+          aspect rustdoc-site --output site --repo krabka-protocol
+          "${RUNNER_TEMP}/fix-empty-implementors" site
 
       - if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -105,6 +115,11 @@ jobs:
 
       - name: Verify final Pages archive
         run: python3 .docs-packaging/actions/upload-rustdoc-pages/pages_site.py verify "${DOCS_STAGED_PATH}" "${RUNNER_TEMP}/artifact.tar"
+
+      # Check the actual uploaded bytes, including fragments and Rust-style hrefs.
+      # This is a same-component gate; external destinations remain unchecked.
+      - name: Verify final archive links and assets
+        run: python3 .docs-packaging/actions/upload-rustdoc-pages/archive_links.py "${RUNNER_TEMP}/artifact.tar"
 
   deploy:
     # workflow_dispatch can run from any ref; only main may publish to production Pages.
