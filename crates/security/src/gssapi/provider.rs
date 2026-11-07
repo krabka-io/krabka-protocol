@@ -25,8 +25,8 @@ use super::{
 
 /// Default KDC URL for when `SSPI_KDC_URL` is unset.
 ///
-/// The accept path does not touch the network, but `KerberosConfig::new` needs
-/// a URL string.
+/// The accept path does not touch the network, but
+/// `KerberosConfig::new_with_kdc_url` needs a URL string.
 const DEFAULT_KDC_URL: &str = "tcp://localhost:88";
 
 fn kdc_url_from_env() -> String {
@@ -154,7 +154,7 @@ impl SspiAcceptor {
         }
 
         let server = Kerberos::new_server_from_config(
-            KerberosConfig::new(&kdc_url_from_env(), "krabka-broker".to_owned()),
+            KerberosConfig::new_with_kdc_url(&kdc_url_from_env(), "krabka-broker".to_owned()),
             server_properties,
         )
         .map_err(ctx_err)?;
@@ -284,7 +284,7 @@ impl SspiInitiator {
         let entry = load_service_key(&bytes, first_component, ENCTYPE_AES256_CTS_HMAC_SHA1_96)
             .map_err(|e| GssError::Keytab(e.to_string()))?;
 
-        let mut client = Kerberos::new_client_from_config(KerberosConfig::new(
+        let mut client = Kerberos::new_client_from_config(KerberosConfig::new_with_kdc_url(
             kdc_url,
             "krabka-broker".to_owned(),
         ))
