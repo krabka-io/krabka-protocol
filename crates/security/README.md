@@ -52,7 +52,7 @@ production.
 | :--- | :--- | :--- |
 | `gssapi` | off | SASL/GSSAPI (Kerberos): the `gssapi` module, its keytab parser and the sspi-backed acceptor and initiator. Native targets only. |
 
-`gssapi` is off by default because its Kerberos stack, `krabka-sspi`, depends
+`gssapi` is off by default because its Kerberos stack, `sspi`, depends
 on `rsa` 0.10. That crate carries
 [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071), the
 Marvin timing attack, and has no patched release. Without the feature, a build

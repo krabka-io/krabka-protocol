@@ -23,7 +23,7 @@ ignore = [
     "RUSTSEC-2026-0195",
     # RSA "Marvin" timing side-channel; no fixed release exists. This ignore
     # applies only to builds with `krabka-security`'s `gssapi` feature, which
-    # pulls in `rsa` through `krabka-sspi` and `picky`. `[graph]` above turns
+    # pulls in `rsa` through `sspi` and `picky`. `[graph]` above turns
     # every feature on, so cargo-deny sees that build. A default build has no
     # `rsa` at all, and the `rsa reachability` CI job fails if it gains one.
     # With `gssapi`, the GSSAPI path uses only AES keytab keys and performs no

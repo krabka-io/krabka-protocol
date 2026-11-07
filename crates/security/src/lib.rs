@@ -42,7 +42,7 @@
 //!   It is native-only, and has no effect on `wasm32` targets.
 //!
 //! `gssapi` stays out of `default` on purpose. The Kerberos stack it pulls in,
-//! `krabka-sspi`, depends on `rsa` 0.10, which carries RUSTSEC-2023-0071 (the
+//! `sspi`, depends on `rsa` 0.10, which carries RUSTSEC-2023-0071 (the
 //! Marvin timing side channel) and has no patched release. A build without the
 //! feature compiles no `rsa` at all. A build with it is still not exposed,
 //! because Krabka's GSSAPI path uses only AES keytab keys and never

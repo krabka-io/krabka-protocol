@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- GSSAPI (Kerberos) depends on upstream `sspi` 0.23.1 again instead of the
+  `krabka-sspi` 0.23.0 fork. `sspi` 0.23.1 accepts MIT KDC AS-REPs tagged
+  `EncTGSRepPart` and carries the `picky` updates the fork added, and it
+  requires `picky-krb` 0.13.1, which `krabka-sspi` 0.23.0 does not build
+  against. The lockfile takes `picky` 7.0.0-rc.27 and `picky-krb` 0.13.1.
+
 ## [0.8.0] — 2026-11-01
 
 **Breaking Rust API.** The `gssapi` module now needs the `gssapi` feature.

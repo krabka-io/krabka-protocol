@@ -153,19 +153,12 @@ crate's publisher, and delete the secret again.
 
 ## The sspi dependency
 
-`krabka-security` depends on
-[`krabka-sspi`](https://crates.io/crates/krabka-sspi), renamed to `sspi` in
-the workspace manifest. `krabka-sspi` is a temporary crates.io release of
-[krabka-io/sspi-rs](https://github.com/krabka-io/sspi-rs): upstream `sspi`
-0.23.0 plus the MIT Kerberos interoperability fixes
-([devolutions/sspi-rs#738](https://github.com/Devolutions/sspi-rs/pull/738))
-and the #764 fix. Its library is still named `sspi`, so the code says
-`use sspi::...`.
-
-When an upstream `sspi` release contains those fixes, change the workspace
-entry to that `sspi` version and drop `package = "krabka-sspi"`. Then release.
-krabka-io/sspi-rs's `docs/krabka-sspi-release.md` covers deprecating and
-yanking `krabka-sspi` after that.
+`krabka-security` depends on upstream [`sspi`](https://crates.io/crates/sspi)
+0.23.1 behind its `gssapi` feature. Until 0.8.0 it depended on
+[`krabka-sspi`](https://crates.io/crates/krabka-sspi), a temporary fork that
+carried MIT Kerberos interoperability fixes. `sspi` 0.23.1 contains the ones
+Krabka relies on. krabka-io/sspi-rs's `docs/krabka-sspi-release.md` covers
+deprecating and yanking `krabka-sspi`.
 
 ## Retire the crabka crates
 
