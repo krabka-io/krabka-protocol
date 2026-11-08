@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `krabka.version` level 3 turns on two formats: the OCSF 1.3.0 activity ids of `__krabka_audit` records (`krabka_version::OCSF_ACTIVITY_IDS_LEVEL`) and the normalized tiered-storage key prefix (`krabka_version::TIERED_KEY_PREFIX_NORMALIZED_LEVEL`). The supported range becomes `[0, 3]`. Level 3 changes no private RPC version.
+
 ## [0.8.0] — 2026-11-01
 
 - Group partition offset, ELR and recovery state by topic so topic deletion touches only its own auxiliary state (#77).

@@ -283,7 +283,8 @@ impl Feature for KrabkaVersionFeature {
     // dependencies: inherits the empty default. No krabka.version level needs a
     // metadata.version yet. min_required_floor: inherits the supported min.
     // Levels 0 and 1 are the same formats, and every build that supports level
-    // 2 reads its reservations at every level, so lowering it strands nothing.
+    // 2 or 3 reads that level's formats at every level, so lowering it strands
+    // nothing.
 }
 
 /// All features this broker supports finalizing. Single source of truth.
@@ -464,7 +465,8 @@ mod tests {
             ("krabka.version", 0, true),
             ("krabka.version", 1, true),
             ("krabka.version", 2, true),
-            ("krabka.version", 3, false),
+            ("krabka.version", 3, true),
+            ("krabka.version", 4, false),
             ("not.a.feature", 1, false),
         ] {
             assert2::assert!(is_supported_level(name, level) == want);
@@ -478,7 +480,7 @@ mod tests {
             ("eligible.leader.replicas.version", (0, 1)),
             ("group.version", (0, 1)),
             ("krabka.metadata.downgrade", (1, 1)),
-            ("krabka.version", (0, 2)),
+            ("krabka.version", (0, 3)),
             ("kraft.version", (0, 1)),
             ("metadata.version", (7, 34)),
             ("share.version", (0, 2)),
@@ -576,7 +578,7 @@ mod tests {
             // control record rather than by UpdateFeatures. Leaving it out of
             // this table left its name, range and default entirely unasserted.
             ("kraft.version", (0, 1), 0, 0),
-            ("krabka.version", (0, 2), 0, 0),
+            ("krabka.version", (0, 3), 0, 0),
         ];
 
         for (name, range, default_at_25, floor) in expected {
