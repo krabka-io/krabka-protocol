@@ -24,6 +24,24 @@
 //!   reservation reuses the 1.x delete-floor record encoding, so every 1.x
 //!   reader can still replay it. Below level 2 a broker writes no
 //!   reservations. Level 2 changes no private RPC version.
+//! - **Level 3** turns on two formats. Level 2 shipped in krabka-broker 1.1.3,
+//!   so a later format cannot join it.
+//!   - The OCSF 1.3.0 activity ids of `__krabka_audit` records
+//!     ([`OCSF_ACTIVITY_IDS_LEVEL`]). Application Lifecycle reports a start as
+//!     activity 3 (Start) and a stop as 4 (Stop), Authorize Session reports an
+//!     ACL denial as 99 (Other), API Activity reports an admin operation as
+//!     Create, Read, Update or Delete where one applies, and a record carries
+//!     `metadata.log_version` `"2"`. Below level 3 a broker writes the 1.0.0
+//!     shape. `krabka-audit verify` hashes each record's bytes, so a chain
+//!     that mixes both shapes still verifies.
+//!   - The normalized tiered-storage key prefix
+//!     ([`TIERED_KEY_PREFIX_NORMALIZED_LEVEL`]). A broker trims spaces and
+//!     slashes from the configured prefix before it builds a segment key, as
+//!     it already does for diskless WAL objects. Below level 3 it writes the
+//!     key with the prefix exactly as configured. A reader looks a segment up
+//!     under both forms at every level.
+//!
+//!   Level 3 changes no private RPC version.
 //!
 //! # Why the maximum is 1, not 0
 //!
@@ -89,11 +107,19 @@ pub const KRABKA_VERSION_MIN: i16 = 0;
 /// Maximum supported level, and the latest production level. Level 1 means
 /// the same formats as level 0. See the module docs for the meaning of each
 /// level.
-pub const KRABKA_VERSION_MAX: i16 = 2;
+pub const KRABKA_VERSION_MAX: i16 = 3;
 
 /// The first level at which a broker writes diskless WAL object reservations
 /// before it uploads an object. See the module docs.
 pub const DISKLESS_OBJECT_RESERVATION_LEVEL: i16 = 2;
+
+/// The first level at which a broker writes `__krabka_audit` records with the
+/// OCSF 1.3.0 activity ids. See the module docs.
+pub const OCSF_ACTIVITY_IDS_LEVEL: i16 = 3;
+
+/// The first level at which a broker normalizes the configured tiered-storage
+/// prefix before it builds a segment key. See the module docs.
+pub const TIERED_KEY_PREFIX_NORMALIZED_LEVEL: i16 = 3;
 
 /// The finalized `krabka.version` level of a metadata image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -185,8 +211,8 @@ impl PrivateRpc {
         if krabka_version < KRABKA_VERSION_MIN || krabka_version > KRABKA_VERSION_MAX {
             return None;
         }
-        // Levels 0 and 1 are both the 1.0.0 formats, and level 2 changes no
-        // RPC, so every RPC is v0. A level that raises an RPC's version adds
+        // Levels 0 and 1 are both the 1.0.0 formats, and levels 2 and 3
+        // change no RPC, so every RPC is v0. A level that raises an RPC's version adds
         // an arm here.
         Some(match self {
             Self::SubmitChange | Self::MetadataFetch | Self::DelegationTokenMutation => 0,
@@ -198,7 +224,7 @@ impl PrivateRpc {
 /// node may send when the finalized `krabka.version` is `krabka_version`.
 ///
 /// Returns `None` for an api key that is not a private controller RPC, and for
-/// a level this build does not support. At levels 0 to 2 every RPC is v0.
+/// a level this build does not support. At levels 0 to 3 every RPC is v0.
 #[must_use]
 pub const fn private_rpc_version(api_key: i16, krabka_version: i16) -> Option<i16> {
     match PrivateRpc::from_api_key(api_key) {
@@ -233,7 +259,9 @@ mod tests {
                 KRABKA_VERSION_MIN,
                 KRABKA_VERSION_MAX,
                 DISKLESS_OBJECT_RESERVATION_LEVEL,
-            ) == ("krabka.version", 0, 2, 2)
+                OCSF_ACTIVITY_IDS_LEVEL,
+                TIERED_KEY_PREFIX_NORMALIZED_LEVEL,
+            ) == ("krabka.version", 0, 3, 2, 3, 3)
         );
     }
 
@@ -272,7 +300,7 @@ mod tests {
     fn private_rpc_version_table() {
         for rpc in PrivateRpc::ALL {
             // (api key, [(krabka.version, highest request version)])
-            let (api_key, rows): (i16, [(i16, Option<i16>); 5]) = match rpc {
+            let (api_key, rows): (i16, [(i16, Option<i16>); 6]) = match rpc {
                 PrivateRpc::SubmitChange => (
                     1003,
                     [
@@ -280,7 +308,8 @@ mod tests {
                         (0, Some(0)),
                         (1, Some(0)),
                         (2, Some(0)),
-                        (3, None),
+                        (3, Some(0)),
+                        (4, None),
                     ],
                 ),
                 PrivateRpc::MetadataFetch => (
@@ -290,7 +319,8 @@ mod tests {
                         (0, Some(0)),
                         (1, Some(0)),
                         (2, Some(0)),
-                        (3, None),
+                        (3, Some(0)),
+                        (4, None),
                     ],
                 ),
                 PrivateRpc::DelegationTokenMutation => (
@@ -300,7 +330,8 @@ mod tests {
                         (0, Some(0)),
                         (1, Some(0)),
                         (2, Some(0)),
-                        (3, None),
+                        (3, Some(0)),
+                        (4, None),
                     ],
                 ),
             };
