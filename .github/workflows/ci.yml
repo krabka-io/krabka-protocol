@@ -1,6 +1,7 @@
 name: ci
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
   schedule:
@@ -284,6 +285,21 @@ jobs:
           path: bazel-bin/crates/**/*.rustdoc
           if-no-files-found: error
 
+      - name: Test empty-implementor workaround
+        run: |
+          set -euo pipefail
+          rustc --edition=2024 --deny warnings --test tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/test-empty-implementors"
+          "${RUNNER_TEMP}/test-empty-implementors"
+          rustc --edition=2024 --deny warnings tools/docs/fix_empty_implementors.rs -o "${RUNNER_TEMP}/fix-empty-implementors"
+      - name: Assemble the site
+        run: |
+          aspect rustdoc-site --output site --repo krabka-protocol
+          "${RUNNER_TEMP}/fix-empty-implementors" site
+      - uses: krabka-io/tooling/actions/upload-rustdoc-pages@1fb9d942c2def2fcfa20c19ed8ae8a7d8f220f65
+        with:
+          path: site
+          retention-days: 1
+
   # A mutation sweep rebuilds and re-runs a crate's unit tests once per mutant,
   # so it is far too slow to gate a pull request.
   #
@@ -314,3 +330,14 @@ jobs:
             echo EOF
           } >>"${GITHUB_OUTPUT}"
       - run: bazel test ${{ steps.targets.outputs.targets }}
+
+  gate:
+    name: gate
+    if: always()
+    needs: [ci, codegen, differential, rsa, advisories, coverage, docs, mutants]
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: krabka-io/tooling/actions/gate@1fb9d942c2def2fcfa20c19ed8ae8a7d8f220f65
+        with:
+          results: ${{ toJSON(needs) }}
+          allow-skipped: ci,codegen,differential,rsa,advisories,coverage,docs,mutants

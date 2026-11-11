@@ -3,27 +3,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .github/workflows/docs-pages.yml
-      - tools/docs/**
-      - .aspect/**
-      - bazel/**
-      - crates/**
-      - Cargo.toml
-      - Cargo.lock
-      - MODULE.bazel
-      - MODULE.bazel.lock
-      - .bazelrc
-      - .bazelversion
-      - rust-toolchain.toml
 
 # Publish the rustdoc set to GitHub Pages.
 #
-# The `ci` workflow's `docgen` job renders the same set on every run and
-# uploads it as an artifact nobody browses. This renders it once more from
-# `main`, adds a landing page that lists every crate, and deploys it, so the
-# README can link to a page rather than to an artifact.
+# CI's docgen job renders and validates the archive on pull requests and
+# merge groups. This rebuilds it from main and deploys it, so the README
+# can link to a page rather than an artifact.
 #
 # It is its own workflow rather than a job in `ci.yml` because a deployment
 # needs `pages: write` and its own concurrency group, and because a failed
@@ -45,8 +30,7 @@ concurrency:
 
 jobs:
   build:
-    # Pull requests check the archive without production deployment permissions.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     name: render rustdoc
     permissions:
       contents: read
